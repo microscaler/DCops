@@ -14,13 +14,8 @@ FROM --platform=$BUILDPLATFORM rust:1.92-bookworm
 # git: Required for git dependencies in Cargo.toml
 # curl: Required for downloading dependencies
 # musl-tools: Required for musl target builds (Linux x86_64)
-# Note: GPG signature issues can occur in some Docker environments.
-# We work around this by updating GPG keys first, then installing packages.
-RUN apt-get clean && \
-    rm -rf /var/lib/apt/lists/* /etc/apt/sources.list.d/* && \
-    # Update GPG keys for Debian repositories
-    apt-key adv --keyserver keyserver.ubuntu.com --recv-keys 0E98404D386FA1D9 6ED0E7B82643E131 && \
-    apt-get update && \
+# Note: The base rust:1.92-bookworm image already has valid GPG keys configured
+RUN apt-get update && \
     apt-get install -y --no-install-recommends \
     pkg-config \
     libssl-dev \

@@ -94,10 +94,17 @@ local_resource(
 # The 'deps' parameter ensures the binary exists before Docker build
 BINARY_PATH = 'target/x86_64-unknown-linux-musl/release/ip-claim-controller'
 IMAGE_NAME = 'ip-claim-controller'
+REGISTRY = 'localhost:5000'
+FULL_IMAGE_NAME = '%s/%s' % (REGISTRY, IMAGE_NAME)
 
 custom_build(
     IMAGE_NAME,
-    'docker buildx build --platform linux/amd64 -f dockerfiles/Dockerfile.ip-claim-controller.dev -t $EXPECTED_REF . && docker push $EXPECTED_REF',
+    'docker buildx build --platform linux/amd64 -f dockerfiles/Dockerfile.ip-claim-controller.dev -t %s:tilt . && docker tag %s:tilt %s:tilt && docker push %s:tilt' % (
+        IMAGE_NAME,
+        IMAGE_NAME,
+        FULL_IMAGE_NAME,
+        FULL_IMAGE_NAME
+    ),
     deps=[
         BINARY_PATH,  # File dependency ensures binary exists before Docker build
         'dockerfiles/Dockerfile.ip-claim-controller.dev',

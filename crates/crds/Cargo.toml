@@ -26,4 +26,9 @@ chrono = { workspace = true }
 # Kubernetes CRD generation
 # schemars 1.x uses "chrono04" feature instead of "chrono"
 schemars = { version = "1", features = ["derive", "chrono04"] }
+serde_yaml = { workspace = true }
+
+[[bin]]
+name = "crdgen"
+path = "src/bin/crdgen.rs"
 

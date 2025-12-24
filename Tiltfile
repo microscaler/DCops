@@ -64,6 +64,26 @@ k8s_resource(
 )
 
 # ====================
+# CRD Generation
+# ====================
+# Generate and apply CRDs when CRD code changes
+# This ensures CRDs are always up-to-date with the Rust code
+local_resource(
+    'generate-crds',
+    cmd='python3 scripts/generate_crds.py',
+    deps=[
+        'crates/crds/src',
+        'crates/crds/Cargo.toml',
+        'Cargo.toml',
+        'Cargo.lock',
+        'scripts/generate_crds.py',
+    ],
+    resource_deps=[],
+    labels=['infrastructure'],
+    allow_parallel=True,
+)
+
+# ====================
 # IP Claim Controller
 # ====================
 # Build the IP Claim Controller binary
@@ -81,7 +101,7 @@ local_resource(
         'Cargo.lock',
         'scripts/host_aware_build.py',
     ],
-    resource_deps=[],
+    resource_deps=['generate-crds'],  # Wait for CRDs to be generated and applied
     labels=['controllers'],
     allow_parallel=True,
 )

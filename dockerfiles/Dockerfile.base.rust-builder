@@ -55,12 +55,24 @@ COPY controllers/pxe-intent/Cargo.toml ./controllers/pxe-intent/
 COPY controllers/ip-claim/Cargo.toml ./controllers/ip-claim/
 COPY controllers/routeros/Cargo.toml ./controllers/routeros/
 
+# Create minimal source files so cargo can resolve dependencies
+# Cargo needs at least a lib.rs or main.rs to parse the workspace
+RUN mkdir -p crates/crds/src crates/netbox-client/src crates/routeros-client/src crates/pxe-server/src && \
+    mkdir -p controllers/pxe-intent/src controllers/ip-claim/src controllers/routeros/src && \
+    echo 'fn main() {}' > controllers/pxe-intent/src/main.rs && \
+    echo 'fn main() {}' > controllers/ip-claim/src/main.rs && \
+    echo 'fn main() {}' > controllers/routeros/src/main.rs && \
+    echo '' > crates/crds/src/lib.rs && \
+    echo '' > crates/netbox-client/src/lib.rs && \
+    echo '' > crates/routeros-client/src/lib.rs && \
+    echo '' > crates/pxe-server/src/lib.rs
+
 # Fetch all dependencies (downloads but doesn't compile)
 # This pre-populates ~/.cargo/registry and ~/.cargo/git with all dependency sources
 # Subsequent builds will be faster because dependencies are already downloaded
 # Use --locked to respect Cargo.lock versions exactly
-RUN cargo fetch --locked 2>/dev/null || true && \
-    # Clean up Cargo files (they'll be copied again in production builds)
+RUN cargo fetch --locked || cargo fetch && \
+    # Clean up Cargo files and dummy source files (they'll be copied again in production builds)
     # Downloaded dependencies remain in ~/.cargo/registry and ~/.cargo/git
-    rm -f Cargo.toml Cargo.lock*
+    rm -rf Cargo.toml Cargo.lock* crates controllers
 

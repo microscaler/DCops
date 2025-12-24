@@ -89,12 +89,14 @@ local_resource(
 # Build Docker image for IP Claim Controller
 # Use custom_build to ensure binary exists before Docker build
 # This matches the pattern from secret-manager-controller
+# Note: We build for linux/amd64 platform even on Apple Silicon
+# because the binary is cross-compiled for x86_64-unknown-linux-musl
 BINARY_PATH = 'target/x86_64-unknown-linux-musl/release/ip-claim-controller'
 IMAGE_NAME = 'ip-claim-controller'
 
 custom_build(
     IMAGE_NAME,
-    'docker build -f dockerfiles/Dockerfile.ip-claim-controller.dev -t %s:tilt . && docker tag %s:tilt $EXPECTED_REF && docker push $EXPECTED_REF' % (
+    'docker buildx build --platform linux/amd64 -f dockerfiles/Dockerfile.ip-claim-controller.dev -t %s:tilt . && docker tag %s:tilt $EXPECTED_REF && docker push $EXPECTED_REF' % (
         IMAGE_NAME,
         IMAGE_NAME
     ),

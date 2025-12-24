@@ -97,10 +97,7 @@ IMAGE_NAME = 'ip-claim-controller'
 
 custom_build(
     IMAGE_NAME,
-    'docker buildx build --platform linux/amd64 -f dockerfiles/Dockerfile.ip-claim-controller.dev -t %s:tilt . && docker tag %s:tilt $EXPECTED_REF && docker push $EXPECTED_REF' % (
-        IMAGE_NAME,
-        IMAGE_NAME
-    ),
+    'docker buildx build --platform linux/amd64 -f dockerfiles/Dockerfile.ip-claim-controller.dev -t $EXPECTED_REF . && docker push $EXPECTED_REF',
     deps=[
         BINARY_PATH,  # File dependency ensures binary exists before Docker build
         'dockerfiles/Dockerfile.ip-claim-controller.dev',

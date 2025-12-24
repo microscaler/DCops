@@ -8,7 +8,7 @@ use crate::error::ControllerError;
 use crds::{IPClaim, IPPool, IPClaimStatus, IPPoolStatus, AllocationState};
 use netbox_client::{NetBoxClient, AllocateIPRequest, IPAddressStatus};
 use kube::Api;
-use tracing::{debug, info, error};
+use tracing::{info, error};
 use chrono::Utc;
 
 /// Reconciles IP allocation resources.
@@ -39,6 +39,8 @@ impl Reconciler {
     /// 2. Gets the NetBox prefix from the IPPool
     /// 3. Allocates an IP from NetBox
     /// 4. Updates the IPClaim status with the allocated IP
+    ///
+    /// If reconciliation fails, the status is updated with the error message.
     pub async fn reconcile_ip_claim(&self, claim: &IPClaim) -> Result<(), ControllerError> {
         let name = claim.metadata.name.as_ref()
             .ok_or_else(|| ControllerError::InvalidConfig("IPClaim missing name".to_string()))?;
@@ -47,35 +49,80 @@ impl Reconciler {
         
         info!("Reconciling IPClaim {}/{}", namespace, name);
         
-        // Fetch current claim to check status
-        // Note: kube-rs CustomResource doesn't include status in the struct by default
-        // We'll check by querying NetBox for existing IPs instead
-        // This provides better idempotency anyway
+        // Helper function to update status with error
+        async fn update_status_error(
+            api: &Api<IPClaim>,
+            name: &str,
+            namespace: &str,
+            error_msg: String,
+        ) {
+            let error_status = IPClaimStatus {
+                ip: None,
+                state: AllocationState::Failed,
+                netbox_ip_ref: None,
+                last_reconciled: Some(Utc::now()),
+                error: Some(error_msg.clone()),
+            };
+            
+            let status_patch = serde_json::json!({
+                "status": error_status
+            });
+            
+            let pp = kube::api::PatchParams::default();
+            if let Err(e) = api
+                .patch_status(name, &pp, &kube::api::Patch::Merge(&status_patch))
+                .await
+            {
+                error!("Failed to update IPClaim {}/{} error status: {}", namespace, name, e);
+            }
+        }
+        
+        // Check if already allocated
+        if let Some(status) = &claim.status {
+            if status.state == AllocationState::Allocated && status.ip.is_some() {
+                info!("IPClaim {}/{} already allocated to {}", namespace, name, status.ip.as_ref().unwrap());
+                // TODO: Verify NetBox state matches
+                return Ok(());
+            }
+        }
         
         // Get the referenced IPPool
         let pool_name = &claim.spec.pool_ref.name;
         let pool_namespace = claim.spec.pool_ref.namespace.as_deref()
             .unwrap_or(namespace);
         
-        let pool = self.ip_pool_api
-            .get(pool_name)
-            .await
-            .map_err(|e| ControllerError::IPPoolNotFound(format!(
-                "Failed to get IPPool {}/{}: {}", pool_namespace, pool_name, e
-            )))?;
+        let pool = match self.ip_pool_api.get(pool_name).await {
+            Ok(p) => p,
+            Err(e) => {
+                let error_msg = format!("Failed to get IPPool {}/{}: {}", pool_namespace, pool_name, e);
+                error!("{}", error_msg);
+                update_status_error(&self.ip_claim_api, name, namespace, error_msg.clone()).await;
+                return Err(ControllerError::IPPoolNotFound(error_msg));
+            }
+        };
         
         // Get NetBox prefix ID
         let prefix_id_str = &pool.spec.netbox_prefix_ref.id;
-        let prefix_id = prefix_id_str.parse::<u64>()
-            .map_err(|_| ControllerError::InvalidConfig(format!(
-                "Invalid prefix ID: {}", prefix_id_str
-            )))?;
+        let prefix_id = match prefix_id_str.parse::<u64>() {
+            Ok(id) => id,
+            Err(_) => {
+                let error_msg = format!("Invalid prefix ID: {}", prefix_id_str);
+                error!("{}", error_msg);
+                update_status_error(&self.ip_claim_api, name, namespace, error_msg.clone()).await;
+                return Err(ControllerError::InvalidConfig(error_msg));
+            }
+        };
         
         // Verify prefix exists in NetBox
-        let _prefix = self.netbox_client.get_prefix(prefix_id).await
-            .map_err(|e| ControllerError::PrefixNotFound(format!(
-                "Prefix {} not found in NetBox: {}", prefix_id, e
-            )))?;
+        let _prefix = match self.netbox_client.get_prefix(prefix_id).await {
+            Ok(p) => p,
+            Err(e) => {
+                let error_msg = format!("Prefix {} not found in NetBox: {}", prefix_id, e);
+                error!("{}", error_msg);
+                update_status_error(&self.ip_claim_api, name, namespace, error_msg.clone()).await;
+                return Err(ControllerError::PrefixNotFound(error_msg));
+            }
+        };
         
         // Allocate IP from NetBox
         let allocation_request = AllocateIPRequest {
@@ -87,17 +134,19 @@ impl Reconciler {
             tags: Some(vec!["managed-by=dcops".to_string(), "owner=ip-claim-controller".to_string()]),
         };
         
-        let allocated_ip = self.netbox_client.allocate_ip(prefix_id, Some(allocation_request)).await
-            .map_err(|e| {
-                error!("Failed to allocate IP from prefix {}: {}", prefix_id, e);
-                ControllerError::AllocationFailed(format!(
-                    "Failed to allocate IP: {}", e
-                ))
-            })?;
+        let allocated_ip = match self.netbox_client.allocate_ip(prefix_id, Some(allocation_request)).await {
+            Ok(ip) => ip,
+            Err(e) => {
+                let error_msg = format!("Failed to allocate IP from prefix {}: {}", prefix_id, e);
+                error!("{}", error_msg);
+                update_status_error(&self.ip_claim_api, name, namespace, error_msg.clone()).await;
+                return Err(ControllerError::AllocationFailed(error_msg));
+            }
+        };
         
         info!("Allocated IP {} for IPClaim {}/{}", allocated_ip.address, namespace, name);
         
-        // Update IPClaim status
+        // Update IPClaim status with success
         let new_status = IPClaimStatus {
             ip: Some(allocated_ip.address.clone()),
             state: AllocationState::Allocated,
@@ -115,13 +164,21 @@ impl Reconciler {
         });
         
         let pp = PatchParams::default();
-        self.ip_claim_api
+        match self.ip_claim_api
             .patch_status(name, &pp, &kube::api::Patch::Merge(&status_patch))
             .await
-            .map_err(|e| ControllerError::Kube(e.into()))?;
-        
-        info!("Updated IPClaim {}/{} status", namespace, name);
-        Ok(())
+        {
+            Ok(_) => {
+                info!("Updated IPClaim {}/{} status", namespace, name);
+                Ok(())
+            }
+            Err(e) => {
+                let error_msg = format!("Failed to update IPClaim status: {}", e);
+                error!("{}", error_msg);
+                update_status_error(&self.ip_claim_api, name, namespace, error_msg.clone()).await;
+                Err(ControllerError::Kube(e.into()))
+            }
+        }
     }
     
     /// Reconciles an IPPool resource.
@@ -136,7 +193,7 @@ impl Reconciler {
         let namespace = pool.metadata.namespace.as_deref()
             .unwrap_or("default");
         
-        debug!("Reconciling IPPool {}/{}", namespace, name);
+        info!("Reconciling IPPool {}/{}", namespace, name);
         
         // Get NetBox prefix ID
         let prefix_id_str = &pool.spec.netbox_prefix_ref.id;
@@ -146,21 +203,38 @@ impl Reconciler {
             )))?;
         
         // Get prefix from NetBox
-        let prefix = self.netbox_client.get_prefix(prefix_id).await
-            .map_err(|e| ControllerError::PrefixNotFound(format!(
-                "Prefix {} not found in NetBox: {}", prefix_id, e
-            )))?;
+        let prefix = match self.netbox_client.get_prefix(prefix_id).await {
+            Ok(p) => p,
+            Err(e) => {
+                let error_msg = format!("Prefix {} not found in NetBox: {}", prefix_id, e);
+                error!("{}", error_msg);
+                // Note: IPPool doesn't have error field in status, so we just log
+                return Err(ControllerError::PrefixNotFound(error_msg));
+            }
+        };
         
         // Get available IPs
-        let available_ips = self.netbox_client.get_available_ips(prefix_id, None).await
-            .map_err(|e| ControllerError::NetBox(e))?;
+        let available_ips = match self.netbox_client.get_available_ips(prefix_id, None).await {
+            Ok(ips) => ips,
+            Err(e) => {
+                let error_msg = format!("Failed to get available IPs: {}", e);
+                error!("{}", error_msg);
+                return Err(ControllerError::NetBox(e));
+            }
+        };
         
         // Query allocated IPs from this prefix
-        let allocated_ips = self.netbox_client.query_ip_addresses(
+        let allocated_ips = match self.netbox_client.query_ip_addresses(
             &[("prefix", &prefix.prefix)],
             true, // fetch all pages
-        ).await
-            .map_err(|e| ControllerError::NetBox(e))?;
+        ).await {
+            Ok(ips) => ips,
+            Err(e) => {
+                let error_msg = format!("Failed to query allocated IPs: {}", e);
+                error!("{}", error_msg);
+                return Err(ControllerError::NetBox(e));
+            }
+        };
         
         // Calculate pool statistics
         // Note: This is approximate - NetBox doesn't provide exact counts
@@ -185,15 +259,21 @@ impl Reconciler {
         });
         
         let pp = PatchParams::default();
-        self.ip_pool_api
+        match self.ip_pool_api
             .patch_status(name, &pp, &kube::api::Patch::Merge(&status_patch))
             .await
-            .map_err(|e| ControllerError::Kube(e.into()))?;
-        
-        debug!("Updated IPPool {}/{} status: {} total, {} allocated, {} available",
-            namespace, name, total_ips, allocated_count, available_count);
-        
-        Ok(())
+        {
+            Ok(_) => {
+                info!("Updated IPPool {}/{} status: {} total, {} allocated, {} available",
+                    namespace, name, total_ips, allocated_count, available_count);
+                Ok(())
+            }
+            Err(e) => {
+                let error_msg = format!("Failed to update IPPool status: {}", e);
+                error!("{}", error_msg);
+                Err(ControllerError::Kube(e.into()))
+            }
+        }
     }
 }
 

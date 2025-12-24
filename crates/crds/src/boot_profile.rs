@@ -11,7 +11,8 @@ use serde::{Deserialize, Serialize};
     group = "dcops.microscaler.io",
     version = "v1alpha1",
     kind = "BootProfile",
-    namespaced
+    namespaced,
+    status = "BootProfileStatus"
 )]
 #[serde(rename_all = "camelCase")]
 pub struct BootProfileSpec {

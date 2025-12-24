@@ -64,13 +64,44 @@ spec:
             - deviceRef
             - poolRef
             type: object
+          status:
+            nullable: true
+            properties:
+              error:
+                description: Error message if allocation failed
+                nullable: true
+                type: string
+              ip:
+                description: Allocated IP address
+                nullable: true
+                type: string
+              lastReconciled:
+                description: Last reconciliation timestamp
+                format: date-time
+                nullable: true
+                type: string
+              netboxIpRef:
+                description: NetBox IPAddress object reference
+                nullable: true
+                type: string
+              state:
+                description: Allocation state
+                enum:
+                - pending
+                - allocated
+                - failed
+                type: string
+            required:
+            - state
+            type: object
         required:
         - spec
         title: IPClaim
         type: object
     served: true
     storage: true
-    subresources: {}
+    subresources:
+      status: {}
 ---
 apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
@@ -121,13 +152,42 @@ spec:
             required:
             - netboxPrefixRef
             type: object
+          status:
+            nullable: true
+            properties:
+              allocatedIps:
+                description: Allocated IPs
+                format: uint32
+                minimum: 0.0
+                type: integer
+              availableIps:
+                description: Available IPs
+                format: uint32
+                minimum: 0.0
+                type: integer
+              lastReconciled:
+                description: Last reconciliation timestamp
+                format: date-time
+                nullable: true
+                type: string
+              totalIps:
+                description: Total available IPs in pool
+                format: uint32
+                minimum: 0.0
+                type: integer
+            required:
+            - allocatedIps
+            - availableIps
+            - totalIps
+            type: object
         required:
         - spec
         title: IPPool
         type: object
     served: true
     storage: true
-    subresources: {}
+    subresources:
+      status: {}
 ---
 apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
@@ -175,13 +235,28 @@ spec:
             required:
             - kernel
             type: object
+          status:
+            nullable: true
+            properties:
+              lastReconciled:
+                description: Last reconciliation timestamp
+                format: date-time
+                nullable: true
+                type: string
+              ready:
+                description: Whether the boot profile is ready
+                type: boolean
+            required:
+            - ready
+            type: object
         required:
         - spec
         title: BootProfile
         type: object
     served: true
     storage: true
-    subresources: {}
+    subresources:
+      status: {}
 ---
 apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
@@ -234,10 +309,38 @@ spec:
             - macAddress
             - profileRef
             type: object
+          status:
+            nullable: true
+            properties:
+              configured:
+                description: Whether boot intent is configured
+                type: boolean
+              error:
+                description: Error message if reconciliation failed
+                nullable: true
+                type: string
+              lastReconciled:
+                description: Last reconciliation timestamp
+                format: date-time
+                nullable: true
+                type: string
+              lifecycle:
+                description: Current lifecycle state
+                enum:
+                - discovered
+                - installing
+                - installed
+                - locked
+                type: string
+            required:
+            - configured
+            - lifecycle
+            type: object
         required:
         - spec
         title: BootIntent
         type: object
     served: true
     storage: true
-    subresources: {}
+    subresources:
+      status: {}

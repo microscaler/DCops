@@ -11,7 +11,8 @@ use serde::{Deserialize, Serialize};
     group = "dcops.microscaler.io",
     version = "v1alpha1",
     kind = "BootIntent",
-    namespaced
+    namespaced,
+    status = "BootIntentStatus"
 )]
 #[serde(rename_all = "camelCase")]
 pub struct BootIntentSpec {

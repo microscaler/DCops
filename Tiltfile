@@ -87,19 +87,26 @@ local_resource(
 )
 
 # Build Docker image for IP Claim Controller
-# Note: Binary path is relative to project root, so context must be project root
-# Format: docker_build(ref, context, dockerfile=..., **kwargs)
-# Using dockerfile as keyword arg to match Tilt's expected signature
-docker_build(
-    'ip-claim-controller',
-    '.',  # Context: project root (where target/ directory is)
-    dockerfile='dockerfiles/Dockerfile.ip-claim-controller.dev',
-    only=[
-        'target/x86_64-unknown-linux-musl/release/ip-claim-controller',
+# Use custom_build to ensure binary exists before Docker build
+# This matches the pattern from secret-manager-controller
+BINARY_PATH = 'target/x86_64-unknown-linux-musl/release/ip-claim-controller'
+IMAGE_NAME = 'ip-claim-controller'
+
+custom_build(
+    IMAGE_NAME,
+    'docker build -f dockerfiles/Dockerfile.ip-claim-controller.dev -t %s:tilt . && docker tag %s:tilt $EXPECTED_REF && docker push $EXPECTED_REF' % (
+        IMAGE_NAME,
+        IMAGE_NAME
+    ),
+    deps=[
+        BINARY_PATH,  # File dependency ensures binary exists before Docker build
+        'dockerfiles/Dockerfile.ip-claim-controller.dev',
     ],
+    resource_deps=['build-ip-claim-controller'],  # Wait for build to complete
+    tag='tilt',
     live_update=[
-        sync('target/x86_64-unknown-linux-musl/release/ip-claim-controller', '/app/ip-claim-controller'),
-        run('kill -HUP 1', trigger=['target/x86_64-unknown-linux-musl/release/ip-claim-controller']),
+        sync(BINARY_PATH, '/app/ip-claim-controller'),
+        run('kill -HUP 1', trigger=[BINARY_PATH]),
     ],
 )
 
@@ -109,7 +116,7 @@ k8s_yaml(kustomize('%s/config/ip-claim-controller' % DCops_DIR))
 k8s_resource(
     'ip-claim-controller',
     labels=['controllers'],
-    # Tilt automatically waits for docker_build images used in k8s_yaml
+    resource_deps=['build-ip-claim-controller'],  # Wait for binary to be built before deploying
 )
 
 # ====================

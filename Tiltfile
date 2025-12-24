@@ -91,6 +91,7 @@ local_resource(
 # This matches the pattern from secret-manager-controller
 # Note: We build for linux/amd64 platform even on Apple Silicon
 # because the binary is cross-compiled for x86_64-unknown-linux-musl
+# The 'deps' parameter ensures the binary exists before Docker build
 BINARY_PATH = 'target/x86_64-unknown-linux-musl/release/ip-claim-controller'
 IMAGE_NAME = 'ip-claim-controller'
 
@@ -104,7 +105,6 @@ custom_build(
         BINARY_PATH,  # File dependency ensures binary exists before Docker build
         'dockerfiles/Dockerfile.ip-claim-controller.dev',
     ],
-    resource_deps=['build-ip-claim-controller'],  # Wait for build to complete
     tag='tilt',
     live_update=[
         sync(BINARY_PATH, '/app/ip-claim-controller'),

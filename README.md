@@ -145,7 +145,7 @@ See [ADR-001](ADRs/ADR-001-Scope_and_Non-Goals.md) for detailed scope decisions.
 
 1. ✅ Architecture and scope defined
 2. 🔄 PXE Intent Controller (in progress)
-3. ⏳ IP Claim Controller (planned)
+3. ✅ IP Claim Controller (implemented)
 4. ⏳ Integration testing with hardware
 
 ## Contributing

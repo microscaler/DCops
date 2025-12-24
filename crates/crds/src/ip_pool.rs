@@ -1,0 +1,68 @@
+//! IPPool CRD
+//!
+//! Defines IP address pools (references NetBox prefixes).
+
+use kube::CustomResource;
+use schemars::JsonSchema;
+use serde::{Deserialize, Serialize};
+
+#[derive(CustomResource, Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[kube(
+    group = "dcops.microscaler.io",
+    version = "v1alpha1",
+    kind = "IPPool",
+    namespaced
+)]
+#[serde(rename_all = "camelCase")]
+pub struct IPPoolSpec {
+    /// NetBox prefix reference
+    pub netbox_prefix_ref: NetBoxPrefixRef,
+    
+    /// Pool scope/role (e.g., "control-plane", "worker", "management")
+    #[serde(default)]
+    pub role: String,
+    
+    /// Allocation strategy
+    #[serde(default)]
+    pub allocation_strategy: AllocationStrategy,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct NetBoxPrefixRef {
+    /// NetBox prefix ID or name
+    pub id: String,
+    
+    /// NetBox site (optional)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub site: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, Default, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+pub enum AllocationStrategy {
+    /// Sequential allocation
+    #[default]
+    Sequential,
+    
+    /// Random allocation
+    Random,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct IPPoolStatus {
+    /// Total available IPs in pool
+    pub total_ips: u32,
+    
+    /// Allocated IPs
+    pub allocated_ips: u32,
+    
+    /// Available IPs
+    pub available_ips: u32,
+    
+    /// Last reconciliation timestamp
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_reconciled: Option<chrono::DateTime<chrono::Utc>>,
+}
+

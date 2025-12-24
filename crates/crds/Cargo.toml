@@ -1,0 +1,29 @@
+[package]
+name = "crds"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+keywords.workspace = true
+categories.workspace = true
+description = "DCops Kubernetes CRD definitions and types"
+
+[dependencies]
+# Workspace dependencies
+kube = { workspace = true }
+# k8s-openapi required by kube::CustomResource derive macro
+# kube 2.0 with k8s-openapi 0.26 supports up to v1_30
+# Using v1_30 to match secret-manager-controller (proven working)
+k8s-openapi = { workspace = true, features = ["v1_30"] }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+chrono = { workspace = true }
+
+# Kubernetes CRD generation
+# schemars 1.x uses "chrono04" feature instead of "chrono"
+schemars = { version = "1", features = ["derive", "chrono04"] }
+

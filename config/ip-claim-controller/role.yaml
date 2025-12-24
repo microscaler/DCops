@@ -1,0 +1,29 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: ip-claim-controller
+  namespace: dcops-system
+  labels:
+    app: ip-claim-controller
+rules:
+- apiGroups:
+  - dcops.microscaler.io
+  resources:
+  - ippools
+  - ipclaims
+  verbs:
+  - get
+  - list
+  - watch
+  - update
+  - patch
+- apiGroups:
+  - dcops.microscaler.io
+  resources:
+  - ippools/status
+  - ipclaims/status
+  verbs:
+  - get
+  - update
+  - patch
+

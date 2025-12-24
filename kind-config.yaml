@@ -1,0 +1,21 @@
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: dcops
+nodes:
+- role: control-plane
+  kubeadmConfigPatches:
+  - |
+    kind: InitConfiguration
+    nodeRegistration:
+      kubeletExtraArgs:
+        node-labels: "ingress-ready=true"
+# Note: Registry mirror configuration is handled dynamically by scripts/setup_kind.py
+# which uses the registry IP address for reliable connectivity
+networking:
+  # Use unique pod and service subnets to avoid conflicts with other Kind clusters
+  # Allocation: dcops cluster (3rd in sequence after secret-manager-controller)
+  # - Pod Subnet: 10.204.0.0/16 (unique, avoids default 10.244.0.0/16, secret-manager-controller 10.202.0.0/16)
+  # - Service Subnet: 10.205.0.0/16 (unique, avoids default 10.96.0.0/12, secret-manager-controller 10.203.0.0/16)
+  podSubnet: "10.204.0.0/16"
+  serviceSubnet: "10.205.0.0/16"
+

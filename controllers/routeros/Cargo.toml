@@ -1,0 +1,37 @@
+[package]
+name = "routeros-controller"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+keywords.workspace = true
+categories.workspace = true
+description = "RouterOS Controller for MikroTik RouterOS/SwitchOS device management (Phase 2+)"
+
+[dependencies]
+# Workspace dependencies
+tokio = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+kube = { workspace = true }
+kube-runtime = { workspace = true }
+k8s-openapi = { workspace = true, features = ["v1_30"] }  # Binary crate: enable version feature (0.26 supports up to v1_30)
+serde = { workspace = true }
+serde_json = { workspace = true }
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+reqwest = { workspace = true }
+uuid = { workspace = true }
+chrono = { workspace = true }
+
+# Local crates
+crds = { path = "../../crates/crds" }
+netbox-client = { path = "../../crates/netbox-client" }
+routeros-client = { path = "../../crates/routeros-client" }
+
+[dev-dependencies]
+# Testing dependencies to be added as needed
+

@@ -1,0 +1,32 @@
+[package]
+name = "pxe-server"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+keywords.workspace = true
+categories.workspace = true
+description = "PXE boot server implementation with IPv4 and IPv6 support (custom Rust PXE server using dhcproto + async-tftp + axum)"
+
+[dependencies]
+# Workspace dependencies
+tokio = { workspace = true }
+tracing = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+axum = { workspace = true }
+tower = { workspace = true }
+tower-http = { workspace = true }
+
+# PXE server dependencies
+# DHCP protocol handling
+dhcproto = "0.14"
+# TFTP server
+async-tftp = "0.4"
+# HTTP server (already in workspace as axum)
+

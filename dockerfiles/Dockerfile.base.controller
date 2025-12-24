@@ -1,0 +1,29 @@
+# Base image for DCops Controllers
+# Minimal runtime image with just the essentials
+# This base image is built once and published to:
+# - ghcr.io/microscaler/dcops-controller-base-image (primary)
+# - docker.io/microscaler/dcops-controller-base-image (mirror)
+# The controller Dockerfiles then just copy the binary onto this base image
+
+ARG TARGETPLATFORM=linux/amd64
+ARG TARGETARCH
+FROM debian:bookworm-slim
+
+# Re-declare TARGETARCH after FROM (ARGs are scoped)
+ARG TARGETARCH
+
+# Install minimal runtime dependencies
+# ca-certificates: Required for HTTPS connections (Kubernetes API, NetBox, etc.)
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create app directory with proper permissions
+WORKDIR /app
+RUN chmod -R 777 /app
+
+# Set runtime environment
+ENV RUST_BACKTRACE=1
+ENV RUST_LOG=info
+

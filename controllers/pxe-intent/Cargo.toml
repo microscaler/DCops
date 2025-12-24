@@ -1,0 +1,37 @@
+[package]
+name = "pxe-intent-controller"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+keywords.workspace = true
+categories.workspace = true
+description = "PXE Intent Controller for deterministic bare-metal boot control"
+
+[dependencies]
+# Workspace dependencies
+tokio = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+kube = { workspace = true }
+kube-runtime = { workspace = true }
+k8s-openapi = { workspace = true, features = ["v1_30"] }  # Binary crate: enable version feature (0.26 supports up to v1_30)
+serde = { workspace = true }
+serde_json = { workspace = true }
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+reqwest = { workspace = true }
+uuid = { workspace = true }
+chrono = { workspace = true }
+
+# Local crates
+crds = { path = "../../crates/crds" }
+netbox-client = { path = "../../crates/netbox-client" }
+pxe-server = { path = "../../crates/pxe-server" }
+
+[dev-dependencies]
+# Testing dependencies to be added as needed
+

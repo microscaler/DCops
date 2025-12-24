@@ -1,0 +1,71 @@
+# Rust Builder Base Image
+# Contains all build dependencies for compiling Rust projects
+# This base image is built once and published to ghcr.io/microscaler/dcops-rust-builder-base-image
+# The controller production Dockerfiles then use this for the builder stage
+
+ARG BUILDPLATFORM=linux/amd64
+ARG TARGETPLATFORM
+ARG TARGETARCH
+FROM --platform=$BUILDPLATFORM rust:1.92-bookworm
+
+# Install build dependencies
+# pkg-config: Required for finding system libraries
+# libssl-dev: Required for OpenSSL (used by many Rust crates)
+# git: Required for git dependencies in Cargo.toml
+# curl: Required for downloading dependencies
+# musl-tools: Required for musl target builds (Linux x86_64)
+# Note: GPG signature issues can occur in some Docker environments.
+# We work around this by updating GPG keys first, then installing packages.
+RUN apt-get clean && \
+    rm -rf /var/lib/apt/lists/* /etc/apt/sources.list.d/* && \
+    # Update GPG keys for Debian repositories
+    apt-key adv --keyserver keyserver.ubuntu.com --recv-keys 0E98404D386FA1D9 6ED0E7B82643E131 && \
+    apt-get update && \
+    apt-get install -y --no-install-recommends \
+    pkg-config \
+    libssl-dev \
+    git \
+    curl \
+    musl-tools \
+    && rm -rf /var/lib/apt/lists/*
+
+# Configure git to fetch full history for git dependencies
+# This ensures Cargo can access branches and commits from git dependencies
+# Required when using git dependencies with branches or specific commits
+RUN git config --global --add safe.directory '*' && \
+    git config --global init.defaultBranch main
+
+# Set working directory
+WORKDIR /build
+
+# Set build environment
+ENV CARGO_NET_GIT_FETCH_WITH_CLI=true
+ENV RUST_BACKTRACE=1
+
+# Pre-cache Rust dependencies
+# Copy workspace Cargo files from build context to pre-download dependencies
+# This significantly speeds up subsequent builds by caching downloaded dependencies
+# The build context (.) includes Cargo.toml and Cargo.lock from the project root
+# Dependencies are downloaded to ~/.cargo/registry and ~/.cargo/git, which persist in the image
+COPY Cargo.toml Cargo.lock* ./
+
+# Copy crate Cargo files for all crates
+COPY crates/crds/Cargo.toml ./crates/crds/
+COPY crates/netbox-client/Cargo.toml ./crates/netbox-client/
+COPY crates/routeros-client/Cargo.toml ./crates/routeros-client/
+COPY crates/pxe-server/Cargo.toml ./crates/pxe-server/
+
+# Copy controller Cargo files
+COPY controllers/pxe-intent/Cargo.toml ./controllers/pxe-intent/
+COPY controllers/ip-claim/Cargo.toml ./controllers/ip-claim/
+COPY controllers/routeros/Cargo.toml ./controllers/routeros/
+
+# Fetch all dependencies (downloads but doesn't compile)
+# This pre-populates ~/.cargo/registry and ~/.cargo/git with all dependency sources
+# Subsequent builds will be faster because dependencies are already downloaded
+# Use --locked to respect Cargo.lock versions exactly
+RUN cargo fetch --locked 2>/dev/null || true && \
+    # Clean up Cargo files (they'll be copied again in production builds)
+    # Downloaded dependencies remain in ~/.cargo/registry and ~/.cargo/git
+    rm -f Cargo.toml Cargo.lock*
+

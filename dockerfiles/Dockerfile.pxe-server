@@ -1,0 +1,81 @@
+# Production Dockerfile for PXE Server
+# Multi-stage build that compiles the Rust binary inside Docker
+# This is used for production builds with docker buildx
+# PXE Server is a standalone service (not a Kubernetes controller)
+
+# Stage 1: Build the Rust binary
+# Uses pre-built Rust builder base image with all build dependencies
+ARG BUILDPLATFORM=linux/amd64
+FROM --platform=$BUILDPLATFORM docker.io/microscaler/dcops-rust-builder-base-image:latest AS builder
+
+# Build arguments for build.rs (if needed)
+ARG BUILD_GIT_HASH=unknown
+ARG BUILD_TIMESTAMP
+ARG BUILD_DATETIME
+
+# Base image already has:
+# - Rust toolchain (1.92)
+# - Build dependencies (pkg-config, libssl-dev, git, curl, musl-tools)
+# - Git configuration (safe.directory, init.defaultBranch)
+# - Working directory (/build)
+# - Environment variables (CARGO_NET_GIT_FETCH_WITH_CLI, RUST_BACKTRACE)
+# - Pre-cached dependencies
+
+# Copy workspace Cargo files first for better layer caching
+COPY Cargo.toml Cargo.lock* ./
+
+# Copy crate Cargo files
+COPY crates/pxe-server/Cargo.toml ./crates/pxe-server/
+
+# Copy source code
+COPY crates/pxe-server/src ./crates/pxe-server/src
+
+# Build the binary in release mode with optimizations
+# Use --locked to ensure Cargo.lock is respected and transitive dependencies resolve correctly
+# CARGO_NET_GIT_FETCH_WITH_CLI=true forces Cargo to use git CLI instead of libgit2
+# RUSTFLAGS="-C link-arg=-s" strips debug symbols to reduce binary size
+# Build for musl target for static linking (no glibc dependency)
+RUN BUILD_GIT_HASH=${BUILD_GIT_HASH} \
+    BUILD_TIMESTAMP=${BUILD_TIMESTAMP} \
+    BUILD_DATETIME=${BUILD_DATETIME} \
+    CARGO_NET_GIT_FETCH_WITH_CLI=true \
+    RUSTFLAGS="-C link-arg=-s" \
+    CC_x86_64_unknown_linux_musl=musl-gcc \
+    CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER=musl-gcc \
+    cargo build --release --locked --target x86_64-unknown-linux-musl --lib --package pxe-server && \
+    # Note: pxe-server is a library, not a binary. If we need a binary entry point, add it.
+    # For now, this builds the library. Adjust if pxe-server needs a main binary.
+    echo "Built pxe-server library"
+
+# Stage 2: Runtime image
+# Uses pre-built base image with minimal runtime dependencies
+FROM docker.io/microscaler/dcops-controller-base-image:latest
+
+# Base image already has:
+# - ca-certificates
+# - /app directory with proper permissions
+# - Environment variables (RUST_BACKTRACE, RUST_LOG)
+
+# WORKDIR is already set to /app in base image
+
+# Note: pxe-server is currently a library crate.
+# If a binary is needed, uncomment below and adjust the build command above:
+# COPY --from=builder /build/target/x86_64-unknown-linux-musl/release/pxe-server /app/pxe-server
+# RUN chmod +x /app/pxe-server
+
+# Expose PXE server ports
+# - 67: DHCP/ProxyDHCP (IPv4)
+# - 4011: ProxyDHCP (IPv4)
+# - 547: DHCPv6
+# - 69: TFTP (IPv4)
+# - 80/8080: HTTP/iPXE (IPv4/IPv6)
+# - 8080: API server (IPv4/IPv6)
+EXPOSE 67/udp 4011/udp 547/udp 69/udp 80 8080
+
+# Set runtime environment
+ENV RUST_BACKTRACE=1
+ENV RUST_LOG=info
+
+# Note: Add ENTRYPOINT when binary is implemented
+# ENTRYPOINT ["/app/pxe-server"]
+

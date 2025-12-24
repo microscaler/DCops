@@ -1,0 +1,14 @@
+apiVersion: dcops.microscaler.io/v1alpha1
+kind: IPClaim
+metadata:
+  name: talos-control-plane-01
+  namespace: default
+spec:
+  poolRef:
+    name: control-plane-pool
+    namespace: default
+  deviceRef:
+    name: "talos-control-plane-01"
+    interface: "eth0"
+  preferredIp: "192.168.1.10/24"  # Optional hint
+

@@ -1,0 +1,12 @@
+   ghuttyapiVersion: dcops.microscaler.io/v1alpha1
+kind: IPPool
+metadata:
+  name: control-plane-pool
+  namespace: default
+spec:
+  netboxPrefixRef:
+    id: "1"  # NetBox prefix ID - update this to match your NetBox prefix
+    site: "datacenter-1"  # Optional
+  role: "control-plane"
+  allocationStrategy: sequential
+

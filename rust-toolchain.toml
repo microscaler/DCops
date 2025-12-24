@@ -1,0 +1,6 @@
+[toolchain]
+channel = "stable"
+components = ["rustfmt", "clippy"]
+# Note: Rust 2024 edition is not yet available
+# Using 2021 edition for now, will update to 2024 when released
+

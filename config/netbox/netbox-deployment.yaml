@@ -1,0 +1,107 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: netbox
+  namespace: netbox
+  labels:
+    app: netbox
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: netbox
+  template:
+    metadata:
+      labels:
+        app: netbox
+    spec:
+      initContainers:
+      - name: migrate
+        image: netboxcommunity/netbox:v4.0.0
+        command:
+        - /opt/netbox/venv/bin/python
+        - /opt/netbox/netbox/manage.py
+        - migrate
+        env:
+        - name: DB_HOST
+          value: postgres
+        - name: DB_NAME
+          value: netbox
+        - name: DB_USER
+          value: netbox
+        - name: DB_PASSWORD
+          value: netbox
+        - name: REDIS_HOST
+          value: redis
+        - name: REDIS_PORT
+          value: "6379"
+        - name: SECRET_KEY
+          value: development-secret-key-for-local-testing-only-change-in-production-this-is-50-chars
+        - name: ALLOWED_HOSTS
+          value: "*"
+      - name: create-superuser
+        image: netboxcommunity/netbox:v4.0.0
+        command:
+        - /bin/bash
+        - -c
+        - |
+          /opt/netbox/venv/bin/python /opt/netbox/netbox/manage.py createsuperuser --noinput --username admin --email admin@example.com || true
+          /opt/netbox/venv/bin/python /opt/netbox/netbox/manage.py shell -c "from django.contrib.auth import get_user_model; User = get_user_model(); admin = User.objects.get(username='admin'); admin.set_password('admin'); admin.save()" || true
+        env:
+        - name: DB_HOST
+          value: postgres
+        - name: DB_NAME
+          value: netbox
+        - name: DB_USER
+          value: netbox
+        - name: DB_PASSWORD
+          value: netbox
+        - name: REDIS_HOST
+          value: redis
+        - name: REDIS_PORT
+          value: "6379"
+        - name: SECRET_KEY
+          value: development-secret-key-for-local-testing-only-change-in-production-this-is-50-chars
+        - name: ALLOWED_HOSTS
+          value: "*"
+        - name: SUPERUSER_NAME
+          value: admin
+        - name: SUPERUSER_EMAIL
+          value: admin@example.com
+        - name: SUPERUSER_PASSWORD
+          value: admin
+      containers:
+      - name: netbox
+        image: netboxcommunity/netbox:v4.0.0
+        ports:
+        - containerPort: 8080
+          name: http
+        env:
+        - name: DB_HOST
+          value: postgres
+        - name: DB_NAME
+          value: netbox
+        - name: DB_USER
+          value: netbox
+        - name: DB_PASSWORD
+          value: netbox
+        - name: REDIS_HOST
+          value: redis
+        - name: REDIS_PORT
+          value: "6379"
+        - name: SECRET_KEY
+          value: development-secret-key-for-local-testing-only-change-in-production-this-is-50-chars
+        - name: ALLOWED_HOSTS
+          value: "*"
+        livenessProbe:
+          httpGet:
+            path: /api/
+            port: 8080
+          initialDelaySeconds: 60
+          periodSeconds: 30
+        readinessProbe:
+          httpGet:
+            path: /api/
+            port: 8080
+          initialDelaySeconds: 30
+          periodSeconds: 10

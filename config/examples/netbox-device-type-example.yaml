@@ -1,0 +1,18 @@
+apiVersion: dcops.microscaler.io/v1alpha1
+kind: NetBoxDeviceType
+metadata:
+  name: raspberry-pi-4-model-b
+  namespace: default
+spec:
+  manufacturer:
+    apiGroup: "dcops.microscaler.io"
+    kind: "NetBoxManufacturer"
+    name: "raspberry-pi"
+  model: "Raspberry Pi 4 Model B"
+  slug: "raspberry-pi-4-model-b"
+  partNumber: "RPI4-MODB-4GB"
+  uHeight: 1.0  # Rack units (1U)
+  isFullDepth: false
+  description: "Raspberry Pi 4 Model B with 4GB RAM"
+  comments: "Managed by DCops"
+

@@ -1,0 +1,11 @@
+apiVersion: dcops.microscaler.io/v1alpha1
+kind: NetBoxAggregate
+metadata:
+  name: private-network-aggregate
+  namespace: default
+spec:
+  prefix: "192.168.0.0/16"
+  rir: "ARIN"
+  description: "Private network aggregate for internal use"
+  comments: "Managed by DCops"
+

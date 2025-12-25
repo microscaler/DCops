@@ -1,7 +1,7 @@
 [workspace]
 members = [
     "controllers/pxe-intent",
-    "controllers/ip-claim",
+    "controllers/netbox",
     "controllers/routeros",
     "crates/netbox-client",
     "crates/routeros-client",

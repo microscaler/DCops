@@ -1,0 +1,15 @@
+apiVersion: dcops.microscaler.io/v1alpha1
+kind: NetBoxRegion
+metadata:
+  name: us-east
+  namespace: default
+spec:
+  name: "US East"
+  slug: "us-east"
+  description: "US East region for datacenter operations"
+  # Optional: parent region for hierarchical organization
+  # parent:
+  #   apiGroup: "dcops.microscaler.io"
+  #   kind: "NetBoxRegion"
+  #   name: "north-america"
+

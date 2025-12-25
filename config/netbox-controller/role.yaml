@@ -1,0 +1,74 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: netbox-controller
+  labels:
+    app: netbox-controller
+rules:
+- apiGroups:
+  - dcops.microscaler.io
+  resources:
+  # IPAM resources
+  - netboxprefixes
+  - netboxroles
+  - netboxtags
+  - netboxaggregates
+  - netboxvlans
+  # Tenancy resources
+  - netboxtenants
+  # DCIM resources - Sites
+  - netboxregions
+  - netboxsitegroups
+  - netboxlocations
+  - netboxsites
+  # DCIM resources - Devices
+  - netboxdeviceroles
+  - netboxmanufacturers
+  - netboxplatforms
+  - netboxdevicetypes
+  - netboxdevices
+  - netboxinterfaces
+  - netboxmacaddresses
+  # Custom CRDs
+  - ippools
+  - ipclaims
+  verbs:
+  - get
+  - list
+  - watch
+  - update
+  - patch
+  - create
+  - delete
+- apiGroups:
+  - dcops.microscaler.io
+  resources:
+  # IPAM resources
+  - netboxprefixes/status
+  - netboxroles/status
+  - netboxtags/status
+  - netboxaggregates/status
+  - netboxvlans/status
+  # Tenancy resources
+  - netboxtenants/status
+  # DCIM resources - Sites
+  - netboxregions/status
+  - netboxsitegroups/status
+  - netboxlocations/status
+  - netboxsites/status
+  # DCIM resources - Devices
+  - netboxdeviceroles/status
+  - netboxmanufacturers/status
+  - netboxplatforms/status
+  - netboxdevicetypes/status
+  - netboxdevices/status
+  - netboxinterfaces/status
+  - netboxmacaddresses/status
+  # Custom CRDs
+  - ippools/status
+  - ipclaims/status
+  verbs:
+  - get
+  - update
+  - patch
+

@@ -1,0 +1,11 @@
+apiVersion: dcops.microscaler.io/v1alpha1
+kind: NetBoxTenant
+metadata:
+  name: datacenter-tenant
+  namespace: default
+spec:
+  name: "Data Center Operations"
+  slug: "datacenter-ops"
+  description: "Primary tenant for datacenter operations"
+  comments: "Managed by DCops"
+

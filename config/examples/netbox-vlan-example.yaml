@@ -1,0 +1,24 @@
+apiVersion: dcops.microscaler.io/v1alpha1
+kind: NetBoxVLAN
+metadata:
+  name: control-plane-vlan
+  namespace: default
+spec:
+  vid: 100  # VLAN ID (1-4094)
+  name: "Control Plane VLAN"
+  site:
+    apiGroup: "dcops.microscaler.io"
+    kind: "NetBoxSite"
+    name: "datacenter-1"
+  tenant:
+    apiGroup: "dcops.microscaler.io"
+    kind: "NetBoxTenant"
+    name: "datacenter-tenant"
+  role:
+    apiGroup: "dcops.microscaler.io"
+    kind: "NetBoxRole"
+    name: "control-plane"
+  status: active  # active, reserved, deprecated
+  description: "VLAN for Kubernetes control plane traffic"
+  comments: "Managed by DCops"
+

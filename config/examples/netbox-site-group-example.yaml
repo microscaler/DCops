@@ -1,0 +1,15 @@
+apiVersion: dcops.microscaler.io/v1alpha1
+kind: NetBoxSiteGroup
+metadata:
+  name: production-sites
+  namespace: default
+spec:
+  name: "Production Sites"
+  slug: "production-sites"
+  description: "Production datacenter sites"
+  # Optional: parent site group for hierarchical organization
+  # parent:
+  #   apiGroup: "dcops.microscaler.io"
+  #   kind: "NetBoxSiteGroup"
+  #   name: "all-sites"
+

@@ -1,0 +1,10 @@
+apiVersion: dcops.microscaler.io/v1alpha1
+kind: NetBoxManufacturer
+metadata:
+  name: raspberry-pi
+  namespace: default
+spec:
+  name: "Raspberry Pi"
+  slug: "raspberry-pi"
+  description: "Raspberry Pi Foundation single-board computers"
+

@@ -1,0 +1,15 @@
+apiVersion: dcops.microscaler.io/v1alpha1
+kind: NetBoxPlatform
+metadata:
+  name: talos-linux
+  namespace: default
+spec:
+  name: "Talos Linux"
+  slug: "talos-linux"
+  manufacturer:
+    apiGroup: "dcops.microscaler.io"
+    kind: "NetBoxManufacturer"
+    name: "raspberry-pi"
+  description: "Talos Linux for Kubernetes on Raspberry Pi"
+  comments: "Managed by DCops for Pi cluster deployments"
+

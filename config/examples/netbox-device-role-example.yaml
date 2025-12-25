@@ -1,0 +1,13 @@
+apiVersion: dcops.microscaler.io/v1alpha1
+kind: NetBoxDeviceRole
+metadata:
+  name: kubernetes-control-plane
+  namespace: default
+spec:
+  name: "Kubernetes Control Plane"
+  slug: "kubernetes-control-plane"
+  color: "2196f3"  # Blue color for control plane
+  vmRole: false  # Physical device role
+  description: "Kubernetes control plane nodes"
+  comments: "Managed by DCops"
+

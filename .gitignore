@@ -24,3 +24,5 @@ Thumbs.db
 *.dylib
 *.dll
 
+__pycache__/
+*.pyc

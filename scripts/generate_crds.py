@@ -183,6 +183,12 @@ def main():
         "ippools.dcops.microscaler.io",
         "bootprofiles.dcops.microscaler.io",
         "bootintents.dcops.microscaler.io",
+        "netboxprefixes.dcops.microscaler.io",
+        "netboxtenants.dcops.microscaler.io",
+        "netboxsites.dcops.microscaler.io",
+        "netboxroles.dcops.microscaler.io",
+        "netboxtags.dcops.microscaler.io",
+        "netboxaggregates.dcops.microscaler.io",
     ]
     
     max_attempts = 30  # Wait up to 1 minute

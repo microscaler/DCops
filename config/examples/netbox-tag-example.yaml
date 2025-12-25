@@ -1,0 +1,12 @@
+apiVersion: dcops.microscaler.io/v1alpha1
+kind: NetBoxTag
+metadata:
+  name: managed-by-dcops
+  namespace: default
+spec:
+  name: "managed-by-dcops"
+  slug: "managed-by-dcops"
+  description: "Resource managed by DCops controller"
+  color: "9e9e9e"
+  comments: "Auto-managed tag"
+

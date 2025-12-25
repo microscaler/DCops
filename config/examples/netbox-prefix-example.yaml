@@ -1,0 +1,39 @@
+apiVersion: dcops.microscaler.io/v1alpha1
+kind: NetBoxPrefix
+metadata:
+  name: control-plane-prefix
+  namespace: default
+spec:
+  prefix: "192.168.1.0/24"
+  description: "Control plane IP address pool for Talos clusters"
+  status: active
+  # Kubernetes-compliant object references (apiGroup, kind, name, optional namespace)
+  site:
+    apiGroup: "dcops.microscaler.io"
+    kind: "NetBoxSite"
+    name: "datacenter-1"
+  tenant:
+    apiGroup: "dcops.microscaler.io"
+    kind: "NetBoxTenant"
+    name: "datacenter-tenant"
+  aggregate:
+    apiGroup: "dcops.microscaler.io"
+    kind: "NetBoxAggregate"
+    name: "private-network-aggregate"
+  vlan:
+    apiGroup: "dcops.microscaler.io"
+    kind: "NetBoxVLAN"
+    name: "control-plane-vlan"
+  role:
+    apiGroup: "dcops.microscaler.io"
+    kind: "NetBoxRole"
+    name: "control-plane"
+  tags:
+    - apiGroup: "dcops.microscaler.io"
+      kind: "NetBoxTag"
+      name: "managed-by-dcops"
+    - apiGroup: "dcops.microscaler.io"
+      kind: "NetBoxTag"
+      name: "role-control-plane"
+  comments: "Managed by DCops controller"
+

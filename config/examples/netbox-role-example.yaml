@@ -1,0 +1,12 @@
+apiVersion: dcops.microscaler.io/v1alpha1
+kind: NetBoxRole
+metadata:
+  name: control-plane
+  namespace: default
+spec:
+  name: "Control Plane"
+  slug: "control-plane"
+  description: "IP addresses for Kubernetes control plane nodes"
+  weight: 10
+  comments: "Managed by DCops"
+

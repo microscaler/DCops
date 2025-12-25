@@ -1,0 +1,11 @@
+apiVersion: dcops.microscaler.io/v1alpha1
+kind: NetBoxMACAddress
+metadata:
+  name: talos-control-plane-01-eth0-mac
+  namespace: default
+spec:
+  macAddress: "aa:bb:cc:dd:ee:ff"  # MAC address (format: "aa:bb:cc:dd:ee:ff" or "aa-bb-cc-dd-ee-ff")
+  interface: "talos-control-plane-01/eth0"  # Format: "<device-name>/<interface-name>" (references NetBoxInterface CRD)
+  description: "MAC address for control plane node primary interface"
+  comments: "Managed by DCops"
+

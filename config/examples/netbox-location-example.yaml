@@ -1,0 +1,19 @@
+apiVersion: dcops.microscaler.io/v1alpha1
+kind: NetBoxLocation
+metadata:
+  name: datacenter-1-rack-a
+  namespace: default
+spec:
+  name: "Rack A"
+  slug: "rack-a"
+  site:
+    apiGroup: "dcops.microscaler.io"
+    kind: "NetBoxSite"
+    name: "datacenter-1"
+  description: "Rack A in datacenter-1"
+  # Optional: parent location for nested locations
+  # parent:
+  #   apiGroup: "dcops.microscaler.io"
+  #   kind: "NetBoxLocation"
+  #   name: "datacenter-1-floor-1"
+

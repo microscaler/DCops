@@ -89,11 +89,23 @@ test-unit-verbose:
     @echo "🧪 Running unit tests (verbose)..."
     @cargo test --workspace --lib -- --nocapture --no-fail-fast
 
-# Run tests with coverage
+# Run tests with LLVM coverage
 test-coverage:
-    @echo "🧪 Running tests with coverage..."
-    @cargo test --workspace --lib --no-fail-fast
-    @echo "📊 Coverage report: target/debug/coverage/"
+    @echo "🧪 Running tests with LLVM coverage..."
+    @echo "📦 Installing cargo-llvm-cov if needed..."
+    @cargo install cargo-llvm-cov --locked 2>/dev/null || true
+    @echo "🔍 Generating coverage report..."
+    @cargo llvm-cov --workspace --lib --lcov --output-path lcov.info
+    @cargo llvm-cov --workspace --lib --html --output-dir target/llvm-cov/html
+    @echo "✅ Coverage report generated:"
+    @echo "   📊 HTML: target/llvm-cov/html/index.html"
+    @echo "   📄 LCOV: lcov.info"
+    @cargo llvm-cov --workspace --lib --summary-only
+
+# Open coverage report in browser
+test-coverage-open:
+    @echo "🌐 Opening coverage report..."
+    @open target/llvm-cov/html/index.html || xdg-open target/llvm-cov/html/index.html || echo "Please open target/llvm-cov/html/index.html manually"
 
 # ============================================================================
 # Code Quality
@@ -129,9 +141,15 @@ check:
     @echo "✅ Checking code..."
     @cargo check --workspace --all-targets
 
-# Validate all (format, lint, check, tests)
-validate: fmt-check lint check test-unit
+# Validate all (format, lint, check, tests, coverage)
+validate: fmt-check lint check test-unit test-coverage-check
     @echo "✅ All validations passed!"
+
+# Check coverage meets minimum (65%)
+test-coverage-check:
+    @echo "📊 Checking test coverage (minimum 65%)..."
+    @cargo install cargo-llvm-cov --locked 2>/dev/null || true
+    @cargo llvm-cov --workspace --lib --summary-only | grep -E "^\s*Total\s+\|\s+[0-9]+\s+\|\s+[0-9]+\s+\|\s+([0-9]+)%" || echo "⚠️  Could not parse coverage, run 'just test-coverage' for full report"
 
 # ============================================================================
 # Deployment
@@ -215,6 +233,28 @@ netbox-status:
 port-forward-netbox:
     @echo "🔌 Port forwarding to NetBox (8000)..."
     @kubectl port-forward -n netbox svc/netbox 8000:80
+
+# Manage NetBox API token for IP Claim Controller
+# Usage: just netbox-token
+#   Or with token: NETBOX_TOKEN=abc123 just netbox-token
+#   Or with URL: NETBOX_URL=http://localhost:8001 just netbox-token
+netbox-token:
+    @echo "🔑 Managing NetBox API token..."
+    @python3 scripts/manage_netbox_token.py
+
+# Create a NetBox prefix
+# Usage: NETBOX_TOKEN=<token> just netbox-create-prefix --prefix 192.168.1.0/24
+netbox-create-prefix prefix:
+    @echo "📝 Creating NetBox prefix..."
+    @python3 scripts/create_netbox_prefix.py --token $${NETBOX_TOKEN} --prefix $(prefix)
+
+# Verify NetBox CR reconciliation
+# Usage: just verify-netbox-crs
+#   Or verify specific CRD: just verify-netbox-crs --crd netboxprefixes
+#   Or verify specific CR: just verify-netbox-crs --crd netboxprefixes --name control-plane-prefix
+verify-netbox-crs:
+    @echo "🔍 Verifying NetBox CR reconciliation..."
+    @python3 scripts/verify_netbox_crs.py --all
 
 # ============================================================================
 # Dependencies & Tools

@@ -1,0 +1,33 @@
+# Development Dockerfile for NetBox Controller (Tilt/local dev)
+# Binary is cross-compiled on host (Apple Silicon -> x86_64 Linux) and copied in
+# Standard development Dockerfile pattern
+# Uses pre-built base image with minimal runtime dependencies
+
+ARG TARGETPLATFORM=linux/amd64
+FROM docker.io/microscaler/dcops-controller-base-image:latest
+
+# Base image already has:
+# - ca-certificates
+# - /app directory with proper permissions
+# - Environment variables (RUST_BACKTRACE, RUST_LOG)
+
+# WORKDIR is already set to /app in base image
+
+# Copy pre-built binary from target directory (x86_64 Linux musl target)
+# Note: Binary must exist before Docker build (ensured by Tilt deps or local build)
+# Copy from target directory directly (release build for production-like testing)
+# Path is relative to context (project root), so target/ is at the root
+COPY target/x86_64-unknown-linux-musl/release/netbox-controller /app/netbox-controller
+
+# Make binary executable
+# Verify file exists and set permissions (fail fast if file is missing)
+RUN test -f /app/netbox-controller && \
+    chmod +x /app/netbox-controller
+
+# Set runtime environment
+ENV RUST_BACKTRACE=1
+ENV RUST_LOG=info
+
+# Run the controller
+ENTRYPOINT ["/app/netbox-controller"]
+

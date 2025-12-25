@@ -1,0 +1,26 @@
+apiVersion: dcops.microscaler.io/v1alpha1
+kind: NetBoxSite
+metadata:
+  name: datacenter-1
+  namespace: default
+spec:
+  name: "Data Center 1"
+  slug: "datacenter-1"
+  description: "Primary datacenter facility"
+  status: active
+  tenant:
+    apiGroup: "dcops.microscaler.io"
+    kind: "NetBoxTenant"
+    name: "datacenter-tenant"
+  region:
+    apiGroup: "dcops.microscaler.io"
+    kind: "NetBoxRegion"
+    name: "us-east"
+  siteGroup:
+    apiGroup: "dcops.microscaler.io"
+    kind: "NetBoxSiteGroup"
+    name: "production-sites"
+  facility: "DC1"
+  timeZone: "UTC"
+  comments: "Managed by DCops"
+

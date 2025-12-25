@@ -146,6 +146,30 @@ We follow the [Pragmatic Rust Guidelines](./rust-guidelines.txt). Key points:
 - **Unit tests:** In the same file as the code (`#[cfg(test)] mod tests`)
 - **Integration tests:** In `tests/` directory
 - **Test utilities:** Behind `test-util` feature flag (see `M-TEST-UTIL`)
+- **Test coverage:** Minimum 65% coverage required, target 80% coverage
+- **Coverage tooling:** Use `cargo-llvm-cov` for coverage reports
+- **Coverage verification:** Run `just test-coverage` before committing
+
+### Critical Rule: Compilation ≠ Working
+
+> **MANDATORY:** Code that compiles is NOT considered working. You MUST verify functionality.
+
+**Verification Requirements:**
+
+1. ✅ **Code compiles** - `cargo check` passes
+2. ✅ **Tests pass** - `cargo test` passes with adequate coverage
+3. ✅ **Integration verification** - For controllers, verify CRs reconcile correctly
+4. ✅ **Database verification** - For NetBox resources, verify they exist in the database
+5. ✅ **End-to-end verification** - Use `scripts/verify_netbox_crs.py` to verify reconciliation
+
+**Never claim code is working just because it compiles.**
+
+**For NetBox Controllers specifically:**
+- After implementing reconciliation logic, verify:
+  - CRD exists: `kubectl get crd <crd-name>`
+  - CR has status: `kubectl get <crd> <name> -o jsonpath='{.status}'`
+  - Resource in NetBox: Use `python3 scripts/verify_netbox_crs.py --crd <crd> --name <name>`
+- Use the verification script: `just verify-netbox-crs` or `python3 scripts/verify_netbox_crs.py --all`
 
 ### Documentation
 
@@ -197,6 +221,7 @@ pub async fn allocate_ip(&self, prefix_id: u64) -> Result<IPAddress, NetBoxError
 3. **Follow TDD principles**
    - Write tests first
    - Keep test modules small and focused
+   - Aim for 65%+ coverage minimum, 80% target
 
 ### During Development
 
@@ -212,6 +237,17 @@ pub async fn allocate_ip(&self, prefix_id: u64) -> Result<IPAddress, NetBoxError
    - Add module docs (`//!`) immediately
    - Add function docs before implementation
 
+4. **Write tests as you implement**
+   - Don't wait until the end to write tests
+   - Test each function/module as you complete it
+   - Run `just test-coverage` regularly to check coverage
+
+5. **Verify functionality, not just compilation**
+   - After implementing a feature, verify it actually works
+   - For controllers: Verify CRs reconcile correctly
+   - Use verification scripts: `just verify-netbox-crs`
+   - Check coverage meets minimum requirements
+
 ### Code Review Checklist
 
 - [ ] Module structure is clear and logical
@@ -220,6 +256,11 @@ pub async fn allocate_ip(&self, prefix_id: u64) -> Result<IPAddress, NetBoxError
 - [ ] All public items are documented
 - [ ] Error types are properly structured
 - [ ] Tests are included and passing
+- [ ] Test coverage meets minimum (65%, target 80%)
+- [ ] Coverage report generated and reviewed (`just test-coverage`)
+- [ ] **Functionality verified** - Not just compilation
+- [ ] For controllers: CRs verified to reconcile correctly
+- [ ] For NetBox resources: Verified in database using verification script
 - [ ] No `util` or `common` modules
 
 ## Examples
@@ -298,9 +339,16 @@ pub struct Controller {
 
 ## Enforcement
 
-- **Pre-commit hooks:** Check for module size limits
-- **CI/CD:** Fail builds if any module exceeds 500 lines
-- **Code review:** Reject PRs that add large monolithic files
+- **Pre-commit hooks:** Check for module size limits and test coverage
+- **CI/CD:** Fail builds if:
+  - Any module exceeds 500 lines
+  - Test coverage is below 65%
+  - Tests fail
+- **Code review:** Reject PRs that:
+  - Add large monolithic files
+  - Have insufficient test coverage (< 65%)
+  - Claim functionality works without verification
+  - Don't include verification steps for controllers
 
 ## Questions?
 
@@ -310,4 +358,288 @@ If you're unsure about module organization:
 3. When in doubt, **create more modules, not fewer**
 
 Remember: **It's cheaper to have too many small modules than one huge file.**
+
+---
+
+## Test Coverage Requirements
+
+### Coverage Tooling
+
+We use `cargo-llvm-cov` for LLVM-based code coverage analysis.
+
+**Installation:**
+```bash
+cargo install cargo-llvm-cov --locked
+```
+
+**Usage:**
+```bash
+# Generate coverage report
+just test-coverage
+
+# Open HTML report
+just test-coverage-open
+```
+
+### Coverage Targets
+
+- **Minimum:** 65% line coverage
+- **Target:** 80% line coverage
+- **Enforcement:** CI/CD will fail if coverage is below 65%
+
+### Coverage Reports
+
+Coverage reports are generated in:
+- **HTML:** `target/llvm-cov/html/index.html` (open with `just test-coverage-open`)
+- **LCOV:** `lcov.info` (for CI/CD integration)
+
+### What to Test
+
+- **All public APIs** - Every public function should have tests
+- **Error paths** - Test error conditions and edge cases
+- **Integration points** - Test interactions between modules
+- **Controller reconciliation** - Test reconciliation logic thoroughly
+
+### Coverage Exclusions
+
+Some code may be excluded from coverage:
+- Generated code (if marked appropriately)
+- Platform-specific code that can't be tested
+- Main entry points (if they just delegate)
+
+**Note:** Exclusions should be documented and justified.
+
+## Complete CRD Implementation Checklist
+
+When adding a new NetBox CRD, you **MUST** implement all of the following components in a single pass. This checklist ensures nothing is missed and avoids expensive back-and-forth iterations.
+
+### 1. CRD Definition (`crates/crds/src/`)
+
+#### 1.1 Create CRD Module File
+- [ ] Create file in appropriate module directory:
+  - `dcim/` for DCIM resources (sites, devices, etc.)
+  - `ipam/` for IPAM resources (prefixes, IPs, VLANs, etc.)
+  - `tenancy/` for tenancy resources (tenants, tenant groups)
+  - `extras/` for extras (tags, custom fields)
+- [ ] File name: `netbox_<resource_name>.rs` (e.g., `netbox_region.rs`)
+
+#### 1.2 Define CRD Struct
+- [ ] Define `NetBox<Resource>Spec` struct with:
+  - `#[derive(CustomResource, Debug, Clone, Serialize, Deserialize, JsonSchema)]`
+  - `#[kube(group = "dcops.microscaler.io", version = "v1alpha1", kind = "NetBox<Resource>", namespaced, status = "NetBox<Resource>Status")]`
+  - `#[serde(rename_all = "camelCase")]`
+  - All required fields from NetBox API
+  - Optional fields with `#[serde(skip_serializing_if = "Option::is_none")]`
+  - Default values where appropriate
+
+#### 1.3 Define Status Struct
+- [ ] Define `NetBox<Resource>Status` struct with:
+  - `#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, Default)]`
+  - `#[serde(rename_all = "camelCase")]`
+  - `netbox_id: Option<u64>`
+  - `netbox_url: Option<String>`
+  - `state: ResourceState` (or `PrefixState` for prefixes, `AllocationState` for IP claims)
+  - `error: Option<String>`
+  - `last_reconciled: Option<DateTime<Utc>>`
+
+#### 1.4 Define Enums (if needed)
+- [ ] Define status enums with `#[serde(rename_all = "PascalCase")]` (e.g., `Created`, `Failed`, not `created`, `failed`)
+
+### 2. CRD Module Registration
+
+#### 2.1 Update Module File (`crates/crds/src/<module>/mod.rs`)
+- [ ] Add `pub mod netbox_<resource_name>;`
+- [ ] Add `pub use netbox_<resource_name>::*;`
+
+#### 2.2 Update Main Library (`crates/crds/src/lib.rs`)
+- [ ] Ensure module is exported (already done if module file is correct)
+
+### 3. CRD Generation (`crates/crds/src/bin/crdgen.rs`)
+
+- [ ] Add import: `use crds::<module>::NetBox<Resource>;`
+- [ ] Add to CRD list: `crds.push(NetBox<Resource>::crd());`
+- [ ] Run `cargo run -p crds --bin crdgen > config/crd/all-crds.yaml` to regenerate CRDs
+
+### 4. NetBox Client Models (`crates/netbox-client/src/models.rs`)
+
+- [ ] Add NetBox API model struct (e.g., `Region`, `SiteGroup`, `Location`)
+- [ ] Include all fields from NetBox API response
+- [ ] Use `#[serde(rename_all = "snake_case")]` for NetBox API models
+- [ ] Add nested reference types if needed (e.g., `NestedRegion`, `NestedSiteGroup`)
+
+### 5. NetBox Client Methods (`crates/netbox-client/src/client.rs`)
+
+- [ ] Add `query_<resources>(&self, filters: &[(&str, &str)], fetch_all: bool) -> Result<Vec<Resource>, NetBoxError>`
+- [ ] Add `get_<resource>(&self, id: u64) -> Result<Resource, NetBoxError>`
+- [ ] Add `get_<resource>_by_name(&self, name: &str) -> Result<Option<Resource>, NetBoxError>`
+- [ ] Add `create_<resource>(&self, ...) -> Result<Resource, NetBoxError>`
+- [ ] Add `update_<resource>(&self, id: u64, ...) -> Result<Resource, NetBoxError>` (if needed)
+- [ ] Handle pagination in query methods (`fetch_all: true` should get all pages)
+- [ ] Handle required fields (e.g., auto-generate `slug` if missing)
+
+### 6. Reconciliation Logic (`controllers/netbox/src/reconciler.rs`)
+
+#### 6.1 Add API Client to Reconciler Struct
+- [ ] Add `netbox_<resource>_api: Api<NetBox<Resource>>` to `Reconciler` struct
+- [ ] Update `Reconciler::new()` to accept and store the API client
+
+#### 6.2 Implement Reconciliation Method
+- [ ] Create `pub async fn reconcile_netbox_<resource>(&self, crd: &NetBox<Resource>) -> Result<(), ControllerError>`
+- [ ] Extract `name` and `namespace` from CRD metadata
+- [ ] Check if resource already exists in NetBox (by ID in status or by querying)
+- [ ] If exists, verify it still exists in NetBox
+- [ ] If not exists or deleted, create it in NetBox
+- [ ] Update CRD status with NetBox ID, URL, state (`Created`), and `last_reconciled`
+- [ ] Handle all error cases and update status to `Failed` with error message
+
+#### 6.3 Add Error Status Helper
+- [ ] Add `async fn update_status_error()` helper function inside reconciliation method
+- [ ] Helper should:
+  - Check if error is already set (avoid unnecessary updates)
+  - Create error status with `state: ResourceState::Failed`
+  - Patch CRD status with error
+  - Log success/failure
+
+#### 6.4 Update Startup Reconciliation
+- [ ] Add to `startup_reconciliation()` method:
+  - Query all CRs of this type
+  - Query all resources from NetBox
+  - Map NetBox resources to CRs (by name or other identifier)
+  - Update CR status with NetBox ID if found
+
+### 7. Watcher (`controllers/netbox/src/watcher.rs`)
+
+#### 7.1 Add to Watcher Struct
+- [ ] Add `netbox_<resource>_api: Api<NetBox<Resource>>` field
+- [ ] Add `netbox_<resource>_state: Arc<Mutex<ReconciliationState>>` field
+
+#### 7.2 Update Watcher::new()
+- [ ] Accept `netbox_<resource>_api` parameter
+- [ ] Initialize `netbox_<resource>_state` with `Arc::new(Mutex::new(ReconciliationState::new()))`
+
+#### 7.3 Implement Watcher Method
+- [ ] Create `async fn watch_netbox_<resources>(&self) -> Result<(), ControllerError>`
+- [ ] Create watcher with `watcher(api, watcher::Config::default())`
+- [ ] Handle events:
+  - `watcher::Event::Apply(crd)` - Check generation, reconcile if changed
+  - `watcher::Event::InitApply(crd)` - Always reconcile (initial sync)
+  - `watcher::Event::Delete(crd)` - Log deletion
+  - `watcher::Event::Init` - Log initialization
+  - `watcher::Event::InitDone` - Log initialization complete
+- [ ] On reconciliation error, call `self.reconciler.increment_error(&resource_key)`
+- [ ] On success, call `self.reconciler.reset_error(&resource_key)`
+
+### 8. Controller Integration (`controllers/netbox/src/controller.rs`)
+
+#### 8.1 Add API Client
+- [ ] Add `netbox_<resource>_api: Api<NetBox<Resource>>` to `Controller::new()` parameters
+- [ ] Store in `Controller` struct
+
+#### 8.2 Add Watcher Handle
+- [ ] Add `netbox_<resource>_watcher: JoinHandle<Result<(), ControllerError>>` to `Controller` struct
+- [ ] In `Controller::new()`, spawn watcher: `tokio::spawn(watcher.watch_netbox_<resources>())`
+- [ ] Store handle in struct
+
+#### 8.3 Add to Select Loop
+- [ ] Add branch to `tokio::select!` in `Controller::run()`:
+  ```rust
+  result = &mut self.netbox_<resource>_watcher => {
+      if let Err(e) = result {
+          error!("NetBox<Resource> watcher error: {}", e);
+      }
+  }
+  ```
+
+### 9. RBAC (`config/netbox-controller/role.yaml`)
+
+- [ ] Add permissions for the CRD:
+  ```yaml
+  - apiGroups: ["dcops.microscaler.io"]
+    resources: ["netbox<resources>"]  # lowercase, plural
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["dcops.microscaler.io"]
+    resources: ["netbox<resources>/status"]  # status subresource
+    verbs: ["get", "patch", "update"]
+  ```
+
+### 10. Example CR (`config/examples/netbox-<resource>-example.yaml`)
+
+- [ ] Create example CR file with:
+  - Complete `spec` with all required fields
+  - Realistic values
+  - Comments explaining each field
+  - Reference to dependencies (e.g., `site: "datacenter-1"` references `NetBoxSite`)
+
+### 11. Verification Script (`scripts/verify_netbox_crs.py`)
+
+- [ ] Add CRD to `CRD_TO_DB_MAP` dictionary:
+  ```python
+  'netbox<resources>': {
+      'table': '<netbox_table_name>',
+      'id_field': 'id',
+      'name_field': '<name_field>',
+      'spec_field': '<spec_field_to_match>',
+  }
+  ```
+
+### 12. Testing Checklist
+
+- [ ] **Compilation:** `cargo check --workspace` passes
+- [ ] **CRD Generation:** `cargo run -p crds --bin crdgen` generates valid YAML
+- [ ] **CRD Applied:** `kubectl apply -f config/crd/all-crds.yaml` succeeds
+- [ ] **RBAC:** Controller can list/watch CRs (check logs for 403 errors)
+- [ ] **Reconciliation:** CR is created in NetBox when applied
+- [ ] **Status Update:** CR status shows `Created` state with NetBox ID
+- [ ] **Error Handling:** Failed reconciliation updates status to `Failed` with error
+- [ ] **Database Verification:** `scripts/verify_netbox_crs.py` confirms resource exists in NetBox DB
+- [ ] **Startup Reconciliation:** Controller maps existing NetBox resources to CRs on startup
+
+### 13. Documentation
+
+- [ ] Update `docs/NETBOX_API_AUDIT.md` with implementation status
+- [ ] Update `docs/PXE_CLUSTER_IMPLEMENTATION.md` if resource is needed for PXE/Pi clusters
+- [ ] Add inline documentation to reconciliation method explaining:
+  - What the resource represents
+  - Dependencies on other resources
+  - Special handling or edge cases
+
+### Common Pitfalls to Avoid
+
+1. **Missing Status Update on Error:** Always call `update_status_error()` before returning `Err()`
+2. **Wrong Serialization Format:** Use `PascalCase` for state enums (`Created`, `Failed`), not `kebab-case` or `snake_case`
+3. **Missing RBAC:** Controller will fail with 403 errors if RBAC is missing
+4. **Missing CRD Generation:** CRD won't exist in cluster if not added to `crdgen.rs`
+5. **Missing Watcher:** CRs won't be reconciled if watcher isn't spawned
+6. **Missing Controller Integration:** Watcher won't run if not added to `tokio::select!`
+7. **Missing Module Export:** CRD won't be accessible if not exported in module file
+8. **Missing NetBox Client Methods:** Reconciliation will fail if client can't query/create resources
+
+### Verification Command
+
+After implementing all components, run:
+
+```bash
+# 1. Check compilation
+cargo check --workspace
+
+# 2. Generate CRDs
+cargo run -p crds --bin crdgen > config/crd/all-crds.yaml
+
+# 3. Apply CRDs (if testing in cluster)
+kubectl apply -f config/crd/all-crds.yaml
+
+# 4. Apply example CR
+kubectl apply -f config/examples/netbox-<resource>-example.yaml
+
+# 5. Check controller logs
+kubectl logs -n dcops-system -l app=netbox-controller
+
+# 6. Verify CR status
+kubectl get netbox<resource> <name> -o yaml
+
+# 7. Verify in NetBox DB
+python3 scripts/verify_netbox_crs.py --crd netbox<resources> --name <name>
+```
+
+**Remember:** This checklist must be completed in a single pass. Do not submit PRs with partial implementations. Missing components will cause the controller to fail silently or with cryptic errors.
 

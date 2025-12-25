@@ -76,17 +76,25 @@ pub struct IPClaimStatus {
     pub error: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, Default, PartialEq, Eq)]
-#[serde(rename_all = "kebab-case")]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq, Eq, Default)]
+/// IP allocation state
+///
+/// Serializes as PascalCase ("Allocated", "Failed", etc.) but deserializes
+/// both PascalCase and lowercase ("allocated", "failed", etc.) for backward
+/// compatibility with existing CRs in the cluster.
+#[serde(rename_all = "PascalCase")]
 pub enum AllocationState {
     /// Allocation pending
     #[default]
+    #[serde(alias = "pending")] // Backward compatibility: accept lowercase
     Pending,
     
     /// IP allocated
+    #[serde(alias = "allocated")] // Backward compatibility: accept lowercase
     Allocated,
     
     /// Allocation failed
+    #[serde(alias = "failed")] // Backward compatibility: accept lowercase
     Failed,
 }
 

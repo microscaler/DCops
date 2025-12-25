@@ -1,0 +1,38 @@
+apiVersion: dcops.microscaler.io/v1alpha1
+kind: NetBoxDevice
+metadata:
+  name: talos-control-plane-01
+  namespace: default
+spec:
+  name: "talos-control-plane-01"
+  deviceType:
+    apiGroup: "dcops.microscaler.io"
+    kind: "NetBoxDeviceType"
+    name: "raspberry-pi-4-model-b"
+  deviceRole:
+    apiGroup: "dcops.microscaler.io"
+    kind: "NetBoxDeviceRole"
+    name: "kubernetes-control-plane"
+  site:
+    apiGroup: "dcops.microscaler.io"
+    kind: "NetBoxSite"
+    name: "datacenter-1"
+  location:
+    apiGroup: "dcops.microscaler.io"
+    kind: "NetBoxLocation"
+    name: "datacenter-1-rack-a"
+  tenant:
+    apiGroup: "dcops.microscaler.io"
+    kind: "NetBoxTenant"
+    name: "datacenter-tenant"
+  platform:
+    apiGroup: "dcops.microscaler.io"
+    kind: "NetBoxPlatform"
+    name: "talos-linux"
+  serial: "RPI4-001"  # Serial number (optional)
+  assetTag: "DC1-RACK-A-01"  # Asset tag (optional)
+  status: active  # active, offline, planned, staged, failed, inventory, decommissioning
+  primaryIp4: "192.168.1.10/24"  # References IPClaim or NetBoxIPAddress (optional)
+  description: "Kubernetes control plane node 01"
+  comments: "Managed by DCops for Talos cluster"
+

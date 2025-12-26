@@ -47,17 +47,17 @@ pub fn create_test_site_params(
 
 /// Create test tenant parameters for integration tests
 /// 
-/// Returns a tuple matching the signature of `NetBoxClientTrait::create_tenant`
+/// Returns parameters for `NetBoxClientTrait::create_tenant`
+/// Note: Returns owned strings to avoid lifetime issues
 pub fn create_test_tenant_params(
     name: &str,
     tenant_group_id: Option<u64>,
-) -> (&str, &str, Option<u64>, Option<&str>, Option<&str>) {
-    let slug = name.to_lowercase().replace(' ', "-");
+) -> (String, String, Option<u64>, Option<String>, Option<String>) {
     (
-        name,
-        &slug, // Note: This creates a temporary - caller should handle lifetime
+        name.to_string(),
+        name.to_lowercase().replace(' ', "-"), // slug
         tenant_group_id,
-        Some("Test tenant created by integration test"), // description
+        Some("Test tenant created by integration test".to_string()), // description
         None, // comments
     )
 }

@@ -81,6 +81,8 @@ impl Controller {
         info!("✅ NetBox token validated and connectivity established");
         
         // Create API clients for all CRD types
+        // NOTE: These are REAL kube::Api<T> instances that connect to the actual Kubernetes cluster
+        // The KubeApiWrapper is a thin delegation layer that forwards all calls to these real APIs
         let ns = namespace.as_deref().unwrap_or("default");
         // IPAM APIs
         let netbox_prefix_api: Api<NetBoxPrefix> = Api::namespaced(kube_client.clone(), ns);
@@ -107,10 +109,12 @@ impl Controller {
         let ip_claim_api: Api<IPClaim> = Api::namespaced(kube_client.clone(), ns);
         
         // Create reconciler with wrapped APIs
+        // NOTE: KubeApiWrapper is a thin delegation layer - all calls forward to real Api<T>
+        // This preserves 100% real cluster operation while enabling unit testing with mocks
         let reconciler = Reconciler::new(
             netbox_client,
             // IPAM
-            KubeApiWrapper::new(netbox_prefix_api.clone()),
+            KubeApiWrapper::new(netbox_prefix_api.clone()), // Wraps REAL Api<T> - zero overhead
             KubeApiWrapper::new(netbox_role_api.clone()),
             KubeApiWrapper::new(netbox_tag_api.clone()),
             KubeApiWrapper::new(netbox_aggregate_api.clone()),

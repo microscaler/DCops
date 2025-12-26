@@ -3,6 +3,20 @@
 //! This module provides a trait-based abstraction over `kube::Api<T>` to enable
 //! mocking for unit tests. The `KubeApiTrait<T>` trait abstracts the operations
 //! needed by reconcilers, and both real `Api<T>` instances and mocks can implement it.
+//!
+//! ## Critical: Real Cluster Operation Preserved
+//!
+//! **This trait-based approach does NOT replace real cluster operation.**
+//!
+//! - **Production**: `KubeApiWrapper` is a thin delegation layer that forwards all calls
+//!   directly to the underlying `kube::Api<T>`. There is zero performance overhead - just
+//!   a function call indirection.
+//! - **Watcher**: Still uses real `Api<T>` directly (unchanged, not affected by trait)
+//! - **Integration Tests**: Continue to work with real Kubernetes clusters
+//! - **All real cluster functionality remains 100% intact**
+//!
+//! The wrapper exists solely to enable unit testing with mocks, not to replace
+//! real cluster operations.
 
 #[cfg(test)]
 pub mod mock;
@@ -39,6 +53,17 @@ where
 /// Wrapper around `kube::Api<T>` that implements `KubeApiTrait<T>`
 ///
 /// This allows real `Api<T>` instances to be used through the trait interface.
+///
+/// ## Critical: Zero Overhead Delegation
+///
+/// This wrapper is a **thin delegation layer** that forwards all calls directly
+/// to the underlying `kube::Api<T>`. It provides:
+/// - **Zero performance overhead** - just a function call indirection
+/// - **100% compatibility** - all kube-rs behavior preserved
+/// - **Full real cluster operation** - all calls go to real Kubernetes API
+///
+/// The wrapper exists solely to enable unit testing with mocks, not to replace
+/// real cluster operations.
 pub struct KubeApiWrapper<T> {
     api: kube::Api<T>,
 }

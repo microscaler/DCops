@@ -33,7 +33,10 @@ impl MockKubeStore {
         T::DynamicType: Default,
     {
         let dt = T::DynamicType::default();
-        format!("{}/{}", dt.kind, dt.group)
+        // Use api_version which contains both group and version
+        let api_version = dt.api_version;
+        let kind = dt.kind;
+        format!("{}/{}", kind, api_version)
     }
 
     /// Store a CRD resource

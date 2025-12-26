@@ -58,7 +58,7 @@ pub async fn allocate_ip(client: &MockNetBoxClient, prefix_id: u64, request: Opt
             tags: request.as_ref().and_then(|r| r.tags.clone())
                 .map(|tags_vec| {
                     tags_vec.into_iter()
-                        .filter_map(|v| client.helpers().create_nested_tag(v))
+                        .filter_map(|v| client.helpers().create_nested_tag(&v))
                         .collect()
                 })
                 .unwrap_or_default(),
@@ -125,7 +125,7 @@ pub async fn create_ip_address(client: &MockNetBoxClient, address: &str, request
             tags: request.as_ref().and_then(|r| r.tags.clone())
                 .map(|tags_vec| {
                     tags_vec.into_iter()
-                        .filter_map(|v| client.helpers().create_nested_tag(v))
+                        .filter_map(|v| client.helpers().create_nested_tag(&v))
                         .collect()
                 })
                 .unwrap_or_default(),

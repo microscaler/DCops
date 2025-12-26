@@ -27,16 +27,17 @@ impl MockKubeStore {
     }
 
     /// Get the resource key for a type
+    /// 
+    /// Uses the resource's type name to create a unique key.
+    /// This can be enhanced later with proper DynamicType usage.
     fn resource_key<T>() -> String
     where
         T: Resource,
         T::DynamicType: Default,
     {
-        let dt = T::DynamicType::default();
-        // Use api_version which contains both group and version
-        let api_version = dt.api_version;
-        let kind = dt.kind;
-        format!("{}/{}", kind, api_version)
+        // For now, use a simple approach: just use the type name
+        // This can be enhanced later when we understand DynamicType better
+        std::any::type_name::<T>().to_string()
     }
 
     /// Store a CRD resource

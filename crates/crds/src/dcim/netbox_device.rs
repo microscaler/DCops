@@ -10,9 +10,19 @@ use crate::references::NetBoxResourceReference;
 /// Primary IP address reference
 /// Supports both CRD references (GitOps-friendly) and direct IP addresses (fallback)
 /// 
-/// Uses a struct-based approach for structural schema compliance.
-/// The enum is kept for type safety but serializes as a struct.
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// **Limitation:** This untagged enum generates a nested anyOf schema that violates
+/// Kubernetes structural schema validation rules. The NetBoxDevice CRD cannot be
+/// applied to Kubernetes clusters that enforce structural validation.
+/// 
+/// **Current Status:** The CRD generation succeeds but application fails with
+/// structural schema validation errors. This is a known limitation of untagged
+/// enums in Kubernetes CRDs.
+/// 
+/// **Future Fix:** Would require restructuring to use separate optional fields
+/// (e.g., `primaryIp4Ref: Option<NetBoxResourceReference>` and 
+/// `primaryIp4Address: Option<String>`) instead of a union type.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
+#[serde(untagged)]
 pub enum PrimaryIPReference {
     /// IPClaim CRD reference (recommended, GitOps-friendly)
     IPClaimRef(NetBoxResourceReference),
@@ -20,75 +30,6 @@ pub enum PrimaryIPReference {
     /// Direct IP address string (e.g., "192.168.1.10/24" or "2001:db8::1/64")
     /// Used as fallback when IPClaim CRD is not available
     IPAddress(String),
-}
-
-// Custom serialization maintains untagged behavior
-impl Serialize for PrimaryIPReference {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        match self {
-            PrimaryIPReference::IPClaimRef(ref ref_obj) => {
-                // Serialize as the object directly (untagged)
-                ref_obj.serialize(serializer)
-            }
-            PrimaryIPReference::IPAddress(ref addr) => {
-                // Serialize as string directly (untagged)
-                addr.serialize(serializer)
-            }
-        }
-    }
-}
-
-// Custom deserialization maintains untagged behavior
-impl<'de> Deserialize<'de> for PrimaryIPReference {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        // Use serde's untagged enum deserialization
-        // Try object first (NetBoxResourceReference)
-        let value: serde_json::Value = serde::Deserialize::deserialize(deserializer)?;
-        
-        if value.is_object() {
-            // Try to deserialize as NetBoxResourceReference
-            match NetBoxResourceReference::deserialize(&value) {
-                Ok(ref_obj) => return Ok(PrimaryIPReference::IPClaimRef(ref_obj)),
-                Err(_) => {}
-            }
-        }
-        
-        // Fall back to string
-        if let Ok(addr) = String::deserialize(&value) {
-            return Ok(PrimaryIPReference::IPAddress(addr));
-        }
-        
-        Err(serde::de::Error::custom("PrimaryIPReference must be either a NetBoxResourceReference object or a string"))
-    }
-}
-
-// Custom JsonSchema that generates a structural-compliant schema
-impl JsonSchema for PrimaryIPReference {
-    fn schema_name() -> std::borrow::Cow<'static, str> {
-        "PrimaryIPReference".into()
-    }
-
-    fn json_schema(gen: &mut schemars::gen::SchemaGenerator) -> schemars::Schema {
-        // Generate a oneOf schema without nested structures
-        // This is structural-compliant
-        let ref_schema = gen.subschema_for::<NetBoxResourceReference>();
-        let string_schema = gen.subschema_for::<String>();
-        
-        // Create a simple oneOf (structural compliant)
-        // We need to use the public API - let's use a workaround
-        // Actually, we can't easily create oneOf without accessing private modules
-        // So we'll just return a schema that allows both
-        // The simplest approach: return a schema that accepts either
-        ref_schema
-        // TODO: This needs proper oneOf generation for full structural compliance
-        // For now, this will generate a non-structural schema but the CRD will work
-    }
 }
 
 

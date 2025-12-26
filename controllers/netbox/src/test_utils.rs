@@ -310,7 +310,7 @@ pub fn create_test_netbox_device(
         },
         status: netbox_id.map(|id| crds::NetBoxDeviceStatus {
             netbox_id: Some(id),
-            netbox_url: netbox_url.unwrap_or_else(|| format!("http://netbox/api/dcim/devices/{}/", id)),
+            netbox_url: Some(netbox_url.unwrap_or_else(|| format!("http://netbox/api/dcim/devices/{}/", id))),
             state: crds::ResourceState::Created,
             error: None,
         }),

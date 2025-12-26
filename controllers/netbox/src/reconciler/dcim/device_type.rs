@@ -149,11 +149,7 @@ impl Reconciler {
                         manufacturer_id,
                         &device_type_crd.spec.model,
                         device_type_crd.spec.slug.as_deref(),
-                        device_type_crd.spec.part_number.as_deref(),
-                        Some(device_type_crd.spec.u_height),
-                        Some(device_type_crd.spec.is_full_depth),
-                        device_type_crd.spec.description.clone(),
-                        device_type_crd.spec.comments.clone(),
+                        device_type_crd.spec.description.as_deref(),
                     ).await {
                         Ok(created) => {
                             info!("Created device type {} in NetBox (ID: {})", created.model, created.id);

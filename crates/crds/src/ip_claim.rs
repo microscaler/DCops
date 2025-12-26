@@ -47,10 +47,6 @@ pub struct DeviceRef {
     /// Interface name (optional)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub interface: Option<String>,
-    
-    /// NetBox device reference (optional)
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub netbox_device_ref: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, Default)]

@@ -275,18 +275,14 @@ impl Reconciler {
                                     netbox_id,
                                     Some(&site_crd.spec.name),
                                     site_crd.spec.slug.as_deref(),
-                                    site_crd.spec.description.clone(),
-                                    site_crd.spec.physical_address.clone(),
-                                    site_crd.spec.shipping_address.clone(),
-                                    site_crd.spec.latitude,
-                                    site_crd.spec.longitude,
-                                    update_tenant_id, // Only include if changed
+                                    Some(status_str),
                                     update_region_id, // Only include if changed
                                     update_site_group_id, // Only include if changed
-                                    Some(status_str),
-                                    site_crd.spec.facility.clone(),
-                                    site_crd.spec.time_zone.clone(),
-                                    site_crd.spec.comments.clone(),
+                                    update_tenant_id, // Only include if changed
+                                    site_crd.spec.facility.as_deref(),
+                                    site_crd.spec.time_zone.as_deref(),
+                                    site_crd.spec.description.as_deref(),
+                                    site_crd.spec.comments.as_deref(),
                                 ).await {
                                     Ok(updated_site) => {
                                         // Update successful
@@ -391,18 +387,14 @@ impl Reconciler {
                     match self.netbox_client.create_site(
                         &site_crd.spec.name,
                         site_crd.spec.slug.as_deref(),
-                        site_crd.spec.description.clone(),
-                        site_crd.spec.physical_address.clone(),
-                        site_crd.spec.shipping_address.clone(),
-                        site_crd.spec.latitude,
-                        site_crd.spec.longitude,
-                        tenant_id,
+                        status_str,
                         region_id,
                         site_group_id,
-                        Some(status_str),
-                        site_crd.spec.facility.clone(),
-                        site_crd.spec.time_zone.clone(),
-                        site_crd.spec.comments.clone(),
+                        tenant_id,
+                        site_crd.spec.facility.as_deref(),
+                        site_crd.spec.time_zone.as_deref(),
+                        site_crd.spec.description.as_deref(),
+                        site_crd.spec.comments.as_deref(),
                     ).await {
                         Ok(created) => {
                             info!("Created site {} in NetBox (ID: {})", created.name, created.id);

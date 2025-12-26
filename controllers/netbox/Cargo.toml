@@ -30,7 +30,7 @@ futures = "0.3"
 
 # Local crates
 crds = { path = "../../crates/crds" }
-netbox-client = { path = "../../crates/netbox-client" }
+netbox-client = { path = "../../crates/netbox-client", features = ["test-util"] }
 
 [dev-dependencies]
 # Testing dependencies to be added as needed

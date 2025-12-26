@@ -44,9 +44,18 @@
 //! - **Pagination**: Support for fetching all pages of large result sets
 
 pub mod client;
+pub mod common;
 pub mod error;
 pub mod models;
+#[path = "trait.rs"]
+pub mod netbox_trait;
+#[cfg(feature = "test-util")]
+pub mod mock;
 
 pub use client::NetBoxClient;
+pub use common::{HttpClient, PaginatedResponse};
 pub use error::NetBoxError;
 pub use models::*;
+pub use netbox_trait::NetBoxClientTrait;
+#[cfg(feature = "test-util")]
+pub use mock::MockNetBoxClient;

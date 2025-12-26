@@ -13,6 +13,8 @@ mod watcher;
 mod error;
 mod backoff;
 mod reconcile_helpers;
+#[cfg(test)]
+mod test_utils;
 
 use controller::Controller;
 use crate::error::ControllerError;

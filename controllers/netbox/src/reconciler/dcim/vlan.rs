@@ -21,7 +21,7 @@ impl Reconciler {
                 if let Some(netbox_id) = status.netbox_id {
                     // Use simple helper function for drift detection (no update logic)
                     match reconcile_helpers::check_existing(
-                        &self.netbox_client,
+                        self.netbox_client.as_ref(),
                         netbox_id,
                         &format!("NetBoxVLAN {}/{}", namespace, name),
                         self.netbox_client.get_vlan(netbox_id),
@@ -183,16 +183,15 @@ impl Reconciler {
                     info!("VLAN {} already exists in NetBox (ID: {})", vlan_crd.spec.vid, existing.id);
                     existing
                 } else {
+                    let site_id_value = site_id.ok_or_else(|| {
+                        ControllerError::InvalidConfig("Site ID is required for VLAN".to_string())
+                    })?;
                     match self.netbox_client.create_vlan(
-                        vlan_crd.spec.vid,
+                        site_id_value,
+                        vlan_crd.spec.vid as u32,
                         &vlan_crd.spec.name,
-                        site_id,
-                        None, // group_id - not in spec yet
-                        tenant_id,
-                        role_id,
                         status_str,
-                        vlan_crd.spec.description.clone(),
-                        vlan_crd.spec.comments.clone(),
+                        vlan_crd.spec.description.as_deref(),
                     ).await {
                         Ok(created) => {
                             info!("Created VLAN {} ({}) in NetBox (ID: {})", created.vid, created.name, created.id);

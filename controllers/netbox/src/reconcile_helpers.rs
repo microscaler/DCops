@@ -92,7 +92,7 @@ impl NetBoxResource for netbox_client::Vlan {
 /// - `Ok(None)` if resource was deleted (drift detected) or doesn't exist
 /// - `Err(e)` if there's an error that should be retried
 pub async fn check_and_update_existing<FGet, FUpdate, FNeedsUpdate, Resource>(
-    _client: &netbox_client::NetBoxClient,
+    _client: &dyn netbox_client::NetBoxClientTrait,
     netbox_id: u64,
     resource_name: &str,
     get_fn: FGet,
@@ -169,7 +169,7 @@ pub fn create_pending_status_patch() -> serde_json::Value {
 /// - `Ok(None)` if resource was deleted (drift detected)
 /// - `Err(e)` if there's an error that should be retried
 pub async fn check_existing<FGet, Resource>(
-    _client: &netbox_client::NetBoxClient,
+    _client: &dyn netbox_client::NetBoxClientTrait,
     netbox_id: u64,
     resource_name: &str,
     get_fn: FGet,

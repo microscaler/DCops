@@ -56,7 +56,7 @@ impl Reconciler {
                 if let Some(netbox_id) = status.netbox_id {
                     // Use simple helper function for drift detection (no update logic)
                     match reconcile_helpers::check_existing(
-                        &self.netbox_client,
+                        self.netbox_client.as_ref(),
                         netbox_id,
                         &format!("NetBoxTenant {}/{}", namespace, name),
                         self.netbox_client.get_tenant(netbox_id),
@@ -192,10 +192,8 @@ impl Reconciler {
                             info!("No tenant groups found, creating default tenant group 'Default'");
                             match self.netbox_client.create_tenant_group(
                                 "Default",
-                                Some("default"), // Slug is required
-                                Some("Default tenant group for DCops".to_string()),
-                                None,
-                                None,
+                                "default", // Slug is required
+                                Some("Default tenant group for DCops"),
                             ).await {
                                 Ok(group) => {
                                     info!("Created default tenant group '{}' (ID: {})", group.name, group.id);
@@ -216,12 +214,14 @@ impl Reconciler {
                 } else {
                     // Create tenant
                     info!("Creating tenant {} in NetBox", tenant_crd.spec.name);
+                    let slug = tenant_crd.spec.slug.as_deref().map(|s| s.to_string())
+                        .unwrap_or_else(|| tenant_crd.spec.name.to_lowercase().replace(' ', "-"));
                     match self.netbox_client.create_tenant(
                         &tenant_crd.spec.name,
-                        tenant_crd.spec.slug.as_deref(),
-                        tenant_crd.spec.description.clone(),
-                        tenant_crd.spec.comments.clone(),
+                        &slug,
                         group_id,
+                        tenant_crd.spec.description.as_deref(),
+                        tenant_crd.spec.comments.as_deref(),
                     ).await {
                         Ok(created) => {
                             info!("Created tenant {} in NetBox (ID: {})", created.name, created.id);

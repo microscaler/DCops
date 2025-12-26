@@ -115,8 +115,7 @@ impl Reconciler {
                 None, // type
                 None, // enabled
                 Some(&mac_crd.spec.mac_address), // mac_address
-                None, // mtu
-                mac_crd.spec.description.clone(), // description
+                mac_crd.spec.description.as_deref(), // description
             ).await {
                 Ok(updated_interface) => {
                     info!("Set MAC address {} on interface {} (ID: {})", mac_crd.spec.mac_address, updated_interface.name, interface_id);

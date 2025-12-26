@@ -224,7 +224,7 @@ impl Reconciler {
                 if let Some(netbox_id) = status.netbox_id {
                     // Use helper function for drift detection, diffing, and updating
                     match reconcile_helpers::check_and_update_existing(
-                        &self.netbox_client,
+                        self.netbox_client.as_ref(),
                         netbox_id,
                         &format!("NetBoxPrefix {}/{}", namespace, name),
                         self.netbox_client.get_prefix(netbox_id),
@@ -239,13 +239,12 @@ impl Reconciler {
                         ),
                         self.netbox_client.update_prefix(
                             netbox_id,
-                            None, // Don't change prefix CIDR
-                            prefix_crd.spec.description.clone(),
-                            Some(status_str),
-                            None, // role - needs role_id but update_prefix expects Option<String>, not Option<u64>
-                            tenant_id,
                             site_id, // Include site if resolved
+                            tenant_id,
                             vlan_id, // Include vlan if resolved
+                            role_id,
+                            Some(status_str),
+                            prefix_crd.spec.description.as_deref(),
                             None, // tags - omit for now
                         ),
                     ).await {
@@ -486,13 +485,12 @@ impl Reconciler {
                     // Note: Omitting role and tags for now (requires numeric IDs or string slugs)
                     match self.netbox_client.update_prefix(
                         existing.id,
-                        None, // Don't change prefix CIDR
-                        prefix_crd.spec.description.clone(),
-                        Some(status_str),
-                        None, // role - omit for now (requires numeric ID or string slug)
-                        tenant_id, // Include tenant if resolved
                         site_id, // Include site if resolved
+                        tenant_id, // Include tenant if resolved
                         vlan_id, // Include vlan if resolved
+                        role_id,
+                        Some(status_str),
+                        prefix_crd.spec.description.as_deref(),
                         None, // tags - omit for now (requires numeric IDs or tag slugs)
                     ).await {
                         Ok(updated) => {
@@ -515,12 +513,12 @@ impl Reconciler {
                     // TODO: Add support for resolving tag names to tag slugs
                     match self.netbox_client.create_prefix(
                         &prefix_crd.spec.prefix,
-                        prefix_crd.spec.description.clone(),
                         site_id,
-                        vlan_id,
-                        Some(status_str),
-                        role_id,
                         tenant_id, // Include tenant if resolved
+                        vlan_id,
+                        role_id,
+                        Some(status_str),
+                        prefix_crd.spec.description.as_deref(),
                         None, // tags - omit for now (requires numeric IDs or tag slugs)
                     ).await {
                         Ok(created) => {

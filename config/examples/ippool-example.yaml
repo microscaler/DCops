@@ -4,9 +4,13 @@ metadata:
   name: control-plane-pool
   namespace: default
 spec:
+  # Kubernetes-compliant object reference to NetBoxPrefix CRD
+  # This is stable and GitOps-friendly - the controller resolves this to the NetBox prefix ID
   netboxPrefixRef:
-    id: "1"  # NetBox prefix ID - update this to match your NetBox prefix
-    site: "datacenter-1"  # Optional
+    apiGroup: "dcops.microscaler.io"
+    kind: "NetBoxPrefix"
+    name: "control-plane-prefix"
+    # namespace is optional, defaults to same namespace as IPPool
   role: "control-plane"
   allocationStrategy: sequential
 

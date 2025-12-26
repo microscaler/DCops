@@ -25,3 +25,10 @@ chrono = { workspace = true }
 # URL encoding for query parameters
 urlencoding = "2.1"
 
+# Async trait support for mocking
+async-trait = "0.1"
+
+[features]
+default = []
+test-util = []
+

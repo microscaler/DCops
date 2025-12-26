@@ -53,7 +53,7 @@ impl Reconciler {
                 if let Some(netbox_id) = status.netbox_id {
                     // Use simple helper function for drift detection (no update logic)
                     match reconcile_helpers::check_existing(
-                        &self.netbox_client,
+                        self.netbox_client.as_ref(),
                         netbox_id,
                         &format!("NetBoxAggregate {}/{}", namespace, name),
                         self.netbox_client.get_aggregate(netbox_id),
@@ -154,9 +154,8 @@ impl Reconciler {
                     let slug = rir_name.to_lowercase().replace(' ', "-");
                     match self.netbox_client.create_rir(
                         rir_name,
-                        Some(&slug),
-                        Some(format!("RIR created by DCops for aggregate {}", aggregate_crd.spec.prefix)),
-                        None, // Default is_private
+                        &slug,
+                        Some(&format!("RIR created by DCops for aggregate {}", aggregate_crd.spec.prefix)),
                     ).await {
                         Ok(rir) => {
                             info!("Created RIR '{}' (ID: {})", rir.name, rir.id);
@@ -175,9 +174,8 @@ impl Reconciler {
                     let slug = rir_name.to_lowercase().replace(' ', "-");
                     match self.netbox_client.create_rir(
                         rir_name,
-                        Some(&slug),
-                        Some(format!("RIR created by DCops for aggregate {}", aggregate_crd.spec.prefix)),
-                        None,
+                        &slug,
+                        Some(&format!("RIR created by DCops for aggregate {}", aggregate_crd.spec.prefix)),
                     ).await {
                         Ok(rir) => {
                             info!("Created RIR '{}' (ID: {})", rir.name, rir.id);
@@ -219,9 +217,8 @@ impl Reconciler {
                         info!("No RIRs found, creating default RIR 'Private' for private network aggregates");
                         match self.netbox_client.create_rir(
                             "Private",
-                            Some("private"), // Slug is required
-                            Some("Private network RIR for internal use".to_string()),
-                            Some(true), // is_private = true
+                            "private", // Slug is required
+                            Some("Private network RIR for internal use"),
                         ).await {
                             Ok(rir) => {
                                 info!("Created default RIR '{}' (ID: {})", rir.name, rir.id);
@@ -253,12 +250,13 @@ impl Reconciler {
                     info!("Aggregate {} already exists in NetBox (ID: {})", aggregate_crd.spec.prefix, existing.id);
                     existing
                 } else {
+                    let rir_id_value = rir_id.ok_or_else(|| {
+                        ControllerError::InvalidConfig("RIR ID is required for aggregate".to_string())
+                    })?;
                     match self.netbox_client.create_aggregate(
                         &aggregate_crd.spec.prefix,
-                        rir_id,
-                        aggregate_crd.spec.date_allocated.as_deref(),
-                        aggregate_crd.spec.description.clone(),
-                        aggregate_crd.spec.comments.clone(),
+                        rir_id_value,
+                        aggregate_crd.spec.description.as_deref(),
                     ).await {
                         Ok(created) => {
                             info!("Created aggregate {} in NetBox (ID: {})", created.prefix, created.id);

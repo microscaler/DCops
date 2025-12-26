@@ -19,7 +19,7 @@ use crds::{
     NetBoxInterface, NetBoxMACAddress, NetBoxVLAN, NetBoxRegion, NetBoxSiteGroup, NetBoxLocation,
     PrefixState, ResourceState,
 };
-use netbox_client::NetBoxClient;
+use netbox_client::NetBoxClientTrait;
 use kube::Api;
 use tracing::{info, error, debug, warn};
 use std::collections::HashMap;
@@ -52,7 +52,7 @@ impl BackoffState {
 
 /// Reconciles NetBox-related resources.
 pub struct Reconciler {
-    pub(crate) netbox_client: NetBoxClient,
+    pub(crate) netbox_client: Box<dyn NetBoxClientTrait + Send + Sync>,
     // IPAM APIs
     pub(crate) netbox_prefix_api: Api<NetBoxPrefix>,
     pub(crate) netbox_role_api: Api<NetBoxRole>,
@@ -168,7 +168,7 @@ impl Reconciler {
     
     /// Creates a new reconciler instance.
     pub fn new(
-        netbox_client: NetBoxClient,
+        netbox_client: impl NetBoxClientTrait + Send + Sync + 'static,
         // IPAM APIs
         netbox_prefix_api: Api<NetBoxPrefix>,
         netbox_role_api: Api<NetBoxRole>,
@@ -194,7 +194,7 @@ impl Reconciler {
         ip_claim_api: Api<IPClaim>,
     ) -> Self {
         Self {
-            netbox_client,
+            netbox_client: Box::new(netbox_client),
             // IPAM
             netbox_prefix_api,
             netbox_role_api,

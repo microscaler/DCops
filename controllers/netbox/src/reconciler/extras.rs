@@ -23,7 +23,7 @@ impl Reconciler {
                 if let Some(netbox_id) = status.netbox_id {
                     // Use simple helper function for drift detection (no update logic)
                     match reconcile_helpers::check_existing(
-                        &self.netbox_client,
+                        self.netbox_client.as_ref(),
                         netbox_id,
                         &format!("NetBoxRole {}/{}", namespace, name),
                         self.netbox_client.get_role(netbox_id),
@@ -121,12 +121,12 @@ impl Reconciler {
                     existing
                 } else {
                     // Create new role
+                    let slug = role_crd.spec.slug.as_deref().map(|s| s.to_string())
+                        .unwrap_or_else(|| role_crd.spec.name.to_lowercase().replace(' ', "-"));
                     match self.netbox_client.create_role(
                         &role_crd.spec.name,
-                        role_crd.spec.slug.as_deref(),
-                        role_crd.spec.description.clone(),
-                        role_crd.spec.weight,
-                        role_crd.spec.comments.clone(),
+                        &slug,
+                        role_crd.spec.description.as_deref(),
                     ).await {
                         Ok(created) => {
                             info!("Created role {} in NetBox (ID: {})", created.name, created.id);
@@ -196,7 +196,7 @@ impl Reconciler {
                 if let Some(netbox_id) = status.netbox_id {
                     // Use simple helper function for drift detection (no update logic)
                     match reconcile_helpers::check_existing(
-                        &self.netbox_client,
+                        self.netbox_client.as_ref(),
                         netbox_id,
                         &format!("NetBoxTag {}/{}", namespace, name),
                         self.netbox_client.get_tag(netbox_id),
@@ -294,12 +294,12 @@ impl Reconciler {
                     existing
                 } else {
                     // Create new tag
+                    let slug = tag_crd.spec.slug.as_deref().map(|s| s.to_string())
+                        .unwrap_or_else(|| tag_crd.spec.name.to_lowercase().replace(' ', "-"));
                     match self.netbox_client.create_tag(
                         &tag_crd.spec.name,
-                        tag_crd.spec.slug.as_deref(),
-                        tag_crd.spec.color.as_deref(),
-                        tag_crd.spec.description.clone(),
-                        tag_crd.spec.comments.clone(),
+                        &slug,
+                        tag_crd.spec.description.as_deref(),
                     ).await {
                         Ok(created) => {
                             info!("Created tag {} in NetBox (ID: {})", created.name, created.id);

@@ -5,6 +5,7 @@
 
 use crate::error::NetBoxError;
 use crate::models::*;
+use crate::netbox_trait::NetBoxClientTrait;
 use reqwest::Client;
 use std::time::Duration;
 use tracing::debug;
@@ -3458,5 +3459,327 @@ impl NetBoxClient {
         }
         
         response.json().await.map_err(|e| NetBoxError::Http(e))
+    }
+}
+
+// Implement NetBoxClientTrait for NetBoxClient
+// This delegates all trait methods to the existing implementations
+#[async_trait::async_trait]
+impl NetBoxClientTrait for NetBoxClient {
+    fn base_url(&self) -> &str {
+        self.base_url()
+    }
+
+    async fn validate_token(&self) -> Result<(), NetBoxError> {
+        self.validate_token().await
+    }
+
+    // IPAM Operations
+    async fn get_prefix(&self, id: u64) -> Result<Prefix, NetBoxError> {
+        self.get_prefix(id).await
+    }
+
+    async fn get_available_ips(&self, prefix_id: u64, limit: Option<u32>) -> Result<Vec<AvailableIP>, NetBoxError> {
+        self.get_available_ips(prefix_id, limit).await
+    }
+
+    async fn allocate_ip(&self, prefix_id: u64, request: Option<AllocateIPRequest>) -> Result<IPAddress, NetBoxError> {
+        self.allocate_ip(prefix_id, request).await
+    }
+
+    async fn get_ip_address(&self, id: u64) -> Result<IPAddress, NetBoxError> {
+        self.get_ip_address(id).await
+    }
+
+    async fn query_ip_addresses(&self, filters: &[(&str, &str)], fetch_all: bool) -> Result<Vec<IPAddress>, NetBoxError> {
+        self.query_ip_addresses(filters, fetch_all).await
+    }
+
+    async fn query_prefixes(&self, filters: &[(&str, &str)], fetch_all: bool) -> Result<Vec<Prefix>, NetBoxError> {
+        self.query_prefixes(filters, fetch_all).await
+    }
+
+    async fn create_ip_address(&self, address: &str, request: Option<AllocateIPRequest>) -> Result<IPAddress, NetBoxError> {
+        self.create_ip_address(address, request).await
+    }
+
+    async fn update_ip_address(&self, id: u64, request: AllocateIPRequest) -> Result<IPAddress, NetBoxError> {
+        self.update_ip_address(id, request).await
+    }
+
+    async fn delete_ip_address(&self, id: u64) -> Result<(), NetBoxError> {
+        self.delete_ip_address(id).await
+    }
+
+    async fn create_prefix(&self, prefix: &str, site_id: Option<u64>, tenant_id: Option<u64>, vlan_id: Option<u32>, role_id: Option<u64>, status: Option<&str>, description: Option<&str>, tags: Option<Vec<serde_json::Value>>) -> Result<Prefix, NetBoxError> {
+        // Map trait parameters to actual method signature: prefix, description, site_id, vlan_id, status, role_id, tenant_id, tags
+        let tags_vec: Option<Vec<String>> = tags.map(|v| {
+            v.into_iter()
+                .filter_map(|val| val.as_str().map(|s| s.to_string()))
+                .collect()
+        });
+        self.create_prefix(prefix, description.map(|s| s.to_string()), site_id, vlan_id, status, role_id, tenant_id, tags_vec).await
+    }
+
+    async fn update_prefix(&self, id: u64, site_id: Option<u64>, tenant_id: Option<u64>, vlan_id: Option<u32>, role_id: Option<u64>, status: Option<&str>, description: Option<&str>, tags: Option<Vec<serde_json::Value>>) -> Result<Prefix, NetBoxError> {
+        // Map trait parameters to actual method signature: id, prefix, description, status, role, tenant_id, site_id, vlan_id, tags
+        let tags_vec: Option<Vec<String>> = tags.map(|v| {
+            v.into_iter()
+                .filter_map(|val| val.as_str().map(|s| s.to_string()))
+                .collect()
+        });
+        let role_str = role_id.map(|r| r.to_string());
+        self.update_prefix(id, None, description.map(|s| s.to_string()), status, role_str, tenant_id, site_id, vlan_id, tags_vec).await
+    }
+
+    async fn query_aggregates(&self, filters: &[(&str, &str)], fetch_all: bool) -> Result<Vec<Aggregate>, NetBoxError> {
+        self.query_aggregates(filters, fetch_all).await
+    }
+
+    async fn get_aggregate(&self, id: u64) -> Result<Aggregate, NetBoxError> {
+        self.get_aggregate(id).await
+    }
+
+    async fn create_aggregate(&self, prefix: &str, rir_id: u64, description: Option<&str>) -> Result<Aggregate, NetBoxError> {
+        self.create_aggregate(prefix, Some(rir_id), None, description.map(|s| s.to_string()), None).await
+    }
+
+    async fn query_rirs(&self, filters: &[(&str, &str)], fetch_all: bool) -> Result<Vec<Rir>, NetBoxError> {
+        self.query_rirs(filters, fetch_all).await
+    }
+
+    async fn get_rir_by_name(&self, name: &str) -> Result<Option<Rir>, NetBoxError> {
+        self.get_rir_by_name(name).await
+    }
+
+    async fn create_rir(&self, name: &str, slug: &str, description: Option<&str>) -> Result<Rir, NetBoxError> {
+        self.create_rir(name, Some(slug), description.map(|s| s.to_string()), None).await
+    }
+
+    async fn create_vlan(&self, site_id: u64, vid: u32, name: &str, status: Option<&str>, description: Option<&str>) -> Result<Vlan, NetBoxError> {
+        self.create_vlan(vid as u16, name, Some(site_id), None, None, None, status, description.map(|s| s.to_string()), None).await
+    }
+
+    async fn update_vlan(&self, id: u64, site_id: Option<u64>, vid: Option<u32>, name: Option<&str>, status: Option<&str>, description: Option<&str>) -> Result<Vlan, NetBoxError> {
+        self.update_vlan(id, vid.map(|v| v as u16), name, site_id, None, None, None, status, description.map(|s| s.to_string()), None).await
+    }
+
+    async fn query_vlans(&self, filters: &[(&str, &str)], fetch_all: bool) -> Result<Vec<Vlan>, NetBoxError> {
+        self.query_vlans(filters, fetch_all).await
+    }
+
+    async fn get_vlan(&self, id: u64) -> Result<Vlan, NetBoxError> {
+        self.get_vlan(id).await
+    }
+
+    // DCIM Operations
+    async fn query_devices(&self, filters: &[(&str, &str)], fetch_all: bool) -> Result<Vec<Device>, NetBoxError> {
+        self.query_devices(filters, fetch_all).await
+    }
+
+    async fn get_device(&self, id: u64) -> Result<Device, NetBoxError> {
+        self.get_device(id).await
+    }
+
+    async fn get_device_by_mac(&self, mac: &str) -> Result<Option<Device>, NetBoxError> {
+        self.get_device_by_mac(mac).await
+    }
+
+    async fn create_device(&self, name: &str, device_type_id: u64, device_role_id: u64, site_id: u64, location_id: Option<u64>, tenant_id: Option<u64>, platform_id: Option<u64>, serial: Option<&str>, asset_tag: Option<&str>, status: &str, primary_ip4_id: Option<u64>, primary_ip6_id: Option<u64>, description: Option<&str>, comments: Option<&str>) -> Result<Device, NetBoxError> {
+        self.create_device(device_type_id, device_role_id, site_id, Some(name), tenant_id, platform_id, location_id, serial, asset_tag, Some(status), primary_ip4_id, primary_ip6_id, description.map(|s| s.to_string()), comments.map(|s| s.to_string())).await
+    }
+
+    async fn update_device(&self, id: u64, name: Option<&str>, _device_type_id: Option<u64>, _device_role_id: Option<u64>, _site_id: Option<u64>, location_id: Option<u64>, tenant_id: Option<u64>, platform_id: Option<u64>, serial: Option<&str>, asset_tag: Option<&str>, status: Option<&str>, primary_ip4_id: Option<u64>, primary_ip6_id: Option<u64>, description: Option<&str>, comments: Option<&str>) -> Result<Device, NetBoxError> {
+        self.update_device(id, name, tenant_id, platform_id, location_id, serial, asset_tag, status, primary_ip4_id, primary_ip6_id, description.map(|s| s.to_string()), comments.map(|s| s.to_string())).await
+    }
+
+    async fn query_interfaces(&self, filters: &[(&str, &str)], fetch_all: bool) -> Result<Vec<Interface>, NetBoxError> {
+        self.query_interfaces(filters, fetch_all).await
+    }
+
+    async fn get_interface(&self, id: u64) -> Result<Interface, NetBoxError> {
+        self.get_interface(id).await
+    }
+
+    async fn create_interface(&self, device_id: u64, name: &str, interface_type: &str, enabled: bool, description: Option<&str>) -> Result<Interface, NetBoxError> {
+        self.create_interface(device_id, name, interface_type, Some(enabled), None, None, description.map(|s| s.to_string())).await
+    }
+
+    async fn update_interface(&self, id: u64, name: Option<&str>, interface_type: Option<&str>, enabled: Option<bool>, mac_address: Option<&str>, description: Option<&str>) -> Result<Interface, NetBoxError> {
+        self.update_interface(id, name, interface_type, enabled, mac_address, None, description.map(|s| s.to_string())).await
+    }
+
+    async fn query_mac_addresses(&self, filters: &[(&str, &str)], fetch_all: bool) -> Result<Vec<MACAddress>, NetBoxError> {
+        self.query_mac_addresses(filters, fetch_all).await
+    }
+
+    async fn get_mac_address_by_address(&self, mac: &str) -> Result<Option<MACAddress>, NetBoxError> {
+        self.get_mac_address_by_address(mac).await
+    }
+
+    async fn create_mac_address(&self, interface_id: u64, address: &str, description: Option<&str>) -> Result<MACAddress, NetBoxError> {
+        self.create_mac_address(address, "dcim.interface", interface_id, description.map(|s| s.to_string()), None).await
+    }
+
+    async fn query_sites(&self, filters: &[(&str, &str)], fetch_all: bool) -> Result<Vec<Site>, NetBoxError> {
+        self.query_sites(filters, fetch_all).await
+    }
+
+    async fn get_site(&self, id: u64) -> Result<Site, NetBoxError> {
+        self.get_site(id).await
+    }
+
+    async fn create_site(&self, name: &str, slug: Option<&str>, status: &str, region_id: Option<u64>, site_group_id: Option<u64>, tenant_id: Option<u64>, facility: Option<&str>, time_zone: Option<&str>, description: Option<&str>, comments: Option<&str>) -> Result<Site, NetBoxError> {
+        self.create_site(name, slug, description.map(|s| s.to_string()), None, None, None, None, tenant_id, region_id, site_group_id, Some(status), facility.map(|s| s.to_string()), time_zone.map(|s| s.to_string()), comments.map(|s| s.to_string())).await
+    }
+
+    async fn update_site(&self, id: u64, name: Option<&str>, slug: Option<&str>, status: Option<&str>, region_id: Option<u64>, site_group_id: Option<u64>, tenant_id: Option<u64>, facility: Option<&str>, time_zone: Option<&str>, description: Option<&str>, comments: Option<&str>) -> Result<Site, NetBoxError> {
+        self.update_site(id, name, slug, description.map(|s| s.to_string()), None, None, None, None, tenant_id, region_id, site_group_id, status, facility.map(|s| s.to_string()), time_zone.map(|s| s.to_string()), comments.map(|s| s.to_string())).await
+    }
+
+    async fn query_regions(&self, filters: &[(&str, &str)], fetch_all: bool) -> Result<Vec<Region>, NetBoxError> {
+        self.query_regions(filters, fetch_all).await
+    }
+
+    async fn get_region(&self, id: u64) -> Result<Region, NetBoxError> {
+        self.get_region(id).await
+    }
+
+    async fn get_region_by_name(&self, name: &str) -> Result<Option<Region>, NetBoxError> {
+        self.get_region_by_name(name).await
+    }
+
+    async fn create_region(&self, name: &str, slug: &str, description: Option<&str>) -> Result<Region, NetBoxError> {
+        self.create_region(name, Some(slug), None, description.map(|s| s.to_string()), None).await
+    }
+
+    async fn query_site_groups(&self, filters: &[(&str, &str)], fetch_all: bool) -> Result<Vec<SiteGroup>, NetBoxError> {
+        self.query_site_groups(filters, fetch_all).await
+    }
+
+    async fn get_site_group(&self, id: u64) -> Result<SiteGroup, NetBoxError> {
+        self.get_site_group(id).await
+    }
+
+    async fn get_site_group_by_name(&self, name: &str) -> Result<Option<SiteGroup>, NetBoxError> {
+        self.get_site_group_by_name(name).await
+    }
+
+    async fn create_site_group(&self, name: &str, slug: &str, description: Option<&str>) -> Result<SiteGroup, NetBoxError> {
+        self.create_site_group(name, Some(slug), None, description.map(|s| s.to_string()), None).await
+    }
+
+    async fn query_locations(&self, filters: &[(&str, &str)], fetch_all: bool) -> Result<Vec<Location>, NetBoxError> {
+        self.query_locations(filters, fetch_all).await
+    }
+
+    async fn get_location(&self, id: u64) -> Result<Location, NetBoxError> {
+        self.get_location(id).await
+    }
+
+    async fn get_location_by_name(&self, site_id: u64, name: &str) -> Result<Option<Location>, NetBoxError> {
+        self.get_location_by_name(site_id, name).await
+    }
+
+    async fn create_location(&self, site_id: u64, name: &str, slug: Option<&str>, parent_id: Option<u64>, description: Option<String>, comments: Option<String>) -> Result<Location, NetBoxError> {
+        self.create_location(site_id, name, slug, parent_id, description, comments).await
+    }
+
+    async fn query_device_roles(&self, filters: &[(&str, &str)], fetch_all: bool) -> Result<Vec<DeviceRole>, NetBoxError> {
+        self.query_device_roles(filters, fetch_all).await
+    }
+
+    async fn get_device_role_by_name(&self, name: &str) -> Result<Option<DeviceRole>, NetBoxError> {
+        self.get_device_role_by_name(name).await
+    }
+
+    async fn create_device_role(&self, name: &str, slug: &str, description: Option<&str>) -> Result<DeviceRole, NetBoxError> {
+        self.create_device_role(name, Some(slug), None, None, description.map(|s| s.to_string()), None).await
+    }
+
+    async fn query_manufacturers(&self, filters: &[(&str, &str)], fetch_all: bool) -> Result<Vec<Manufacturer>, NetBoxError> {
+        self.query_manufacturers(filters, fetch_all).await
+    }
+
+    async fn get_manufacturer_by_name(&self, name: &str) -> Result<Option<Manufacturer>, NetBoxError> {
+        self.get_manufacturer_by_name(name).await
+    }
+
+    async fn create_manufacturer(&self, name: &str, slug: &str, description: Option<&str>) -> Result<Manufacturer, NetBoxError> {
+        self.create_manufacturer(name, Some(slug), description.map(|s| s.to_string())).await
+    }
+
+    async fn query_platforms(&self, filters: &[(&str, &str)], fetch_all: bool) -> Result<Vec<Platform>, NetBoxError> {
+        self.query_platforms(filters, fetch_all).await
+    }
+
+    async fn get_platform_by_name(&self, name: &str) -> Result<Option<Platform>, NetBoxError> {
+        self.get_platform_by_name(name).await
+    }
+
+    async fn create_platform(&self, name: &str, slug: &str, description: Option<&str>) -> Result<Platform, NetBoxError> {
+        self.create_platform(name, Some(slug), None, None, None, description.map(|s| s.to_string()), None).await
+    }
+
+    async fn query_device_types(&self, filters: &[(&str, &str)], fetch_all: bool) -> Result<Vec<DeviceType>, NetBoxError> {
+        self.query_device_types(filters, fetch_all).await
+    }
+
+    async fn get_device_type_by_model(&self, manufacturer_id: u64, model: &str) -> Result<Option<DeviceType>, NetBoxError> {
+        self.get_device_type_by_model(manufacturer_id, model).await
+    }
+
+    async fn create_device_type(&self, manufacturer_id: u64, model: &str, slug: Option<&str>, description: Option<&str>) -> Result<DeviceType, NetBoxError> {
+        self.create_device_type(manufacturer_id, model, slug, None, None, None, description.map(|s| s.to_string()), None).await
+    }
+
+    // Tenancy Operations
+    async fn query_tenants(&self, filters: &[(&str, &str)], fetch_all: bool) -> Result<Vec<Tenant>, NetBoxError> {
+        self.query_tenants(filters, fetch_all).await
+    }
+
+    async fn get_tenant(&self, id: u64) -> Result<Tenant, NetBoxError> {
+        self.get_tenant(id).await
+    }
+
+    async fn create_tenant(&self, name: &str, slug: &str, tenant_group_id: Option<u64>, description: Option<&str>, comments: Option<&str>) -> Result<Tenant, NetBoxError> {
+        self.create_tenant(name, Some(slug), description.map(|s| s.to_string()), comments.map(|s| s.to_string()), tenant_group_id).await
+    }
+
+    async fn query_tenant_groups(&self, filters: &[(&str, &str)], fetch_all: bool) -> Result<Vec<TenantGroup>, NetBoxError> {
+        self.query_tenant_groups(filters, fetch_all).await
+    }
+
+    async fn get_tenant_group_by_name(&self, name: &str) -> Result<Option<TenantGroup>, NetBoxError> {
+        self.get_tenant_group_by_name(name).await
+    }
+
+    async fn create_tenant_group(&self, name: &str, slug: &str, description: Option<&str>) -> Result<TenantGroup, NetBoxError> {
+        self.create_tenant_group(name, Some(slug), description.map(|s| s.to_string()), None, None).await
+    }
+
+    // Extras Operations
+    async fn query_roles(&self, filters: &[(&str, &str)], fetch_all: bool) -> Result<Vec<Role>, NetBoxError> {
+        self.query_roles(filters, fetch_all).await
+    }
+
+    async fn get_role(&self, id: u64) -> Result<Role, NetBoxError> {
+        self.get_role(id).await
+    }
+
+    async fn create_role(&self, name: &str, slug: &str, description: Option<&str>) -> Result<Role, NetBoxError> {
+        self.create_role(name, Some(slug), description.map(|s| s.to_string()), None, None).await
+    }
+
+    async fn query_tags(&self, filters: &[(&str, &str)], fetch_all: bool) -> Result<Vec<Tag>, NetBoxError> {
+        self.query_tags(filters, fetch_all).await
+    }
+
+    async fn get_tag(&self, id: u64) -> Result<Tag, NetBoxError> {
+        self.get_tag(id).await
+    }
+
+    async fn create_tag(&self, name: &str, slug: &str, description: Option<&str>) -> Result<Tag, NetBoxError> {
+        self.create_tag(name, Some(slug), None, description.map(|s| s.to_string()), None).await
     }
 }

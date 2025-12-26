@@ -32,7 +32,14 @@ spec:
   serial: "RPI4-001"  # Serial number (optional)
   assetTag: "DC1-RACK-A-01"  # Asset tag (optional)
   status: active  # active, offline, planned, staged, failed, inventory, decommissioning
-  primaryIp4: "192.168.1.10/24"  # References IPClaim or NetBoxIPAddress (optional)
+  # Primary IPv4 address - can be IPClaim CRD reference (recommended) or IP address (fallback)
+  # Option 1: IPClaim CRD reference (recommended, GitOps-friendly)
+  primaryIp4:
+    apiGroup: "dcops.microscaler.io"
+    kind: "IPClaim"
+    name: "talos-control-plane-01"
+  # Option 2: Direct IP address string (fallback)
+  # primaryIp4: "192.168.1.10/24"
   description: "Kubernetes control plane node 01"
   comments: "Managed by DCops for Talos cluster"
 

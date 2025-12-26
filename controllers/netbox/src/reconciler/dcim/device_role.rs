@@ -118,13 +118,12 @@ impl Reconciler {
                     info!("Device role {} already exists in NetBox (ID: {})", role_crd.spec.name, existing.id);
                     existing
                 } else {
+                    let slug = role_crd.spec.slug.as_deref().map(|s| s.to_string())
+                        .unwrap_or_else(|| role_crd.spec.name.to_lowercase().replace(' ', "-"));
                     match self.netbox_client.create_device_role(
                         &role_crd.spec.name,
-                        role_crd.spec.slug.as_deref(),
-                        role_crd.spec.color.as_deref(),
-                        Some(role_crd.spec.vm_role),
-                        role_crd.spec.description.clone(),
-                        role_crd.spec.comments.clone(),
+                        &slug,
+                        role_crd.spec.description.as_deref(),
                     ).await {
                         Ok(created) => {
                             info!("Created device role {} in NetBox (ID: {})", created.name, created.id);

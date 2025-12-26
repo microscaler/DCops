@@ -90,48 +90,20 @@ impl Reconciler {
         };
         
         // Resolve NetBox prefix ID from IPPool
-        // The id field can be either:
-        // 1. A direct NetBox prefix ID (numeric string like "1")
-        // 2. A NetBoxPrefix CRD name (controller resolves to NetBox ID from status)
-        let prefix_id_str = &pool.spec.netbox_prefix_ref.id;
-        let prefix_id = if let Ok(id) = prefix_id_str.parse::<u64>() {
-            // Direct numeric ID
-            id
-        } else {
-            // Treat as NetBoxPrefix CRD name - resolve to NetBox ID
-            let prefix_crd_name = prefix_id_str;
-            let prefix_crd_namespace = pool.metadata.namespace.as_deref().unwrap_or("default");
-            
-            debug!("Resolving NetBoxPrefix CRD {}/{} to NetBox ID for IPClaim", prefix_crd_namespace, prefix_crd_name);
-            
-            let prefix_crd = match self.netbox_prefix_api.get(prefix_crd_name).await {
-                Ok(crd) => crd,
-                Err(e) => {
-                    let error_msg = format!("NetBoxPrefix CRD {}/{} not found: {}", prefix_crd_namespace, prefix_crd_name, e);
-                    error!("{}", error_msg);
-                    update_status_error(&self.ip_claim_api, name, namespace, error_msg.clone(), claim.status.as_ref()).await;
-                    self.increment_error(&resource_key);
-                    return Err(ControllerError::PrefixNotFound(error_msg));
-                }
-            };
-            
-            // Get NetBox ID from NetBoxPrefix status
-            match prefix_crd.status
-                .as_ref()
-                .and_then(|s| s.netbox_id)
-            {
-                Some(netbox_id) => {
-                    info!("Resolved NetBoxPrefix CRD {}/{} to NetBox ID {} for IPClaim", prefix_crd_namespace, prefix_crd_name, netbox_id);
-                    netbox_id
-                }
-                None => {
-                    let error_msg = format!("NetBoxPrefix {}/{} has not been created in NetBox yet (no netbox_id in status)", prefix_crd_namespace, prefix_crd_name);
-                    error!("{}", error_msg);
-                    update_status_error(&self.ip_claim_api, name, namespace, error_msg.clone(), claim.status.as_ref()).await;
-                    self.increment_error(&resource_key);
-                    return Err(ControllerError::PrefixNotFound(error_msg));
-                }
+        // First try to get the resolved prefix ID from IPPool status (fast path)
+        // If not available, resolve from IPPool's NetBoxPrefix CRD reference (fallback)
+        let prefix_id = if let Some(status) = &pool.status {
+            if let Some(prefix_id) = status.netbox_prefix_id {
+                // IPPool has already resolved the prefix ID - use it
+                debug!("Using resolved NetBox prefix ID {} from IPPool {}/{} status", prefix_id, pool_namespace, pool_name);
+                prefix_id
+            } else {
+                // IPPool status doesn't have prefix ID yet - resolve from CRD reference
+                self.resolve_prefix_id_from_pool_spec(&pool.spec.netbox_prefix_ref, pool_namespace, name, namespace, &resource_key).await?
             }
+        } else {
+            // IPPool has no status - resolve from CRD reference
+            self.resolve_prefix_id_from_pool_spec(&pool.spec.netbox_prefix_ref, pool_namespace, name, namespace, &resource_key).await?
         };
         
         // Verify prefix exists in NetBox
@@ -347,6 +319,68 @@ impl Reconciler {
             let resource_key = format!("{}/{}", namespace, name);
             self.reset_error(&resource_key);
             Ok(())
+        }
+    }
+    
+    /// Helper function to resolve prefix ID from IPPool's NetBoxPrefix CRD reference
+    /// This is used as a fallback when IPPool status doesn't have the resolved ID yet
+    async fn resolve_prefix_id_from_pool_spec(
+        &self,
+        prefix_ref: &crds::NetBoxResourceReference,
+        pool_namespace: &str,
+        claim_name: &str,
+        claim_namespace: &str,
+        resource_key: &str,
+    ) -> Result<u64, ControllerError> {
+        // Validate that the reference is to a NetBoxPrefix CRD
+        if prefix_ref.kind != "NetBoxPrefix" {
+            let error_msg = format!(
+                "Invalid kind '{}' for netbox_prefix_ref in IPPool {}/{}, expected 'NetBoxPrefix'",
+                prefix_ref.kind, pool_namespace, prefix_ref.name
+            );
+            error!("{}", error_msg);
+            return Err(ControllerError::InvalidConfig(error_msg));
+        }
+        
+        // Resolve the NetBoxPrefix CRD to get the NetBox prefix ID
+        let prefix_crd_name = &prefix_ref.name;
+        let prefix_crd_namespace = prefix_ref.namespace.as_deref().unwrap_or(pool_namespace);
+        
+        debug!("Resolving NetBoxPrefix CRD {}/{} to NetBox ID for IPClaim {}/{}", 
+            prefix_crd_namespace, prefix_crd_name, claim_namespace, claim_name);
+        
+        let prefix_crd = match self.netbox_prefix_api.get(prefix_crd_name).await {
+            Ok(crd) => crd,
+            Err(e) => {
+                let error_msg = format!(
+                    "NetBoxPrefix CRD {}/{} not found for IPPool {}/{}: {}",
+                    prefix_crd_namespace, prefix_crd_name, pool_namespace, prefix_ref.name, e
+                );
+                error!("{}", error_msg);
+                self.increment_error(resource_key);
+                return Err(ControllerError::PrefixNotFound(error_msg));
+            }
+        };
+        
+        // Get NetBox ID from NetBoxPrefix status
+        match prefix_crd.status
+            .as_ref()
+            .and_then(|s| s.netbox_id)
+        {
+            Some(netbox_id) => {
+                info!("Resolved NetBoxPrefix CRD {}/{} to NetBox ID {} for IPClaim {}/{}", 
+                    prefix_crd_namespace, prefix_crd_name, netbox_id, claim_namespace, claim_name);
+                Ok(netbox_id)
+            }
+            None => {
+                let error_msg = format!(
+                    "NetBoxPrefix {}/{} has not been created in NetBox yet (no netbox_id in status). Ensure the NetBoxPrefix CRD is reconciled first.",
+                    prefix_crd_namespace, prefix_crd_name
+                );
+                error!("{}", error_msg);
+                self.increment_error(resource_key);
+                Err(ControllerError::PrefixNotFound(error_msg))
+            }
         }
     }
 }

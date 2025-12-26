@@ -21,7 +21,7 @@ impl Reconciler {
                 if let Some(netbox_id) = status.netbox_id {
                     // Use simple helper function for drift detection (no update logic)
                     match reconcile_helpers::check_existing(
-                        &self.netbox_client,
+                        self.netbox_client.as_ref(),
                         netbox_id,
                         &format!("NetBoxInterface {}/{}", namespace, name),
                         self.netbox_client.get_interface(netbox_id),
@@ -140,10 +140,8 @@ impl Reconciler {
                         device_id,
                         &interface_crd.spec.name,
                         &interface_crd.spec.r#type,
-                        Some(interface_crd.spec.enabled),
-                        interface_crd.spec.mac_address.as_deref(),
-                        interface_crd.spec.mtu,
-                        interface_crd.spec.description.clone(),
+                        interface_crd.spec.enabled,
+                        interface_crd.spec.description.as_deref(),
                     ).await {
                         Ok(created) => {
                             info!("Created interface {} on device {} in NetBox (ID: {})", interface_crd.spec.name, interface_crd.spec.device, created.id);

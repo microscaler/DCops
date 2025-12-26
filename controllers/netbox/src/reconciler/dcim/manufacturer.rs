@@ -116,10 +116,12 @@ impl Reconciler {
                     info!("Manufacturer {} already exists in NetBox (ID: {})", mfg_crd.spec.name, existing.id);
                     existing
                 } else {
+                    let slug = mfg_crd.spec.slug.as_deref().map(|s| s.to_string())
+                        .unwrap_or_else(|| mfg_crd.spec.name.to_lowercase().replace(' ', "-"));
                     match self.netbox_client.create_manufacturer(
                         &mfg_crd.spec.name,
-                        mfg_crd.spec.slug.as_deref(),
-                        mfg_crd.spec.description.clone(),
+                        &slug,
+                        mfg_crd.spec.description.as_deref(),
                     ).await {
                         Ok(created) => {
                             info!("Created manufacturer {} in NetBox (ID: {})", created.name, created.id);

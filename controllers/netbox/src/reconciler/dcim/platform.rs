@@ -139,14 +139,12 @@ impl Reconciler {
                     info!("Platform {} already exists in NetBox (ID: {})", platform_crd.spec.name, existing.id);
                     existing
                 } else {
+                    let slug = platform_crd.spec.slug.as_deref().map(|s| s.to_string())
+                        .unwrap_or_else(|| platform_crd.spec.name.to_lowercase().replace(' ', "-"));
                     match self.netbox_client.create_platform(
                         &platform_crd.spec.name,
-                        platform_crd.spec.slug.as_deref(),
-                        manufacturer_id,
-                        platform_crd.spec.napalm_driver.as_deref(),
-                        platform_crd.spec.napalm_args.as_deref(),
-                        platform_crd.spec.description.clone(),
-                        platform_crd.spec.comments.clone(),
+                        &slug,
+                        platform_crd.spec.description.as_deref(),
                     ).await {
                         Ok(created) => {
                             info!("Created platform {} in NetBox (ID: {})", created.name, created.id);

@@ -7,6 +7,19 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use crate::references::NetBoxResourceReference;
 
+/// Primary IP address reference
+/// Supports both CRD references (GitOps-friendly) and direct IP addresses (fallback)
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
+#[serde(untagged)]
+pub enum PrimaryIPReference {
+    /// IPClaim CRD reference (recommended, GitOps-friendly)
+    IPClaimRef(NetBoxResourceReference),
+    
+    /// Direct IP address string (e.g., "192.168.1.10/24" or "2001:db8::1/64")
+    /// Used as fallback when IPClaim CRD is not available
+    IPAddress(String),
+}
+
 /// NetBoxDeviceSpec defines the desired state of a NetBox device
 #[derive(CustomResource, Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[kube(
@@ -55,13 +68,19 @@ pub struct NetBoxDeviceSpec {
     #[serde(default = "default_device_status")]
     pub status: DeviceStatus,
     
-    /// Primary IPv4 address (references IPClaim or NetBoxIPAddress, optional)
+    /// Primary IPv4 address reference (optional)
+    /// Can be either:
+    /// - IPClaim CRD reference (recommended, GitOps-friendly)
+    /// - IP address string (e.g., "192.168.1.10/24") as fallback
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub primary_ip4: Option<String>,
+    pub primary_ip4: Option<PrimaryIPReference>,
     
-    /// Primary IPv6 address (references IPClaim or NetBoxIPAddress, optional)
+    /// Primary IPv6 address reference (optional)
+    /// Can be either:
+    /// - IPClaim CRD reference (recommended, GitOps-friendly)
+    /// - IP address string (e.g., "2001:db8::1/64") as fallback
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub primary_ip6: Option<String>,
+    pub primary_ip6: Option<PrimaryIPReference>,
     
     /// Description
     #[serde(skip_serializing_if = "Option::is_none")]

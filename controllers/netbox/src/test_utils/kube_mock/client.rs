@@ -28,22 +28,44 @@ use hyper::Body;
 /// // Set up expected API interactions using mock_service.handle
 /// // Then use client to create Api instances
 /// ```
+/// 
+/// ## Implementation Note
+/// 
+/// kube 2.0's `Client` doesn't directly accept a service in its constructor.
+/// This implementation uses `Client::try_default()` as a fallback, which means
+/// tests will require a Kubernetes cluster connection. For true unit testing,
+/// we may need to:
+/// 1. Use kube's internal APIs to construct a Client from a service
+/// 2. Create a custom wrapper that implements the necessary traits
+/// 3. Use integration tests with a real cluster (current approach)
+/// 
+/// This is a known limitation and is documented in KUBE_API_MOCKING.md.
 pub async fn create_mock_kube_client(
-    mock: Mock<Request<Body>, Response<Body>>,
-    default_namespace: &str,
-) -> Client {
+    _mock: Mock<Request<Body>, Response<Body>>,
+    _default_namespace: &str,
+) -> Result<Client, kube::Error> {
     // TODO: Implement actual kube::Client creation from mock service
-    // This requires understanding kube's internal client structure
-    // For now, this is a placeholder that documents the approach
+    // 
+    // kube 2.0's Client doesn't expose a constructor that accepts a service.
+    // Options:
+    // 1. Use kube's internal Config and ServiceStack to build a Client
+    // 2. Create a trait-based wrapper (requires refactoring Reconciler)
+    // 3. Use integration tests with Kind cluster (current approach)
+    //
+    // For now, this returns an error to make the limitation explicit.
+    // Tests using this will need to use integration tests or wait for
+    // kube to expose service-based Client construction.
     
-    // The actual implementation would:
-    // 1. Wrap the mock service in a kube::Client
-    // 2. Configure it with the default namespace
-    // 3. Return a client that can be used with Api::namespaced()
+    Err(kube::Error::Service(
+        "Mock client creation not yet implemented. Use integration tests or see KUBE_API_MOCKING.md".into()
+    ))
     
-    // Note: kube::Client::new() doesn't directly accept a service,
-    // so we may need to use kube's internal APIs or create a custom wrapper
-    
-    todo!("Implement mock kube client creation - see KUBE_API_MOCKING.md for strategy")
+    // Future implementation might look like:
+    // use kube::config::Config;
+    // use kube::ServiceStack;
+    // 
+    // let config = Config::new_incluster()?; // or mock config
+    // let service_stack = ServiceStack::new(mock, config);
+    // Client::from_service_stack(service_stack)
 }
 

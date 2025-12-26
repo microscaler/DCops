@@ -13,6 +13,8 @@ pub mod manufacturer;
 pub mod platform;
 pub mod device_type;
 pub mod device;
+#[cfg(test)]
+pub mod device_test;
 pub mod interface;
 pub mod mac_address;
 pub mod vlan;

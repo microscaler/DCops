@@ -71,4 +71,3 @@ pub async fn create_tag(client: &MockNetBoxClient, name: &str, slug: &str, descr
         client.tags.lock().unwrap().insert(id, tag.clone());
         Ok(tag)
 }
-}

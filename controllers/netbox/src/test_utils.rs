@@ -313,6 +313,7 @@ pub fn create_test_netbox_device(
             netbox_url: Some(netbox_url.unwrap_or_else(|| format!("http://netbox/api/dcim/devices/{}/", id))),
             state: crds::ResourceState::Created,
             error: None,
+            last_reconciled: None,
         }),
     }
 }

@@ -2205,14 +2205,14 @@ spec:
                   Only one field should be set (ipClaimRef or ipAddress)
                 nullable: true
                 properties:
-                  ip_address:
+                  ipAddress:
                     description: |-
                       Direct IP address string (e.g., "192.168.1.10/24" or "2001:db8::1/64")
                       Used as fallback when IPClaim CRD is not available
                       Set this when providing a direct IP address
                     nullable: true
                     type: string
-                  ip_claim_ref:
+                  ipClaimRef:
                     description: |-
                       IPClaim CRD reference (recommended, GitOps-friendly)
                       Set this when referencing an IPClaim CRD
@@ -2246,14 +2246,14 @@ spec:
                   Only one field should be set (ipClaimRef or ipAddress)
                 nullable: true
                 properties:
-                  ip_address:
+                  ipAddress:
                     description: |-
                       Direct IP address string (e.g., "192.168.1.10/24" or "2001:db8::1/64")
                       Used as fallback when IPClaim CRD is not available
                       Set this when providing a direct IP address
                     nullable: true
                     type: string
-                  ip_claim_ref:
+                  ipClaimRef:
                     description: |-
                       IPClaim CRD reference (recommended, GitOps-friendly)
                       Set this when referencing an IPClaim CRD

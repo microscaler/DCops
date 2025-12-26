@@ -8,6 +8,8 @@
 
 pub mod ipam;
 pub mod tenancy;
+#[cfg(test)]
+pub mod tenancy_test;
 pub mod dcim;
 pub mod extras;
 

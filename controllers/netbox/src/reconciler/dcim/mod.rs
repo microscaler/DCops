@@ -3,6 +3,8 @@
 //! Handles: Site, Region, SiteGroup, Location, Device*, Interface, MAC, VLAN
 
 pub mod site;
+#[cfg(test)]
+pub mod site_test;
 pub mod region;
 pub mod site_group;
 pub mod location;

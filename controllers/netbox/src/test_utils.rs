@@ -1,6 +1,12 @@
 //! Test utilities for unit testing reconcilers
 //!
 //! This module provides helpers for creating test data and setting up test scenarios.
+//!
+//! ## Kubernetes API Mocking
+//!
+//! Reconciler tests require mocking `kube::Api<T>` instances. See `docs/KUBE_API_MOCKING.md`
+//! for the strategy and implementation plan. The recommended approach is to use `tower-test`
+//! to create a mock HTTP service that emulates the Kubernetes API server.
 
 #[cfg(test)]
 use crate::reconciler::Reconciler;

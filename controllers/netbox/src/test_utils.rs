@@ -214,6 +214,7 @@ pub fn create_test_netbox_site(
             region: None,
             site_group: None,
             status: crds::SiteStatus::Active,
+            facility: None,
             time_zone: None,
             comments: None,
         },

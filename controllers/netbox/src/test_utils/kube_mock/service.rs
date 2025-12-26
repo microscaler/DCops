@@ -2,10 +2,17 @@
 //!
 //! Uses tower-test to create a mock HTTP service that emulates the Kubernetes API server.
 
+#[cfg(test)]
 use tower_test::mock::{self, Handle};
+#[cfg(test)]
 use http::{Request, Response};
-use hyper::Body;
+// Note: tower-test 0.4 uses hyper 0.14, which has Body in hyper::body::Body
+// For now, we'll use a type alias that can be adjusted when tower-test supports hyper 1.0
+#[cfg(test)]
+type Body = http_body_util::Full<bytes::Bytes>;
+#[cfg(test)]
 use std::sync::Arc;
+#[cfg(test)]
 use crate::test_utils::kube_mock::store::MockKubeStore;
 
 /// Mock Kubernetes HTTP service

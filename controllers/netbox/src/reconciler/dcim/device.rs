@@ -225,67 +225,67 @@ impl Reconciler {
                 // Resolve primary IP addresses (if specified)
                 let primary_ip4_id = if let Some(ip_ref) = &device_crd.spec.primary_ip4 {
                     if let Some(claim_ref) = &ip_ref.ip_claim_ref {
-                            // Resolve IPClaim CRD reference to get NetBox IP address ID
-                            if claim_ref.kind != "IPClaim" {
-                                warn!("Invalid kind '{}' for primary_ip4 IPClaim reference in device {}, expected 'IPClaim'", claim_ref.kind, name);
-                                None
-                            } else {
-                                let claim_namespace = claim_ref.namespace.as_deref()
-                                    .unwrap_or_else(|| device_crd.metadata.namespace.as_deref().unwrap_or("default"));
-                                
-                                match self.ip_claim_api.get(&claim_ref.name).await {
-                                    Ok(claim_crd) => {
-                                        // Get the NetBox IP address ID from the claim's status
-                                        // The claim's netbox_ip_ref contains the URL, we need to extract the ID
-                                        if let Some(status) = &claim_crd.status {
-                                            if let Some(ip_url) = &status.netbox_ip_ref {
-                                                // Extract ID from URL (e.g., "http://netbox/api/ipam/ip-addresses/123/")
-                                                if let Some(id_str) = ip_url.split('/').nth_back(1) {
-                                                    if let Ok(id) = id_str.parse::<u64>() {
-                                                        debug!("Resolved primary_ip4 from IPClaim {}/{} to NetBox IP ID {}", claim_namespace, claim_ref.name, id);
-                                                        Some(id)
-                                                    } else {
-                                                        warn!("Failed to parse IP ID from IPClaim netbox_ip_ref URL: {}", ip_url);
-                                                        None
-                                                    }
+                        // Resolve IPClaim CRD reference to get NetBox IP address ID
+                        if claim_ref.kind != "IPClaim" {
+                            warn!("Invalid kind '{}' for primary_ip4 IPClaim reference in device {}, expected 'IPClaim'", claim_ref.kind, name);
+                            None
+                        } else {
+                            let claim_namespace = claim_ref.namespace.as_deref()
+                                .unwrap_or_else(|| device_crd.metadata.namespace.as_deref().unwrap_or("default"));
+                            
+                            match self.ip_claim_api.get(&claim_ref.name).await {
+                                Ok(claim_crd) => {
+                                    // Get the NetBox IP address ID from the claim's status
+                                    // The claim's netbox_ip_ref contains the URL, we need to extract the ID
+                                    if let Some(status) = &claim_crd.status {
+                                        if let Some(ip_url) = &status.netbox_ip_ref {
+                                            // Extract ID from URL (e.g., "http://netbox/api/ipam/ip-addresses/123/")
+                                            if let Some(id_str) = ip_url.split('/').nth_back(1) {
+                                                if let Ok(id) = id_str.parse::<u64>() {
+                                                    debug!("Resolved primary_ip4 from IPClaim {}/{} to NetBox IP ID {}", claim_namespace, claim_ref.name, id);
+                                                    Some(id)
                                                 } else {
-                                                    warn!("Failed to extract IP ID from IPClaim netbox_ip_ref URL: {}", ip_url);
+                                                    warn!("Failed to parse IP ID from IPClaim netbox_ip_ref URL: {}", ip_url);
                                                     None
                                                 }
                                             } else {
-                                                warn!("IPClaim {}/{} has no netbox_ip_ref in status (not allocated yet)", claim_namespace, claim_ref.name);
+                                                warn!("Failed to extract IP ID from IPClaim netbox_ip_ref URL: {}", ip_url);
                                                 None
                                             }
                                         } else {
-                                            warn!("IPClaim {}/{} has no status (not allocated yet)", claim_namespace, claim_ref.name);
+                                            warn!("IPClaim {}/{} has no netbox_ip_ref in status (not allocated yet)", claim_namespace, claim_ref.name);
                                             None
                                         }
-                                    }
-                                    Err(e) => {
-                                        warn!("Failed to get IPClaim {}/{} for primary_ip4: {}", claim_namespace, claim_ref.name, e);
-                                        None
-                                    }
-                                }
-                            }
-                        }
-                        crds::PrimaryIPReference::IPAddress(ip_addr) => {
-                            // Query NetBox by IP address (fallback)
-                            match self.netbox_client.query_ip_addresses(&[("address", ip_addr)], false).await {
-                                Ok(ips) => {
-                                    if let Some(ip) = ips.first() {
-                                        debug!("Resolved primary_ip4 from IP address {} to NetBox IP ID {}", ip_addr, ip.id);
-                                        Some(ip.id)
                                     } else {
-                                        warn!("IP address {} not found in NetBox", ip_addr);
+                                        warn!("IPClaim {}/{} has no status (not allocated yet)", claim_namespace, claim_ref.name);
                                         None
                                     }
                                 }
                                 Err(e) => {
-                                    warn!("Failed to query IP address {} in NetBox: {}", ip_addr, e);
+                                    warn!("Failed to get IPClaim {}/{} for primary_ip4: {}", claim_namespace, claim_ref.name, e);
                                     None
                                 }
                             }
                         }
+                    } else if let Some(ip_addr) = &ip_ref.ip_address {
+                        // Query NetBox by IP address (fallback)
+                        match self.netbox_client.query_ip_addresses(&[("address", ip_addr)], false).await {
+                            Ok(ips) => {
+                                if let Some(ip) = ips.first() {
+                                    debug!("Resolved primary_ip4 from IP address {} to NetBox IP ID {}", ip_addr, ip.id);
+                                    Some(ip.id)
+                                } else {
+                                    warn!("IP address {} not found in NetBox", ip_addr);
+                                    None
+                                }
+                            }
+                            Err(e) => {
+                                warn!("Failed to query IP address {} in NetBox: {}", ip_addr, e);
+                                None
+                            }
+                        }
+                    } else {
+                        None
                     }
                 } else {
                     None
@@ -293,66 +293,66 @@ impl Reconciler {
                 
                 let primary_ip6_id = if let Some(ip_ref) = &device_crd.spec.primary_ip6 {
                     if let Some(claim_ref) = &ip_ref.ip_claim_ref {
-                            // Resolve IPClaim CRD reference to get NetBox IP address ID
-                            if claim_ref.kind != "IPClaim" {
-                                warn!("Invalid kind '{}' for primary_ip6 IPClaim reference in device {}, expected 'IPClaim'", claim_ref.kind, name);
-                                None
-                            } else {
-                                let claim_namespace = claim_ref.namespace.as_deref()
-                                    .unwrap_or_else(|| device_crd.metadata.namespace.as_deref().unwrap_or("default"));
-                                
-                                match self.ip_claim_api.get(&claim_ref.name).await {
-                                    Ok(claim_crd) => {
-                                        // Get the NetBox IP address ID from the claim's status
-                                        if let Some(status) = &claim_crd.status {
-                                            if let Some(ip_url) = &status.netbox_ip_ref {
-                                                // Extract ID from URL
-                                                if let Some(id_str) = ip_url.split('/').nth_back(1) {
-                                                    if let Ok(id) = id_str.parse::<u64>() {
-                                                        debug!("Resolved primary_ip6 from IPClaim {}/{} to NetBox IP ID {}", claim_namespace, claim_ref.name, id);
-                                                        Some(id)
-                                                    } else {
-                                                        warn!("Failed to parse IP ID from IPClaim netbox_ip_ref URL: {}", ip_url);
-                                                        None
-                                                    }
+                        // Resolve IPClaim CRD reference to get NetBox IP address ID
+                        if claim_ref.kind != "IPClaim" {
+                            warn!("Invalid kind '{}' for primary_ip6 IPClaim reference in device {}, expected 'IPClaim'", claim_ref.kind, name);
+                            None
+                        } else {
+                            let claim_namespace = claim_ref.namespace.as_deref()
+                                .unwrap_or_else(|| device_crd.metadata.namespace.as_deref().unwrap_or("default"));
+                            
+                            match self.ip_claim_api.get(&claim_ref.name).await {
+                                Ok(claim_crd) => {
+                                    // Get the NetBox IP address ID from the claim's status
+                                    if let Some(status) = &claim_crd.status {
+                                        if let Some(ip_url) = &status.netbox_ip_ref {
+                                            // Extract ID from URL
+                                            if let Some(id_str) = ip_url.split('/').nth_back(1) {
+                                                if let Ok(id) = id_str.parse::<u64>() {
+                                                    debug!("Resolved primary_ip6 from IPClaim {}/{} to NetBox IP ID {}", claim_namespace, claim_ref.name, id);
+                                                    Some(id)
                                                 } else {
-                                                    warn!("Failed to extract IP ID from IPClaim netbox_ip_ref URL: {}", ip_url);
+                                                    warn!("Failed to parse IP ID from IPClaim netbox_ip_ref URL: {}", ip_url);
                                                     None
                                                 }
                                             } else {
-                                                warn!("IPClaim {}/{} has no netbox_ip_ref in status (not allocated yet)", claim_namespace, claim_ref.name);
+                                                warn!("Failed to extract IP ID from IPClaim netbox_ip_ref URL: {}", ip_url);
                                                 None
                                             }
                                         } else {
-                                            warn!("IPClaim {}/{} has no status (not allocated yet)", claim_namespace, claim_ref.name);
+                                            warn!("IPClaim {}/{} has no netbox_ip_ref in status (not allocated yet)", claim_namespace, claim_ref.name);
                                             None
                                         }
-                                    }
-                                    Err(e) => {
-                                        warn!("Failed to get IPClaim {}/{} for primary_ip6: {}", claim_namespace, claim_ref.name, e);
-                                        None
-                                    }
-                                }
-                            }
-                        }
-                        crds::PrimaryIPReference::IPAddress(ip_addr) => {
-                            // Query NetBox by IP address (fallback)
-                            match self.netbox_client.query_ip_addresses(&[("address", ip_addr)], false).await {
-                                Ok(ips) => {
-                                    if let Some(ip) = ips.first() {
-                                        debug!("Resolved primary_ip6 from IP address {} to NetBox IP ID {}", ip_addr, ip.id);
-                                        Some(ip.id)
                                     } else {
-                                        warn!("IP address {} not found in NetBox", ip_addr);
+                                        warn!("IPClaim {}/{} has no status (not allocated yet)", claim_namespace, claim_ref.name);
                                         None
                                     }
                                 }
                                 Err(e) => {
-                                    warn!("Failed to query IP address {} in NetBox: {}", ip_addr, e);
+                                    warn!("Failed to get IPClaim {}/{} for primary_ip6: {}", claim_namespace, claim_ref.name, e);
                                     None
                                 }
                             }
                         }
+                    } else if let Some(ip_addr) = &ip_ref.ip_address {
+                        // Query NetBox by IP address (fallback)
+                        match self.netbox_client.query_ip_addresses(&[("address", ip_addr)], false).await {
+                            Ok(ips) => {
+                                if let Some(ip) = ips.first() {
+                                    debug!("Resolved primary_ip6 from IP address {} to NetBox IP ID {}", ip_addr, ip.id);
+                                    Some(ip.id)
+                                } else {
+                                    warn!("IP address {} not found in NetBox", ip_addr);
+                                    None
+                                }
+                            }
+                            Err(e) => {
+                                warn!("Failed to query IP address {} in NetBox: {}", ip_addr, e);
+                                None
+                            }
+                        }
+                    } else {
+                        None
                     }
                 } else {
                     None

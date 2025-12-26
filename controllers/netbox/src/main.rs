@@ -15,6 +15,8 @@ mod backoff;
 mod reconcile_helpers;
 #[cfg(test)]
 mod test_utils;
+#[cfg(test)]
+mod reconcile_helpers_test;
 
 use controller::Controller;
 use crate::error::ControllerError;

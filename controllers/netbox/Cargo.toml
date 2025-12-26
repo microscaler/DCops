@@ -33,5 +33,8 @@ crds = { path = "../../crates/crds" }
 netbox-client = { path = "../../crates/netbox-client", features = ["test-util"] }
 
 [dev-dependencies]
-# Testing dependencies to be added as needed
+# Testing dependencies
+tower-test = "0.4"
+hyper = { version = "1.0", features = ["http1", "http2", "client", "server"] }
+http = "1.0"
 

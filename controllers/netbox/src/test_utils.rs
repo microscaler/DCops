@@ -7,6 +7,15 @@
 //! Reconciler tests require mocking `kube::Api<T>` instances. See `docs/KUBE_API_MOCKING.md`
 //! for the strategy and implementation plan. The recommended approach is to use `tower-test`
 //! to create a mock HTTP service that emulates the Kubernetes API server.
+//!
+//! The mocking infrastructure is organized in the `kube_mock` submodule:
+//! - `kube_mock::store`: In-memory resource store
+//! - `kube_mock::service`: Mock HTTP service using tower-test
+//! - `kube_mock::client`: Mock kube::Client creation
+//! - `kube_mock::helpers`: Utility functions for common scenarios
+
+#[cfg(test)]
+mod kube_mock;
 
 #[cfg(test)]
 use crate::reconciler::Reconciler;

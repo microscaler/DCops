@@ -287,11 +287,10 @@ mod tests {
 
     // Async helper function tests using MockNetBoxClient
     mod async_tests {
-        use super::*;
-        use crate::reconcile_helpers::{check_existing, check_and_update_existing};
-        use netbox_client::{MockNetBoxClient, Prefix, PrefixStatus};
+        use crate::reconcile_helpers::{check_existing, check_and_update_existing, NetBoxResource};
         use crate::test_utils::create_test_prefix;
-        use chrono::Utc;
+        use netbox_client::{MockNetBoxClient, NetBoxClientTrait};
+        use crate::error::ControllerError;
         
         #[tokio::test]
         async fn test_check_existing_resource_exists() {
@@ -300,12 +299,13 @@ mod tests {
             let test_prefix = create_test_prefix(1, "192.168.1.0/24", "http://test-netbox");
             mock_client.add_prefix(test_prefix.clone());
             
-            // Execute: Check if resource exists
+            // Execute: Check if resource exists (using trait method via reference)
+            let client_ref: &dyn NetBoxClientTrait = &mock_client;
             let result = check_existing(
-                &mock_client,
+                client_ref,
                 1,
                 "test-prefix",
-                async { mock_client.get_prefix(1).await },
+                async { client_ref.get_prefix(1).await },
             ).await;
             
             // Assert: Should return Some(resource)
@@ -322,11 +322,12 @@ mod tests {
             let mock_client = MockNetBoxClient::new("http://test-netbox");
             
             // Execute: Check if resource exists
+            let client_ref: &dyn NetBoxClientTrait = &mock_client;
             let result = check_existing(
-                &mock_client,
+                client_ref,
                 999,
                 "non-existent-prefix",
-                async { mock_client.get_prefix(999).await },
+                async { client_ref.get_prefix(999).await },
             ).await;
             
             // Assert: Should return Ok(None) for drift detection
@@ -343,13 +344,14 @@ mod tests {
             mock_client.add_prefix(test_prefix.clone());
             
             // Execute: Check and update (but needs_update returns false)
+            let client_ref: &dyn NetBoxClientTrait = &mock_client;
             let result = check_and_update_existing(
-                &mock_client,
+                client_ref,
                 1,
                 "test-prefix",
-                async { mock_client.get_prefix(1).await },
+                async { client_ref.get_prefix(1).await },
                 |_| false, // No update needed
-                async { mock_client.get_prefix(1).await }, // Won't be called
+                async { client_ref.get_prefix(1).await }, // Won't be called
             ).await;
             
             // Assert: Should return Some(existing) without updating
@@ -372,11 +374,12 @@ mod tests {
             updated_prefix.description = "Updated description".to_string();
             
             // Execute: Check and update (needs_update returns true)
+            let client_ref: &dyn NetBoxClientTrait = &mock_client;
             let result = check_and_update_existing(
-                &mock_client,
+                client_ref,
                 1,
                 "test-prefix",
-                async { mock_client.get_prefix(1).await },
+                async { client_ref.get_prefix(1).await },
                 |_| true, // Update needed
                 async { 
                     // Simulate update by returning updated prefix
@@ -398,13 +401,14 @@ mod tests {
             let mock_client = MockNetBoxClient::new("http://test-netbox");
             
             // Execute: Check and update (resource not found)
+            let client_ref: &dyn NetBoxClientTrait = &mock_client;
             let result = check_and_update_existing(
-                &mock_client,
+                client_ref,
                 999,
                 "non-existent-prefix",
-                async { mock_client.get_prefix(999).await },
+                async { client_ref.get_prefix(999).await },
                 |_| true,
-                async { mock_client.get_prefix(999).await },
+                async { client_ref.get_prefix(999).await },
             ).await;
             
             // Assert: Should return Ok(None) for drift detection

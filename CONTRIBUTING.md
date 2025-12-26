@@ -361,6 +361,97 @@ Remember: **It's cheaper to have too many small modules than one huge file.**
 
 ---
 
+## CRD Generation and Management
+
+### ⚠️ Critical: CRDs are Ephemeral
+
+**IMPORTANT:** CRDs in `config/crd/all-crds.yaml` are **ephemeral** and **automatically generated** from Rust code in `crates/crds/src/`. They should **never** be manually edited.
+
+### How CRD Generation Works
+
+1. **Source of Truth:** CRD definitions are in `crates/crds/src/` (Rust code using `kube::CustomResource`)
+2. **Generation Tool:** `crates/crds/src/bin/crdgen.rs` generates YAML from Rust types
+3. **Generation Script:** `scripts/generate_crds.py` builds the binary and generates CRDs
+4. **Output:** Generated YAML is written to `config/crd/all-crds.yaml`
+5. **Tilt Integration:** Tilt's `generate-crds` resource automatically regenerates CRDs when:
+   - CRD code in `crates/crds/src/` changes
+   - `crates/crds/Cargo.toml` changes
+   - `scripts/generate_crds.py` changes
+
+### Rules for Working with CRDs
+
+**✅ DO:**
+- Edit CRD definitions in `crates/crds/src/` (Rust code)
+- Use `#[derive(CustomResource, ...)]` to define CRDs
+- Run `python3 scripts/generate_crds.py` to regenerate CRDs manually
+- Let Tilt automatically regenerate CRDs during development (`tilt up`)
+- Commit changes to `crates/crds/src/` (the source code)
+
+**❌ DON'T:**
+- Manually edit `config/crd/all-crds.yaml` (it will be overwritten)
+- Commit manual changes to `config/crd/all-crds.yaml`
+- Assume CRD YAML files are the source of truth
+- Try to fix CRD issues by editing YAML directly
+- Manually apply CRDs when using Tilt (Tilt handles this automatically)
+
+### CRD Generation Workflow
+
+When modifying CRDs:
+
+1. **Edit Rust code** in `crates/crds/src/`:
+   ```rust
+   // crates/crds/src/dcim/netbox_device.rs
+   #[derive(CustomResource, Debug, Clone, Serialize, Deserialize, JsonSchema)]
+   #[kube(group = "dcops.microscaler.io", version = "v1alpha1", kind = "NetBoxDevice")]
+   pub struct NetBoxDeviceSpec {
+       // Your changes here
+   }
+   ```
+
+2. **Regenerate CRDs**:
+   ```bash
+   # Recommended: Use the generation script
+   python3 scripts/generate_crds.py
+   
+   # Alternative: Use cargo directly
+   cargo run -p crds --bin crdgen > config/crd/all-crds.yaml
+   ```
+
+3. **Tilt automatically regenerates** when you run `tilt up`:
+   - Tilt watches `crates/crds/src/` for changes
+   - Automatically runs `generate-crds` resource
+   - Applies updated CRDs to the cluster
+   - **Any manual edits to YAML will be lost**
+
+### Why CRDs are Ephemeral
+
+- **Single Source of Truth:** Rust code is the authoritative definition
+- **Type Safety:** Rust types ensure consistency between code and CRDs
+- **Automatic Updates:** Tilt ensures CRDs stay in sync with code during development
+- **No Drift:** Prevents manual YAML edits from diverging from code
+- **Consistency:** All CRDs are generated using the same process
+
+### Troubleshooting CRD Issues
+
+If CRDs aren't working as expected:
+
+1. **Check the source code** in `crates/crds/src/` - this is what matters
+2. **Regenerate CRDs** manually: `python3 scripts/generate_crds.py`
+3. **Check Tilt logs** for `generate-crds` resource errors
+4. **Verify CRD code compiles**: `cargo check -p crds`
+5. **Never edit YAML directly** - fix the Rust code instead
+6. **Check CRD generation**: `cargo run -p crds --bin crdgen` should output valid YAML
+
+### Tilt Override Behavior
+
+When using Tilt:
+- Tilt's `generate-crds` resource **overrides** any manual changes to `config/crd/all-crds.yaml`
+- Tilt watches for changes and regenerates CRDs automatically
+- Manual edits to YAML will be lost on the next Tilt update
+- Always edit the Rust source code, not the generated YAML
+
+---
+
 ## Test Coverage Requirements
 
 ### Coverage Tooling
@@ -458,7 +549,9 @@ When adding a new NetBox CRD, you **MUST** implement all of the following compon
 
 - [ ] Add import: `use crds::<module>::NetBox<Resource>;`
 - [ ] Add to CRD list: `crds.push(NetBox<Resource>::crd());`
-- [ ] Run `cargo run -p crds --bin crdgen > config/crd/all-crds.yaml` to regenerate CRDs
+- [ ] Run `python3 scripts/generate_crds.py` to regenerate CRDs (or `cargo run -p crds --bin crdgen > config/crd/all-crds.yaml`)
+
+**⚠️ Important:** CRDs in `config/crd/all-crds.yaml` are **ephemeral** and automatically generated. Never edit them manually - they will be overwritten by Tilt or the generation script.
 
 ### 4. NetBox Client Models (`crates/netbox-client/src/models.rs`)
 

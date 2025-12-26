@@ -8,39 +8,36 @@ mod tests {
     use crds::{IPPool, NetBoxPrefix, PrefixState};
     use k8s_openapi::apimachinery::pkg::apis::meta::v1::ObjectMeta;
     
-    // Note: These tests require refactoring Reconciler to use NetBoxClientTrait
-    // For now, this is a placeholder showing the test structure
+    // Note: These tests require mocking the Kubernetes API (kube::Api) for full functionality.
+    // The NetBoxClient is already mocked via MockNetBoxClient.
+    // For now, these tests are structured but may need kube test framework integration.
     
     #[tokio::test]
-    #[ignore] // Ignored until Reconciler is refactored to use NetBoxClientTrait
+    #[ignore] // Ignored until Kubernetes API mocking is implemented
     async fn test_reconcile_ip_pool_success() {
+        use crate::test_utils::create_test_prefix;
+        use netbox_client::PrefixStatus;
+        
         // Setup: Create mock NetBoxClient
         let mut mock_client = MockNetBoxClient::new("http://test-netbox");
         
-        // Setup: Create test prefix in mock
-        let test_prefix = Prefix {
-            id: 1,
-            prefix: "192.168.1.0/24".to_string(),
-            url: "http://test-netbox/api/ipam/prefixes/1/".to_string(),
-            site: None,
-            tenant: None,
-            vlan: None,
-            role: None,
-            status: "active".to_string(),
-            description: None,
-            tags: None,
-        };
+        // Setup: Create test prefix in mock using helper
+        let test_prefix = create_test_prefix(1, "192.168.1.0/24", "http://test-netbox");
         mock_client.add_prefix(test_prefix);
         
         // Setup: Add available IPs
         let available_ips = vec![
             AvailableIP {
+                family: 4,
                 address: "192.168.1.1/24".to_string(),
                 vrf: None,
+                description: None,
             },
             AvailableIP {
+                family: 4,
                 address: "192.168.1.2/24".to_string(),
                 vrf: None,
+                description: None,
             },
         ];
         mock_client.set_available_ips(1, available_ips);
@@ -57,11 +54,12 @@ mod tests {
         );
         
         // TODO: Create reconciler with mock client
-        // This requires refactoring Reconciler to use NetBoxClientTrait
+        // Requires Kubernetes API mocking (kube::Api) - see kube test framework
+        // let kube_client = kube::Client::try_default().await?;
         // let reconciler = create_test_reconciler(mock_client, kube_client, "default");
         
-        // TODO: Mock kube API to return the NetBoxPrefix CRD
-        // TODO: Mock kube API to accept status patch
+        // TODO: Mock kube API to return the NetBoxPrefix CRD when get() is called
+        // TODO: Mock kube API to accept status patch when patch_status() is called
         
         // Execute: Reconcile
         // let result = reconciler.reconcile_ip_pool(&ip_pool).await;
@@ -70,11 +68,11 @@ mod tests {
         // assert!(result.is_ok());
         
         // Assert: Status should be updated with correct values
-        // TODO: Verify status patch was called with correct values
+        // TODO: Verify status patch was called with correct values (netbox_prefix_id: 1, total_ips: 2, etc.)
     }
     
     #[tokio::test]
-    #[ignore] // Ignored until Reconciler is refactored to use NetBoxClientTrait
+    #[ignore] // Ignored until Kubernetes API mocking is implemented
     async fn test_reconcile_ip_pool_prefix_not_found() {
         // Setup: Create mock NetBoxClient that returns NotFound
         let mock_client = MockNetBoxClient::new("http://test-netbox");
@@ -101,30 +99,23 @@ mod tests {
     }
     
     #[tokio::test]
-    #[ignore] // Ignored until Reconciler is refactored to use NetBoxClientTrait
+    #[ignore] // Ignored until Kubernetes API mocking is implemented
     async fn test_reconcile_ip_pool_no_status_update_needed() {
+        use crate::test_utils::create_test_prefix;
+        
         // Setup: Create mock NetBoxClient
         let mut mock_client = MockNetBoxClient::new("http://test-netbox");
         
-        // Setup: Create test prefix
-        let test_prefix = Prefix {
-            id: 1,
-            prefix: "192.168.1.0/24".to_string(),
-            url: "http://test-netbox/api/ipam/prefixes/1/".to_string(),
-            site: None,
-            tenant: None,
-            vlan: None,
-            role: None,
-            status: "active".to_string(),
-            description: None,
-            tags: None,
-        };
+        // Setup: Create test prefix using helper
+        let test_prefix = create_test_prefix(1, "192.168.1.0/24", "http://test-netbox");
         mock_client.add_prefix(test_prefix);
         
         // Setup: Add available IPs (same count as before)
         let available_ips = vec![AvailableIP {
+            family: 4,
             address: "192.168.1.1/24".to_string(),
             vrf: None,
+            description: None,
         }];
         mock_client.set_available_ips(1, available_ips);
         

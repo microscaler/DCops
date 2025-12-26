@@ -3,7 +3,7 @@
 use super::super::Reconciler;
 use crate::error::ControllerError;
 use crate::reconcile_helpers;
-use kube::Api;
+use crate::kube_api_trait::KubeApiTrait;
 use tracing::{info, error, debug, warn};
 use crds::{NetBoxPrefix, NetBoxPrefixStatus, PrefixState};
 use netbox_client;
@@ -77,7 +77,7 @@ impl Reconciler {
         
         // Helper function to update status with error
         async fn update_status_error(
-            api: &Api<NetBoxPrefix>,
+            api: &dyn KubeApiTrait<NetBoxPrefix>,
             name: &str,
             namespace: &str,
             error_msg: String,
@@ -263,7 +263,7 @@ impl Reconciler {
                             );
                             let pp = kube::api::PatchParams::default();
                             if let Err(e) = self.netbox_prefix_api
-                                .patch_status(name, &pp, &kube::api::Patch::Merge(&status_patch))
+                                .patch_status(name, &pp, &kube::api::Patch::Merge(status_patch.clone()))
                                 .await
                             {
                                 warn!("Failed to clear NetBoxPrefix status after drift detection: {}", e);
@@ -325,7 +325,7 @@ impl Reconciler {
                     );
                     let pp = kube::api::PatchParams::default();
                     match self.netbox_prefix_api
-                        .patch_status(name, &pp, &kube::api::Patch::Merge(&status_patch))
+                        .patch_status(name, &pp, &kube::api::Patch::Merge(status_patch.clone()))
                         .await
                     {
                         Ok(_) => {
@@ -544,7 +544,7 @@ impl Reconciler {
                                             // Prefix exists but we can't find it - this is unusual
                                             let error_msg = format!("Prefix {} already exists in NetBox but could not retrieve it: {}", prefix_crd.spec.prefix, e);
                                             error!("{}", error_msg);
-                                            update_status_error(&self.netbox_prefix_api, name, namespace, error_msg.clone(), prefix_crd.status.as_ref()).await;
+                                            update_status_error(&*self.netbox_prefix_api, name, namespace, error_msg.clone(), prefix_crd.status.as_ref()).await;
                                             return Err(ControllerError::NetBox(e));
                                         }
                                     }
@@ -552,7 +552,7 @@ impl Reconciler {
                                         // Couldn't query - this is a real error
                                         let error_msg = format!("Failed to create prefix in NetBox (may already exist, but could not verify): {} (query error: {})", e, query_err);
                                         error!("{}", error_msg);
-                                        update_status_error(&self.netbox_prefix_api, name, namespace, error_msg.clone(), prefix_crd.status.as_ref()).await;
+                                        update_status_error(&**self.netbox_prefix_api, name, namespace, error_msg.clone(), prefix_crd.status.as_ref()).await;
                                         return Err(ControllerError::NetBox(e));
                                     }
                                 }
@@ -560,7 +560,7 @@ impl Reconciler {
                                 // Real creation error
                                 let error_msg = format!("Failed to create prefix in NetBox: {}", e);
                                 error!("{}", error_msg);
-                                update_status_error(&self.netbox_prefix_api, name, namespace, error_msg.clone(), prefix_crd.status.as_ref()).await;
+                                update_status_error(&**self.netbox_prefix_api, name, namespace, error_msg.clone(), prefix_crd.status.as_ref()).await;
                                 return Err(ControllerError::NetBox(e));
                             }
                         }
@@ -584,7 +584,7 @@ impl Reconciler {
         use kube::api::PatchParams;
         let pp = PatchParams::default();
         match self.netbox_prefix_api
-            .patch_status(name, &pp, &kube::api::Patch::Merge(&status_patch))
+            .patch_status(name, &pp, &kube::api::Patch::Merge(status_patch.clone()))
             .await
         {
             Ok(_) => {

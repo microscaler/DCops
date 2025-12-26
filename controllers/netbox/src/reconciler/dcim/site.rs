@@ -2,7 +2,7 @@
 
 use super::super::Reconciler;
 use crate::error::ControllerError;
-use kube::Api;
+use crate::kube_api_trait::KubeApiTrait;
 use tracing::{info, error, debug, warn};
 use crds::{NetBoxSite, NetBoxSiteStatus, ResourceState};
 use netbox_client;
@@ -119,7 +119,7 @@ impl Reconciler {
     pub async fn reconcile_netbox_site(&self, site_crd: &NetBoxSite) -> Result<(), ControllerError> {
         // Helper function to update status with error
         async fn update_status_error(
-            api: &Api<NetBoxSite>,
+            api: &dyn KubeApiTrait<NetBoxSite>,
             name: &str,
             namespace: &str,
             error_msg: String,
@@ -403,7 +403,7 @@ impl Reconciler {
                         Err(e) => {
                             let error_msg = format!("Failed to create site in NetBox: {}", e);
                             error!("{}", error_msg);
-                            update_status_error(&self.netbox_site_api, name, namespace, error_msg.clone(), site_crd.status.as_ref()).await;
+                            update_status_error(&*self.netbox_site_api, name, namespace, error_msg.clone(), site_crd.status.as_ref()).await;
                             return Err(ControllerError::NetBox(e));
                         }
                     }

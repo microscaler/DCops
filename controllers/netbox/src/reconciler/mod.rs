@@ -15,6 +15,7 @@ pub mod extras;
 
 use crate::error::ControllerError;
 use crate::backoff::FibonacciBackoff;
+use crate::kube_api_trait::KubeApiTrait;
 use crds::{
     IPClaim, IPPool, NetBoxPrefix, NetBoxTenant, NetBoxSite, NetBoxRole, NetBoxTag, NetBoxAggregate,
     NetBoxDeviceRole, NetBoxManufacturer, NetBoxPlatform, NetBoxDeviceType, NetBoxDevice,
@@ -22,7 +23,6 @@ use crds::{
     PrefixState, ResourceState,
 };
 use netbox_client::NetBoxClientTrait;
-use kube::Api;
 use tracing::{info, error, debug, warn};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -56,28 +56,28 @@ impl BackoffState {
 pub struct Reconciler {
     pub(crate) netbox_client: Box<dyn NetBoxClientTrait + Send + Sync>,
     // IPAM APIs
-    pub(crate) netbox_prefix_api: Api<NetBoxPrefix>,
-    pub(crate) netbox_role_api: Api<NetBoxRole>,
-    pub(crate) netbox_tag_api: Api<NetBoxTag>,
-    pub(crate) netbox_aggregate_api: Api<NetBoxAggregate>,
-    pub(crate) netbox_vlan_api: Api<NetBoxVLAN>,
+    pub(crate) netbox_prefix_api: Box<dyn KubeApiTrait<NetBoxPrefix> + Send + Sync>,
+    pub(crate) netbox_role_api: Box<dyn KubeApiTrait<NetBoxRole> + Send + Sync>,
+    pub(crate) netbox_tag_api: Box<dyn KubeApiTrait<NetBoxTag> + Send + Sync>,
+    pub(crate) netbox_aggregate_api: Box<dyn KubeApiTrait<NetBoxAggregate> + Send + Sync>,
+    pub(crate) netbox_vlan_api: Box<dyn KubeApiTrait<NetBoxVLAN> + Send + Sync>,
     // Tenancy APIs
-    pub(crate) netbox_tenant_api: Api<NetBoxTenant>,
+    pub(crate) netbox_tenant_api: Box<dyn KubeApiTrait<NetBoxTenant> + Send + Sync>,
     // DCIM APIs
-    pub(crate) netbox_site_api: Api<NetBoxSite>,
-    pub(crate) netbox_device_role_api: Api<NetBoxDeviceRole>,
-    pub(crate) netbox_manufacturer_api: Api<NetBoxManufacturer>,
-    pub(crate) netbox_platform_api: Api<NetBoxPlatform>,
-    pub(crate) netbox_device_type_api: Api<NetBoxDeviceType>,
-    pub(crate) netbox_device_api: Api<NetBoxDevice>,
-    pub(crate) netbox_interface_api: Api<NetBoxInterface>,
-    pub(crate) netbox_mac_address_api: Api<NetBoxMACAddress>,
-    pub(crate) netbox_region_api: Api<NetBoxRegion>,
-    pub(crate) netbox_site_group_api: Api<NetBoxSiteGroup>,
-    pub(crate) netbox_location_api: Api<NetBoxLocation>,
+    pub(crate) netbox_site_api: Box<dyn KubeApiTrait<NetBoxSite> + Send + Sync>,
+    pub(crate) netbox_device_role_api: Box<dyn KubeApiTrait<NetBoxDeviceRole> + Send + Sync>,
+    pub(crate) netbox_manufacturer_api: Box<dyn KubeApiTrait<NetBoxManufacturer> + Send + Sync>,
+    pub(crate) netbox_platform_api: Box<dyn KubeApiTrait<NetBoxPlatform> + Send + Sync>,
+    pub(crate) netbox_device_type_api: Box<dyn KubeApiTrait<NetBoxDeviceType> + Send + Sync>,
+    pub(crate) netbox_device_api: Box<dyn KubeApiTrait<NetBoxDevice> + Send + Sync>,
+    pub(crate) netbox_interface_api: Box<dyn KubeApiTrait<NetBoxInterface> + Send + Sync>,
+    pub(crate) netbox_mac_address_api: Box<dyn KubeApiTrait<NetBoxMACAddress> + Send + Sync>,
+    pub(crate) netbox_region_api: Box<dyn KubeApiTrait<NetBoxRegion> + Send + Sync>,
+    pub(crate) netbox_site_group_api: Box<dyn KubeApiTrait<NetBoxSiteGroup> + Send + Sync>,
+    pub(crate) netbox_location_api: Box<dyn KubeApiTrait<NetBoxLocation> + Send + Sync>,
     // Custom CRDs
-    pub(crate) ip_pool_api: Api<IPPool>,
-    pub(crate) ip_claim_api: Api<IPClaim>,
+    pub(crate) ip_pool_api: Box<dyn KubeApiTrait<IPPool> + Send + Sync>,
+    pub(crate) ip_claim_api: Box<dyn KubeApiTrait<IPClaim> + Send + Sync>,
     /// Error count tracking per resource (namespace/name -> BackoffState)
     backoff_states: Arc<Mutex<HashMap<String, BackoffState>>>,
 }
@@ -172,54 +172,54 @@ impl Reconciler {
     pub fn new(
         netbox_client: impl NetBoxClientTrait + Send + Sync + 'static,
         // IPAM APIs
-        netbox_prefix_api: Api<NetBoxPrefix>,
-        netbox_role_api: Api<NetBoxRole>,
-        netbox_tag_api: Api<NetBoxTag>,
-        netbox_aggregate_api: Api<NetBoxAggregate>,
-        netbox_vlan_api: Api<NetBoxVLAN>,
+        netbox_prefix_api: impl KubeApiTrait<NetBoxPrefix> + Send + Sync + 'static,
+        netbox_role_api: impl KubeApiTrait<NetBoxRole> + Send + Sync + 'static,
+        netbox_tag_api: impl KubeApiTrait<NetBoxTag> + Send + Sync + 'static,
+        netbox_aggregate_api: impl KubeApiTrait<NetBoxAggregate> + Send + Sync + 'static,
+        netbox_vlan_api: impl KubeApiTrait<NetBoxVLAN> + Send + Sync + 'static,
         // Tenancy APIs
-        netbox_tenant_api: Api<NetBoxTenant>,
+        netbox_tenant_api: impl KubeApiTrait<NetBoxTenant> + Send + Sync + 'static,
         // DCIM APIs
-        netbox_site_api: Api<NetBoxSite>,
-        netbox_device_role_api: Api<NetBoxDeviceRole>,
-        netbox_manufacturer_api: Api<NetBoxManufacturer>,
-        netbox_platform_api: Api<NetBoxPlatform>,
-        netbox_device_type_api: Api<NetBoxDeviceType>,
-        netbox_device_api: Api<NetBoxDevice>,
-        netbox_interface_api: Api<NetBoxInterface>,
-        netbox_mac_address_api: Api<NetBoxMACAddress>,
-        netbox_region_api: Api<NetBoxRegion>,
-        netbox_site_group_api: Api<NetBoxSiteGroup>,
-        netbox_location_api: Api<NetBoxLocation>,
+        netbox_site_api: impl KubeApiTrait<NetBoxSite> + Send + Sync + 'static,
+        netbox_device_role_api: impl KubeApiTrait<NetBoxDeviceRole> + Send + Sync + 'static,
+        netbox_manufacturer_api: impl KubeApiTrait<NetBoxManufacturer> + Send + Sync + 'static,
+        netbox_platform_api: impl KubeApiTrait<NetBoxPlatform> + Send + Sync + 'static,
+        netbox_device_type_api: impl KubeApiTrait<NetBoxDeviceType> + Send + Sync + 'static,
+        netbox_device_api: impl KubeApiTrait<NetBoxDevice> + Send + Sync + 'static,
+        netbox_interface_api: impl KubeApiTrait<NetBoxInterface> + Send + Sync + 'static,
+        netbox_mac_address_api: impl KubeApiTrait<NetBoxMACAddress> + Send + Sync + 'static,
+        netbox_region_api: impl KubeApiTrait<NetBoxRegion> + Send + Sync + 'static,
+        netbox_site_group_api: impl KubeApiTrait<NetBoxSiteGroup> + Send + Sync + 'static,
+        netbox_location_api: impl KubeApiTrait<NetBoxLocation> + Send + Sync + 'static,
         // Custom CRDs
-        ip_pool_api: Api<IPPool>,
-        ip_claim_api: Api<IPClaim>,
+        ip_pool_api: impl KubeApiTrait<IPPool> + Send + Sync + 'static,
+        ip_claim_api: impl KubeApiTrait<IPClaim> + Send + Sync + 'static,
     ) -> Self {
         Self {
             netbox_client: Box::new(netbox_client),
             // IPAM
-            netbox_prefix_api,
-            netbox_role_api,
-            netbox_tag_api,
-            netbox_aggregate_api,
-            netbox_vlan_api,
+            netbox_prefix_api: Box::new(netbox_prefix_api),
+            netbox_role_api: Box::new(netbox_role_api),
+            netbox_tag_api: Box::new(netbox_tag_api),
+            netbox_aggregate_api: Box::new(netbox_aggregate_api),
+            netbox_vlan_api: Box::new(netbox_vlan_api),
             // Tenancy
-            netbox_tenant_api,
+            netbox_tenant_api: Box::new(netbox_tenant_api),
             // DCIM
-            netbox_site_api,
-            netbox_device_role_api,
-            netbox_manufacturer_api,
-            netbox_platform_api,
-            netbox_device_type_api,
-            netbox_device_api,
-            netbox_interface_api,
-            netbox_mac_address_api,
-            netbox_region_api,
-            netbox_site_group_api,
-            netbox_location_api,
+            netbox_site_api: Box::new(netbox_site_api),
+            netbox_device_role_api: Box::new(netbox_device_role_api),
+            netbox_manufacturer_api: Box::new(netbox_manufacturer_api),
+            netbox_platform_api: Box::new(netbox_platform_api),
+            netbox_device_type_api: Box::new(netbox_device_type_api),
+            netbox_device_api: Box::new(netbox_device_api),
+            netbox_interface_api: Box::new(netbox_interface_api),
+            netbox_mac_address_api: Box::new(netbox_mac_address_api),
+            netbox_region_api: Box::new(netbox_region_api),
+            netbox_site_group_api: Box::new(netbox_site_group_api),
+            netbox_location_api: Box::new(netbox_location_api),
             // Custom
-            ip_pool_api,
-            ip_claim_api,
+            ip_pool_api: Box::new(ip_pool_api),
+            ip_claim_api: Box::new(ip_claim_api),
             backoff_states: Arc::new(Mutex::new(HashMap::new())),
         }
     }
@@ -238,7 +238,7 @@ impl Reconciler {
         info!("Starting startup reconciliation for NetBoxPrefix resources...");
         
         // List all NetBoxPrefix CRs
-        let prefixes = match self.netbox_prefix_api.list(&Default::default()).await {
+        let prefixes = match self.netbox_prefix_api.list(&kube::api::ListParams::default()).await {
             Ok(list) => list,
             Err(e) => {
                 error!("Failed to list NetBoxPrefix CRs: {}", e);

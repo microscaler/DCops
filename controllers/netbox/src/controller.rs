@@ -11,6 +11,7 @@
 use crate::reconciler::Reconciler;
 use crate::watcher::Watcher;
 use crate::error::ControllerError;
+use crate::kube_api_trait::KubeApiWrapper;
 use crds::{
     IPClaim, IPPool, NetBoxPrefix, NetBoxTenant, NetBoxSite, NetBoxRole, NetBoxTag, NetBoxAggregate,
     NetBoxVLAN, NetBoxDeviceRole, NetBoxManufacturer, NetBoxPlatform, NetBoxDeviceType,
@@ -105,32 +106,32 @@ impl Controller {
         let ip_pool_api: Api<IPPool> = Api::namespaced(kube_client.clone(), ns);
         let ip_claim_api: Api<IPClaim> = Api::namespaced(kube_client.clone(), ns);
         
-        // Create reconciler
+        // Create reconciler with wrapped APIs
         let reconciler = Reconciler::new(
             netbox_client,
             // IPAM
-            netbox_prefix_api.clone(),
-            netbox_role_api.clone(),
-            netbox_tag_api.clone(),
-            netbox_aggregate_api.clone(),
-            netbox_vlan_api.clone(),
+            KubeApiWrapper::new(netbox_prefix_api.clone()),
+            KubeApiWrapper::new(netbox_role_api.clone()),
+            KubeApiWrapper::new(netbox_tag_api.clone()),
+            KubeApiWrapper::new(netbox_aggregate_api.clone()),
+            KubeApiWrapper::new(netbox_vlan_api.clone()),
             // Tenancy
-            netbox_tenant_api.clone(),
+            KubeApiWrapper::new(netbox_tenant_api.clone()),
             // DCIM
-            netbox_site_api.clone(),
-            netbox_device_role_api.clone(),
-            netbox_manufacturer_api.clone(),
-            netbox_platform_api.clone(),
-            netbox_device_type_api.clone(),
-            netbox_device_api.clone(),
-            netbox_interface_api.clone(),
-            netbox_mac_address_api.clone(),
-            netbox_region_api.clone(),
-            netbox_site_group_api.clone(),
-            netbox_location_api.clone(),
+            KubeApiWrapper::new(netbox_site_api.clone()),
+            KubeApiWrapper::new(netbox_device_role_api.clone()),
+            KubeApiWrapper::new(netbox_manufacturer_api.clone()),
+            KubeApiWrapper::new(netbox_platform_api.clone()),
+            KubeApiWrapper::new(netbox_device_type_api.clone()),
+            KubeApiWrapper::new(netbox_device_api.clone()),
+            KubeApiWrapper::new(netbox_interface_api.clone()),
+            KubeApiWrapper::new(netbox_mac_address_api.clone()),
+            KubeApiWrapper::new(netbox_region_api.clone()),
+            KubeApiWrapper::new(netbox_site_group_api.clone()),
+            KubeApiWrapper::new(netbox_location_api.clone()),
             // Custom
-            ip_pool_api.clone(),
-            ip_claim_api.clone(),
+            KubeApiWrapper::new(ip_pool_api.clone()),
+            KubeApiWrapper::new(ip_claim_api.clone()),
         );
         
         // Perform startup reconciliation to map existing NetBox resources back to CRs

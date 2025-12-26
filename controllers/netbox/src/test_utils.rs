@@ -96,44 +96,40 @@ pub fn create_test_netbox_prefix(
     }
 }
 
-/// Helper to create a test Reconciler with a mock NetBoxClient
+/// Helper to create a test Reconciler with a mock NetBoxClient and mock Kubernetes APIs.
 /// 
-/// This creates a reconciler with all required Kubernetes API clients.
-/// For unit tests, you'll need to mock the Kubernetes API calls separately
-/// (e.g., using kube's test framework or a custom mock).
+/// This creates a reconciler with all APIs mocked, enabling true unit testing.
 #[cfg(test)]
 pub fn create_test_reconciler(
     mock_client: MockNetBoxClient,
-    kube_client: Client,
-    namespace: &str,
 ) -> Reconciler {
-    use kube::Api;
+    use crate::kube_api_trait::mock::MockKubeApi;
     
     Reconciler::new(
         mock_client,
         // IPAM APIs
-        Api::namespaced(kube_client.clone(), namespace),
-        Api::namespaced(kube_client.clone(), namespace),
-        Api::namespaced(kube_client.clone(), namespace),
-        Api::namespaced(kube_client.clone(), namespace),
-        Api::namespaced(kube_client.clone(), namespace),
+        MockKubeApi::new(),
+        MockKubeApi::new(),
+        MockKubeApi::new(),
+        MockKubeApi::new(),
+        MockKubeApi::new(),
         // Tenancy APIs
-        Api::namespaced(kube_client.clone(), namespace),
+        MockKubeApi::new(),
         // DCIM APIs
-        Api::namespaced(kube_client.clone(), namespace),
-        Api::namespaced(kube_client.clone(), namespace),
-        Api::namespaced(kube_client.clone(), namespace),
-        Api::namespaced(kube_client.clone(), namespace),
-        Api::namespaced(kube_client.clone(), namespace),
-        Api::namespaced(kube_client.clone(), namespace),
-        Api::namespaced(kube_client.clone(), namespace),
-        Api::namespaced(kube_client.clone(), namespace),
-        Api::namespaced(kube_client.clone(), namespace),
-        Api::namespaced(kube_client.clone(), namespace),
-        Api::namespaced(kube_client.clone(), namespace),
+        MockKubeApi::new(),
+        MockKubeApi::new(),
+        MockKubeApi::new(),
+        MockKubeApi::new(),
+        MockKubeApi::new(),
+        MockKubeApi::new(),
+        MockKubeApi::new(),
+        MockKubeApi::new(),
+        MockKubeApi::new(),
+        MockKubeApi::new(),
+        MockKubeApi::new(),
         // Custom CRDs
-        Api::namespaced(kube_client.clone(), namespace),
-        Api::namespaced(kube_client.clone(), namespace),
+        MockKubeApi::new(),
+        MockKubeApi::new(),
     )
 }
 

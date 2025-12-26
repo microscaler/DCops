@@ -2,7 +2,7 @@
 
 use super::super::Reconciler;
 use crate::error::ControllerError;
-use kube::Api;
+use crate::kube_api_trait::KubeApiTrait;
 use tracing::{info, error, debug, warn};
 use crds::{IPClaim, IPClaimStatus, AllocationState};
 use netbox_client::{AllocateIPRequest, IPAddressStatus};
@@ -19,7 +19,7 @@ impl Reconciler {
         
         // Helper function to update status with error (only if error changed)
         async fn update_status_error(
-            api: &Api<IPClaim>,
+            api: &dyn KubeApiTrait<IPClaim>,
             name: &str,
             namespace: &str,
             error_msg: String,
@@ -84,7 +84,7 @@ impl Reconciler {
             Err(e) => {
                 let error_msg = format!("Failed to get IPPool {}/{}: {}", pool_namespace, pool_name, e);
                 error!("{}", error_msg);
-                update_status_error(&self.ip_claim_api, name, namespace, error_msg.clone(), claim.status.as_ref()).await;
+                update_status_error(&*self.ip_claim_api, name, namespace, error_msg.clone(), claim.status.as_ref()).await;
                 return Err(ControllerError::IPPoolNotFound(error_msg));
             }
         };
@@ -112,7 +112,7 @@ impl Reconciler {
             Err(e) => {
                 let error_msg = format!("Prefix {} not found in NetBox: {}", prefix_id, e);
                 error!("{}", error_msg);
-                update_status_error(&self.ip_claim_api, name, namespace, error_msg.clone(), claim.status.as_ref()).await;
+                update_status_error(&*self.ip_claim_api, name, namespace, error_msg.clone(), claim.status.as_ref()).await;
                 return Err(ControllerError::PrefixNotFound(error_msg));
             }
         };
@@ -266,7 +266,7 @@ impl Reconciler {
                 
                 let error_msg = format!("Failed to allocate IP from prefix {}: {}", prefix_id, e);
                 error!("{}", error_msg);
-                update_status_error(&self.ip_claim_api, name, namespace, error_msg.clone(), claim.status.as_ref()).await;
+                update_status_error(&*self.ip_claim_api, name, namespace, error_msg.clone(), claim.status.as_ref()).await;
                 return Err(ControllerError::AllocationFailed(error_msg));
             }
         };
@@ -309,7 +309,7 @@ impl Reconciler {
                 Err(e) => {
                     let error_msg = format!("Failed to update IPClaim status: {}", e);
                     error!("{}", error_msg);
-                    update_status_error(&self.ip_claim_api, name, namespace, error_msg.clone(), claim.status.as_ref()).await;
+                    update_status_error(&*self.ip_claim_api, name, namespace, error_msg.clone(), claim.status.as_ref()).await;
                     Err(ControllerError::Kube(e.into()))
                 }
             }

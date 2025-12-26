@@ -13,6 +13,7 @@ mod watcher;
 mod error;
 mod backoff;
 mod reconcile_helpers;
+mod kube_api_trait;
 #[cfg(test)]
 mod test_utils;
 #[cfg(test)]

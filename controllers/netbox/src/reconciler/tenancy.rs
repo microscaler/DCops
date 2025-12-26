@@ -5,8 +5,8 @@
 use super::Reconciler;
 use crate::error::ControllerError;
 use crate::reconcile_helpers;
+use crate::kube_api_trait::KubeApiTrait;
 use crds::{NetBoxTenant, ResourceState};
-use kube::Api;
 use tracing::{info, error, debug, warn};
 
 impl Reconciler {
@@ -14,7 +14,7 @@ impl Reconciler {
     pub async fn reconcile_netbox_tenant(&self, tenant_crd: &NetBoxTenant) -> Result<(), ControllerError> {
         // Helper function to update status with error
         async fn update_status_error(
-            api: &Api<NetBoxTenant>,
+            api: &dyn KubeApiTrait<NetBoxTenant>,
             name: &str,
             namespace: &str,
             error_msg: String,
@@ -230,7 +230,7 @@ impl Reconciler {
                         Err(e) => {
                             let error_msg = format!("Failed to create tenant in NetBox: {}", e);
                             error!("{}", error_msg);
-                            update_status_error(&self.netbox_tenant_api, name, namespace, error_msg.clone(), tenant_crd.status.as_ref()).await;
+                            update_status_error(&*self.netbox_tenant_api, name, namespace, error_msg.clone(), tenant_crd.status.as_ref()).await;
                             return Err(ControllerError::NetBox(e));
                         }
                     }

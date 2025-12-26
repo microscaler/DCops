@@ -3,7 +3,7 @@
 use super::super::Reconciler;
 use crate::error::ControllerError;
 use crate::reconcile_helpers;
-use kube::Api;
+use crate::kube_api_trait::KubeApiTrait;
 use tracing::{info, error, debug, warn};
 use crds::{NetBoxAggregate, NetBoxAggregateStatus, ResourceState};
 
@@ -11,7 +11,7 @@ impl Reconciler {
     pub async fn reconcile_netbox_aggregate(&self, aggregate_crd: &NetBoxAggregate) -> Result<(), ControllerError> {
         // Helper function to update status with error
         async fn update_status_error(
-            api: &Api<NetBoxAggregate>,
+            api: &dyn KubeApiTrait<NetBoxAggregate>,
             name: &str,
             namespace: &str,
             error_msg: String,
@@ -184,7 +184,7 @@ impl Reconciler {
                         Err(create_err) => {
                             let error_msg = format!("Failed to resolve or create RIR '{}': {}", rir_name, create_err);
                             error!("{}", error_msg);
-                            update_status_error(&self.netbox_aggregate_api, name, namespace, error_msg.clone(), aggregate_crd.status.as_ref()).await;
+                            update_status_error(&*self.netbox_aggregate_api, name, namespace, error_msg.clone(), aggregate_crd.status.as_ref()).await;
                             return Err(ControllerError::NetBox(create_err));
                         }
                     }
@@ -265,7 +265,7 @@ impl Reconciler {
                         Err(e) => {
                             let error_msg = format!("Failed to create aggregate in NetBox: {}", e);
                             error!("{}", error_msg);
-                            update_status_error(&self.netbox_aggregate_api, name, namespace, error_msg.clone(), aggregate_crd.status.as_ref()).await;
+                            update_status_error(&*self.netbox_aggregate_api, name, namespace, error_msg.clone(), aggregate_crd.status.as_ref()).await;
                             return Err(ControllerError::NetBox(e));
                         }
                     }

@@ -1163,7 +1163,7 @@ impl NetBoxClientTrait for MockNetBoxClient {
             display: name.to_string(),
             name: name.to_string(),
             slug: slug.to_string(),
-            color: None, // DeviceRole.color is Option<String>
+            color: String::new(), // Tag.color is String (required field)
             description: description.map(|s| s.to_string()),
             comments: None,
             created: chrono::Utc::now().to_rfc3339(),

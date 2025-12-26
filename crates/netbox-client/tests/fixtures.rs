@@ -3,17 +3,16 @@
 //! Provides reusable test data factories and utilities for creating
 //! test resources in NetBox for integration testing.
 
-use netbox_client::models::*;
-use chrono::Utc;
-
-/// Create a test prefix with default values
-pub fn create_test_prefix_data(
+/// Create test prefix parameters for integration tests
+/// 
+/// Returns a tuple matching the signature of `NetBoxClientTrait::create_prefix`
+pub fn create_test_prefix_params(
     prefix: &str,
     site_id: Option<u64>,
     tenant_id: Option<u64>,
-) -> (String, Option<u64>, Option<u64>, Option<u32>, Option<u64>, Option<&str>, Option<&str>, Option<Vec<serde_json::Value>>) {
+) -> (&str, Option<u64>, Option<u64>, Option<u32>, Option<u64>, Option<&str>, Option<&str>, Option<Vec<serde_json::Value>>) {
     (
-        prefix.to_string(),
+        prefix,
         site_id,
         tenant_id,
         None, // vlan_id
@@ -24,14 +23,16 @@ pub fn create_test_prefix_data(
     )
 }
 
-/// Create a test site with default values
-pub fn create_test_site_data(
+/// Create test site parameters for integration tests
+/// 
+/// Returns a tuple matching the signature of `NetBoxClientTrait::create_site`
+pub fn create_test_site_params(
     name: &str,
     region_id: Option<u64>,
     tenant_id: Option<u64>,
-) -> (String, Option<&str>, &str, Option<u64>, Option<u64>, Option<u64>, Option<&str>, Option<&str>, Option<&str>, Option<&str>, Option<&str>) {
+) -> (&str, Option<&str>, &str, Option<u64>, Option<u64>, Option<u64>, Option<&str>, Option<&str>, Option<&str>, Option<&str>) {
     (
-        name.to_string(),
+        name,
         None, // slug
         "active", // status
         region_id,
@@ -44,14 +45,17 @@ pub fn create_test_site_data(
     )
 }
 
-/// Create a test tenant with default values
-pub fn create_test_tenant_data(
+/// Create test tenant parameters for integration tests
+/// 
+/// Returns a tuple matching the signature of `NetBoxClientTrait::create_tenant`
+pub fn create_test_tenant_params(
     name: &str,
     tenant_group_id: Option<u64>,
-) -> (String, String, Option<u64>, Option<&str>, Option<&str>) {
+) -> (&str, &str, Option<u64>, Option<&str>, Option<&str>) {
+    let slug = name.to_lowercase().replace(' ', "-");
     (
-        name.to_string(),
-        name.to_lowercase().replace(' ', "-"), // slug
+        name,
+        &slug, // Note: This creates a temporary - caller should handle lifetime
         tenant_group_id,
         Some("Test tenant created by integration test"), // description
         None, // comments

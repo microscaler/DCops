@@ -284,5 +284,132 @@ mod tests {
         );
         assert!(!needs_update, "Should not need update when all fields match");
     }
+
+    // Async helper function tests using MockNetBoxClient
+    mod async_tests {
+        use super::*;
+        use crate::reconcile_helpers::{check_existing, check_and_update_existing};
+        use netbox_client::{MockNetBoxClient, Prefix, PrefixStatus};
+        use crate::test_utils::create_test_prefix;
+        use chrono::Utc;
+        
+        #[tokio::test]
+        async fn test_check_existing_resource_exists() {
+            // Setup: Create mock NetBoxClient with existing prefix
+            let mut mock_client = MockNetBoxClient::new("http://test-netbox");
+            let test_prefix = create_test_prefix(1, "192.168.1.0/24", "http://test-netbox");
+            mock_client.add_prefix(test_prefix.clone());
+            
+            // Execute: Check if resource exists
+            let result = check_existing(
+                &mock_client,
+                1,
+                "test-prefix",
+                async { mock_client.get_prefix(1).await },
+            ).await;
+            
+            // Assert: Should return Some(resource)
+            assert!(result.is_ok());
+            let resource = result.unwrap();
+            assert!(resource.is_some());
+            assert_eq!(resource.unwrap().id(), 1);
+        }
+        
+        #[tokio::test]
+        async fn test_check_existing_resource_not_found() {
+            // Setup: Create mock NetBoxClient without prefix
+            let mock_client = MockNetBoxClient::new("http://test-netbox");
+            
+            // Execute: Check if resource exists
+            let result = check_existing(
+                &mock_client,
+                999,
+                "non-existent-prefix",
+                async { mock_client.get_prefix(999).await },
+            ).await;
+            
+            // Assert: Should return Ok(None) for drift detection
+            assert!(result.is_ok());
+            let resource = result.unwrap();
+            assert!(resource.is_none()); // Drift detected - resource deleted
+        }
+        
+        #[tokio::test]
+        async fn test_check_and_update_existing_no_update_needed() {
+            // Setup: Create mock NetBoxClient with existing prefix
+            let mut mock_client = MockNetBoxClient::new("http://test-netbox");
+            let test_prefix = create_test_prefix(1, "192.168.1.0/24", "http://test-netbox");
+            mock_client.add_prefix(test_prefix.clone());
+            
+            // Execute: Check and update (but needs_update returns false)
+            let result = check_and_update_existing(
+                &mock_client,
+                1,
+                "test-prefix",
+                async { mock_client.get_prefix(1).await },
+                |_| false, // No update needed
+                async { mock_client.get_prefix(1).await }, // Won't be called
+            ).await;
+            
+            // Assert: Should return Some(existing) without updating
+            assert!(result.is_ok());
+            let resource = result.unwrap();
+            assert!(resource.is_some());
+            assert_eq!(resource.unwrap().id(), 1);
+        }
+        
+        #[tokio::test]
+        async fn test_check_and_update_existing_update_needed() {
+            // Setup: Create mock NetBoxClient with existing prefix
+            let mut mock_client = MockNetBoxClient::new("http://test-netbox");
+            let test_prefix = create_test_prefix(1, "192.168.1.0/24", "http://test-netbox");
+            mock_client.add_prefix(test_prefix.clone());
+            
+            // Create updated prefix for update response
+            let mut updated_prefix = test_prefix.clone();
+            updated_prefix.description = "Updated description".to_string();
+            
+            // Execute: Check and update (needs_update returns true)
+            let result = check_and_update_existing(
+                &mock_client,
+                1,
+                "test-prefix",
+                async { mock_client.get_prefix(1).await },
+                |_| true, // Update needed
+                async { 
+                    // Simulate update by returning updated prefix
+                    Ok(updated_prefix.clone())
+                },
+            ).await;
+            
+            // Assert: Should return Some(updated)
+            assert!(result.is_ok());
+            let resource = result.unwrap();
+            assert!(resource.is_some());
+            let updated = resource.unwrap();
+            assert_eq!(updated.id(), 1);
+        }
+        
+        #[tokio::test]
+        async fn test_check_and_update_existing_resource_deleted() {
+            // Setup: Create mock NetBoxClient without prefix
+            let mock_client = MockNetBoxClient::new("http://test-netbox");
+            
+            // Execute: Check and update (resource not found)
+            let result = check_and_update_existing(
+                &mock_client,
+                999,
+                "non-existent-prefix",
+                async { mock_client.get_prefix(999).await },
+                |_| true,
+                async { mock_client.get_prefix(999).await },
+            ).await;
+            
+            // Assert: Should return Ok(None) for drift detection
+            assert!(result.is_ok());
+            let resource = result.unwrap();
+            assert!(resource.is_none()); // Drift detected - resource deleted
+        }
+    }
 }
 

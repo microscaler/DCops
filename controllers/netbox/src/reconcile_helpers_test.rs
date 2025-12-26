@@ -312,7 +312,8 @@ mod tests {
             assert!(result.is_ok());
             let resource = result.unwrap();
             assert!(resource.is_some());
-            assert_eq!(resource.unwrap().id(), 1);
+            let prefix = resource.unwrap();
+            assert_eq!(prefix.id(), 1);
         }
         
         #[tokio::test]
@@ -355,7 +356,8 @@ mod tests {
             assert!(result.is_ok());
             let resource = result.unwrap();
             assert!(resource.is_some());
-            assert_eq!(resource.unwrap().id(), 1);
+            let prefix = resource.unwrap();
+            assert_eq!(prefix.id(), 1);
         }
         
         #[tokio::test]
@@ -386,8 +388,8 @@ mod tests {
             assert!(result.is_ok());
             let resource = result.unwrap();
             assert!(resource.is_some());
-            let updated = resource.unwrap();
-            assert_eq!(updated.id(), 1);
+            let updated_prefix = resource.unwrap();
+            assert_eq!(updated_prefix.id(), 1);
         }
         
         #[tokio::test]

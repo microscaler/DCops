@@ -152,20 +152,29 @@ impl NetBoxClientTrait for MockNetBoxClient {
 
         let ip = IPAddress {
             id,
-            address: address.clone(),
             url: format!("{}/api/ipam/ip-addresses/{}/", self.base_url, id),
+            display: address.clone(),
+            family: 4, // Default to IPv4
+            address: address.clone(),
+            vrf: None,
+            tenant: request.as_ref().and_then(|r| r.tenant.clone()),
             status: request
                 .as_ref()
                 .and_then(|r| r.status.clone())
                 .unwrap_or(IPAddressStatus::Active),
-            description: request.as_ref().and_then(|r| r.description.clone()),
-            dns_name: request.as_ref().and_then(|r| r.dns_name.clone()),
             role: request.as_ref().and_then(|r| r.role.clone()),
-            tags: request.as_ref().and_then(|r| r.tags.clone()),
-            prefix: prefix_id,
-            tenant: None,
+            assigned_object_type: None,
+            assigned_object_id: None,
+            assigned_object: None,
             nat_inside: None,
-            nat_outside: None,
+            nat_outside: vec![],
+            dns_name: request.as_ref().and_then(|r| r.dns_name.clone()).unwrap_or_default(),
+            description: request.as_ref().and_then(|r| r.description.clone()).unwrap_or_default(),
+            comments: String::new(),
+            tags: request.as_ref().and_then(|r| r.tags.clone()).unwrap_or_default(),
+            custom_fields: serde_json::json!({}),
+            created: chrono::Utc::now().to_rfc3339(),
+            last_updated: chrono::Utc::now().to_rfc3339(),
         };
 
         self.ip_addresses.lock().unwrap().insert(id, ip.clone());
@@ -214,7 +223,7 @@ impl NetBoxClientTrait for MockNetBoxClient {
             dns_name: request.as_ref().and_then(|r| r.dns_name.clone()),
             role: request.as_ref().and_then(|r| r.role.clone()),
             tags: request.as_ref().and_then(|r| r.tags.clone()),
-            prefix: 0, // Mock doesn't track prefix relationships
+            // IPAddress doesn't have a prefix field - prefix relationship is through assigned_object
             tenant: None,
             nat_inside: None,
             nat_outside: None,
@@ -264,7 +273,7 @@ impl NetBoxClientTrait for MockNetBoxClient {
             id,
             prefix: prefix.to_string(),
             url: format!("{}/api/ipam/prefixes/{}/", self.base_url, id),
-            site: site_id,
+            // Prefix doesn't have a site field - skip
             tenant: tenant_id,
             vlan: vlan_id,
             role: role_id,
@@ -283,9 +292,7 @@ impl NetBoxClientTrait for MockNetBoxClient {
             .get_mut(&id)
             .ok_or_else(|| NetBoxError::NotFound(format!("Prefix {} not found", id)))?;
 
-        if let Some(site) = site_id {
-            prefix.site = Some(site);
-        }
+        // Prefix model doesn't have a site field - skip
         if let Some(tenant) = tenant_id {
             prefix.tenant = Some(tenant);
         }
@@ -381,8 +388,13 @@ impl NetBoxClientTrait for MockNetBoxClient {
             .get_mut(&id)
             .ok_or_else(|| NetBoxError::NotFound(format!("VLAN {} not found", id)))?;
 
-        if let Some(site) = site_id {
-            vlan.site = Some(site);
+        if let Some(site_id_val) = site_id {
+            vlan.site = Some(NestedSite {
+                id: site_id_val,
+                url: format!("{}/api/dcim/sites/{}/", self.base_url, site_id_val),
+                name: format!("Site {}", site_id_val),
+                slug: format!("site-{}", site_id_val),
+            });
         }
         if let Some(vid_val) = vid {
             vlan.vid = vid_val;
@@ -769,7 +781,11 @@ impl NetBoxClientTrait for MockNetBoxClient {
             name: name.to_string(),
             slug: slug.to_string(),
             url: format!("{}/api/tenancy/tenants/{}/", self.base_url, id),
-            tenant_group: tenant_group_id,
+            group: tenant_group_id.map(|id| NestedTenantGroup {
+                id,
+                url: format!("{}/api/tenancy/tenant-groups/{}/", self.base_url, id),
+                name: format!("Tenant Group {}", id),
+            }),
             description: description.map(|s| s.to_string()),
             comments: comments.map(|s| s.to_string()),
         };
@@ -791,10 +807,17 @@ impl NetBoxClientTrait for MockNetBoxClient {
         let id = self.next_id();
         let tenant_group = TenantGroup {
             id,
+            url: format!("{}/api/tenancy/tenant-groups/{}/", self.base_url, id),
+            display: name.to_string(),
             name: name.to_string(),
             slug: slug.to_string(),
-            url: format!("{}/api/tenancy/tenant-groups/{}/", self.base_url, id),
             description: description.map(|s| s.to_string()),
+            comments: None,
+            parent: None,
+            tenant_count: 0,
+            _depth: None,
+            created: chrono::Utc::now().to_rfc3339(),
+            last_updated: chrono::Utc::now().to_rfc3339(),
         };
 
         self.tenant_groups.lock().unwrap().insert(name.to_string(), tenant_group.clone());

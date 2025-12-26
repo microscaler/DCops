@@ -13,10 +13,6 @@ use hyper::Body;
 use std::sync::Arc;
 #[cfg(test)]
 use crate::test_utils::kube_mock::store::MockKubeStore;
-#[cfg(test)]
-use std::sync::Arc;
-#[cfg(test)]
-use crate::test_utils::kube_mock::store::MockKubeStore;
 
 /// Mock Kubernetes HTTP service
 /// 

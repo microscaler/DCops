@@ -2,11 +2,8 @@
 
 #[cfg(test)]
 mod tests {
-    use super::super::super::Reconciler;
     use crate::test_utils::*;
-    use netbox_client::{MockNetBoxClient, Prefix, AvailableIP, IPAddress, IPAddressStatus};
-    use crds::{IPPool, NetBoxPrefix, PrefixState};
-    use k8s_openapi::apimachinery::pkg::apis::meta::v1::ObjectMeta;
+    use netbox_client::{MockNetBoxClient, AvailableIP};
     
     // Note: These tests require mocking the Kubernetes API (kube::Api) for full functionality.
     // The NetBoxClient is already mocked via MockNetBoxClient.
@@ -15,8 +12,6 @@ mod tests {
     #[tokio::test]
     #[ignore] // Ignored until Kubernetes API mocking is implemented
     async fn test_reconcile_ip_pool_success() {
-        use crate::test_utils::create_test_prefix;
-        use netbox_client::PrefixStatus;
         
         // Setup: Create mock NetBoxClient
         let mut mock_client = MockNetBoxClient::new("http://test-netbox");

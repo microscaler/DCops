@@ -13,6 +13,7 @@ use crate::references::NetBoxResourceReference;
 /// This struct uses optional fields instead of an untagged enum to ensure
 /// Kubernetes structural schema compliance. Only one field should be set.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
 pub struct PrimaryIPReference {
     /// IPClaim CRD reference (recommended, GitOps-friendly)
     /// Set this when referencing an IPClaim CRD

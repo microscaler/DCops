@@ -5,7 +5,7 @@
 #[cfg(test)]
 use tower_test::mock::{self, Handle};
 #[cfg(test)]
-use http::{Request, Response};
+use hyper::http::{Request, Response};
 // Note: tower-test 0.4 uses hyper 0.14, which has hyper::Body
 #[cfg(test)]
 use hyper::Body;

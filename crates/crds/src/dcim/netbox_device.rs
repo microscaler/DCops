@@ -7,29 +7,23 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use crate::references::NetBoxResourceReference;
 
-/// Primary IP address reference
+/// Primary IP address reference (structural schema compliant)
 /// Supports both CRD references (GitOps-friendly) and direct IP addresses (fallback)
 /// 
-/// **Limitation:** This untagged enum generates a nested anyOf schema that violates
-/// Kubernetes structural schema validation rules. The NetBoxDevice CRD cannot be
-/// applied to Kubernetes clusters that enforce structural validation.
-/// 
-/// **Current Status:** The CRD generation succeeds but application fails with
-/// structural schema validation errors. This is a known limitation of untagged
-/// enums in Kubernetes CRDs.
-/// 
-/// **Future Fix:** Would require restructuring to use separate optional fields
-/// (e.g., `primaryIp4Ref: Option<NetBoxResourceReference>` and 
-/// `primaryIp4Address: Option<String>`) instead of a union type.
+/// This struct uses optional fields instead of an untagged enum to ensure
+/// Kubernetes structural schema compliance. Only one field should be set.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
-#[serde(untagged)]
-pub enum PrimaryIPReference {
+pub struct PrimaryIPReference {
     /// IPClaim CRD reference (recommended, GitOps-friendly)
-    IPClaimRef(NetBoxResourceReference),
+    /// Set this when referencing an IPClaim CRD
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ip_claim_ref: Option<NetBoxResourceReference>,
     
     /// Direct IP address string (e.g., "192.168.1.10/24" or "2001:db8::1/64")
     /// Used as fallback when IPClaim CRD is not available
-    IPAddress(String),
+    /// Set this when providing a direct IP address
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ip_address: Option<String>,
 }
 
 
@@ -83,15 +77,17 @@ pub struct NetBoxDeviceSpec {
     
     /// Primary IPv4 address reference (optional)
     /// Can be either:
-    /// - IPClaim CRD reference (recommended, GitOps-friendly) - use {"type": "ipClaimRef", ...}
-    /// - IP address string (e.g., "192.168.1.10/24") as fallback - use {"type": "ipAddress", "value": "..."}
+    /// - IPClaim CRD reference (recommended, GitOps-friendly) - use {"ipClaimRef": {...}}
+    /// - IP address string (e.g., "192.168.1.10/24") as fallback - use {"ipAddress": "..."}
+    /// Only one field should be set (ipClaimRef or ipAddress)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub primary_ip4: Option<PrimaryIPReference>,
     
     /// Primary IPv6 address reference (optional)
     /// Can be either:
-    /// - IPClaim CRD reference (recommended, GitOps-friendly) - use {"type": "ipClaimRef", ...}
-    /// - IP address string (e.g., "2001:db8::1/64") as fallback - use {"type": "ipAddress", "value": "..."}
+    /// - IPClaim CRD reference (recommended, GitOps-friendly) - use {"ipClaimRef": {...}}
+    /// - IP address string (e.g., "2001:db8::1/64") as fallback - use {"ipAddress": "..."}
+    /// Only one field should be set (ipClaimRef or ipAddress)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub primary_ip6: Option<PrimaryIPReference>,
     

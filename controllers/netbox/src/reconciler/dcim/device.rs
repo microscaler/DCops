@@ -224,8 +224,7 @@ impl Reconciler {
                 
                 // Resolve primary IP addresses (if specified)
                 let primary_ip4_id = if let Some(ip_ref) = &device_crd.spec.primary_ip4 {
-                    match ip_ref {
-                        crds::PrimaryIPReference::IPClaimRef(claim_ref) => {
+                    if let Some(claim_ref) = &ip_ref.ip_claim_ref {
                             // Resolve IPClaim CRD reference to get NetBox IP address ID
                             if claim_ref.kind != "IPClaim" {
                                 warn!("Invalid kind '{}' for primary_ip4 IPClaim reference in device {}, expected 'IPClaim'", claim_ref.kind, name);
@@ -293,8 +292,7 @@ impl Reconciler {
                 };
                 
                 let primary_ip6_id = if let Some(ip_ref) = &device_crd.spec.primary_ip6 {
-                    match ip_ref {
-                        crds::PrimaryIPReference::IPClaimRef(claim_ref) => {
+                    if let Some(claim_ref) = &ip_ref.ip_claim_ref {
                             // Resolve IPClaim CRD reference to get NetBox IP address ID
                             if claim_ref.kind != "IPClaim" {
                                 warn!("Invalid kind '{}' for primary_ip6 IPClaim reference in device {}, expected 'IPClaim'", claim_ref.kind, name);

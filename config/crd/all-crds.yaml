@@ -2197,72 +2197,86 @@ spec:
                 - name
                 type: object
               primaryIp4:
-                anyOf:
-                - anyOf:
-                  - required:
-                    - apiGroup
-                    - kind
-                    - name
-                  - description: |-
-                      Direct IP address string (e.g., "192.168.1.10/24" or "2001:db8::1/64")
-                      Used as fallback when IPClaim CRD is not available
-                    type: string
-                - enum:
-                  - null
-                  nullable: true
                 description: |-
                   Primary IPv4 address reference (optional)
                   Can be either:
-                  - IPClaim CRD reference (recommended, GitOps-friendly) - use {"type": "ipClaimRef", ...}
-                  - IP address string (e.g., "192.168.1.10/24") as fallback - use {"type": "ipAddress", "value": "..."}
+                  - IPClaim CRD reference (recommended, GitOps-friendly) - use {"ipClaimRef": {...}}
+                  - IP address string (e.g., "192.168.1.10/24") as fallback - use {"ipAddress": "..."}
+                  Only one field should be set (ipClaimRef or ipAddress)
+                nullable: true
                 properties:
-                  apiGroup:
-                    description: API group of the referenced resource (e.g., "dcops.microscaler.io")
-                    type: string
-                  kind:
-                    description: Kind of the referenced resource (e.g., "NetBoxSite", "NetBoxTenant")
-                    type: string
-                  name:
-                    description: Name of the referenced NetBox CRD resource
-                    type: string
-                  namespace:
-                    description: Namespace of the referenced resource (defaults to same namespace as the referencing resource)
+                  ip_address:
+                    description: |-
+                      Direct IP address string (e.g., "192.168.1.10/24" or "2001:db8::1/64")
+                      Used as fallback when IPClaim CRD is not available
+                      Set this when providing a direct IP address
                     nullable: true
                     type: string
-                type: object
-              primaryIp6:
-                anyOf:
-                - anyOf:
-                  - required:
+                  ip_claim_ref:
+                    description: |-
+                      IPClaim CRD reference (recommended, GitOps-friendly)
+                      Set this when referencing an IPClaim CRD
+                    nullable: true
+                    properties:
+                      apiGroup:
+                        description: API group of the referenced resource (e.g., "dcops.microscaler.io")
+                        type: string
+                      kind:
+                        description: Kind of the referenced resource (e.g., "NetBoxSite", "NetBoxTenant")
+                        type: string
+                      name:
+                        description: Name of the referenced NetBox CRD resource
+                        type: string
+                      namespace:
+                        description: Namespace of the referenced resource (defaults to same namespace as the referencing resource)
+                        nullable: true
+                        type: string
+                    required:
                     - apiGroup
                     - kind
                     - name
-                  - description: |-
-                      Direct IP address string (e.g., "192.168.1.10/24" or "2001:db8::1/64")
-                      Used as fallback when IPClaim CRD is not available
-                    type: string
-                - enum:
-                  - null
-                  nullable: true
+                    type: object
+                type: object
+              primaryIp6:
                 description: |-
                   Primary IPv6 address reference (optional)
                   Can be either:
-                  - IPClaim CRD reference (recommended, GitOps-friendly) - use {"type": "ipClaimRef", ...}
-                  - IP address string (e.g., "2001:db8::1/64") as fallback - use {"type": "ipAddress", "value": "..."}
+                  - IPClaim CRD reference (recommended, GitOps-friendly) - use {"ipClaimRef": {...}}
+                  - IP address string (e.g., "2001:db8::1/64") as fallback - use {"ipAddress": "..."}
+                  Only one field should be set (ipClaimRef or ipAddress)
+                nullable: true
                 properties:
-                  apiGroup:
-                    description: API group of the referenced resource (e.g., "dcops.microscaler.io")
-                    type: string
-                  kind:
-                    description: Kind of the referenced resource (e.g., "NetBoxSite", "NetBoxTenant")
-                    type: string
-                  name:
-                    description: Name of the referenced NetBox CRD resource
-                    type: string
-                  namespace:
-                    description: Namespace of the referenced resource (defaults to same namespace as the referencing resource)
+                  ip_address:
+                    description: |-
+                      Direct IP address string (e.g., "192.168.1.10/24" or "2001:db8::1/64")
+                      Used as fallback when IPClaim CRD is not available
+                      Set this when providing a direct IP address
                     nullable: true
                     type: string
+                  ip_claim_ref:
+                    description: |-
+                      IPClaim CRD reference (recommended, GitOps-friendly)
+                      Set this when referencing an IPClaim CRD
+                    nullable: true
+                    properties:
+                      apiGroup:
+                        description: API group of the referenced resource (e.g., "dcops.microscaler.io")
+                        type: string
+                      kind:
+                        description: Kind of the referenced resource (e.g., "NetBoxSite", "NetBoxTenant")
+                        type: string
+                      name:
+                        description: Name of the referenced NetBox CRD resource
+                        type: string
+                      namespace:
+                        description: Namespace of the referenced resource (defaults to same namespace as the referencing resource)
+                        nullable: true
+                        type: string
+                    required:
+                    - apiGroup
+                    - kind
+                    - name
+                    type: object
                 type: object
               serial:
                 description: Serial number

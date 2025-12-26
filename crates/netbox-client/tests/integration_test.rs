@@ -1,6 +1,16 @@
 //! Integration tests for NetBox client
 //!
 //! These tests require a running NetBox instance.
+//! Set NETBOX_URL and NETBOX_TOKEN environment variables before running.
+//!
+//! Example:
+//! ```bash
+//! NETBOX_URL=http://localhost:8000 NETBOX_TOKEN=your-token cargo test --test integration_test
+//! ```
+
+mod fixtures;
+//!
+//! These tests require a running NetBox instance.
 //! Set NETBOX_URL and NETBOX_TOKEN environment variables to run.
 
 use netbox_client::{NetBoxClient, AllocateIPRequest, IPAddressStatus};

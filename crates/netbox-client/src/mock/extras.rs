@@ -72,4 +72,3 @@ pub async fn create_tag(client: &MockNetBoxClient, name: &str, slug: &str, descr
         Ok(tag)
 }
 }
-

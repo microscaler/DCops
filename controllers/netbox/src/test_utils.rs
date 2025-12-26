@@ -259,3 +259,61 @@ pub fn create_test_netbox_tenant(
     }
 }
 
+/// Helper to create test NetBoxDevice CRD with status
+#[cfg(test)]
+pub fn create_test_netbox_device(
+    name: &str,
+    namespace: &str,
+    device_type_name: &str,
+    device_role_name: &str,
+    site_name: &str,
+    netbox_id: Option<u64>,
+    netbox_url: Option<String>,
+) -> NetBoxDevice {
+    use crds::DeviceStatus;
+    NetBoxDevice {
+        metadata: ObjectMeta {
+            name: Some(name.to_string()),
+            namespace: Some(namespace.to_string()),
+            ..Default::default()
+        },
+        spec: crds::NetBoxDeviceSpec {
+            name: Some(name.to_string()),
+            device_type: crds::NetBoxResourceReference {
+                api_group: "dcops.microscaler.io".to_string(),
+                kind: "NetBoxDeviceType".to_string(),
+                name: device_type_name.to_string(),
+                namespace: Some(namespace.to_string()),
+            },
+            device_role: crds::NetBoxResourceReference {
+                api_group: "dcops.microscaler.io".to_string(),
+                kind: "NetBoxDeviceRole".to_string(),
+                name: device_role_name.to_string(),
+                namespace: Some(namespace.to_string()),
+            },
+            site: crds::NetBoxResourceReference {
+                api_group: "dcops.microscaler.io".to_string(),
+                kind: "NetBoxSite".to_string(),
+                name: site_name.to_string(),
+                namespace: Some(namespace.to_string()),
+            },
+            location: None,
+            tenant: None,
+            platform: None,
+            serial: None,
+            asset_tag: None,
+            status: DeviceStatus::Active,
+            primary_ip4: None,
+            primary_ip6: None,
+            description: None,
+            comments: None,
+        },
+        status: netbox_id.map(|id| crds::NetBoxDeviceStatus {
+            netbox_id: Some(id),
+            netbox_url: netbox_url.unwrap_or_else(|| format!("http://netbox/api/dcim/devices/{}/", id)),
+            state: crds::ResourceState::Created,
+            error: None,
+        }),
+    }
+}
+

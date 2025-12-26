@@ -2,7 +2,7 @@
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use crate::reconcile_helpers::{status_needs_update, ipclaim_status_needs_update, create_pending_status_patch, create_drift_status_patch};
     use crds::*;
 
     #[test]

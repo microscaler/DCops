@@ -140,7 +140,7 @@ impl Reconciler {
                 Some(error_msg.clone()),
             );
             let pp = kube::api::PatchParams::default();
-            if let Err(e) = api.patch_status(name, &pp, &kube::api::Patch::Merge(&status_patch)).await {
+            if let Err(e) = api.patch_status(name, &pp, &kube::api::Patch::Merge(status_patch.clone())).await {
                 error!("Failed to update NetBoxSite {}/{} error status: {}", namespace, name, e);
             } else {
                 info!("Updated NetBoxSite {}/{} status with error", namespace, name);
@@ -310,7 +310,7 @@ impl Reconciler {
                             );
                             let pp = kube::api::PatchParams::default();
                             if let Err(update_err) = self.netbox_site_api
-                                .patch_status(name, &pp, &kube::api::Patch::Merge(&status_patch))
+                                .patch_status(name, &pp, &kube::api::Patch::Merge(status_patch.clone()))
                                 .await
                             {
                                 warn!("Failed to clear NetBoxSite status after drift detection: {}", update_err);
@@ -351,7 +351,7 @@ impl Reconciler {
                     );
                     let pp = kube::api::PatchParams::default();
                     match self.netbox_site_api
-                        .patch_status(name, &pp, &kube::api::Patch::Merge(&status_patch))
+                        .patch_status(name, &pp, &kube::api::Patch::Merge(status_patch.clone()))
                         .await
                     {
                         Ok(_) => {
@@ -420,7 +420,7 @@ impl Reconciler {
         );
         let pp = kube::api::PatchParams::default();
         match self.netbox_site_api
-            .patch_status(name, &pp, &kube::api::Patch::Merge(&status_patch))
+            .patch_status(name, &pp, &kube::api::Patch::Merge(status_patch.clone()))
             .await
         {
             Ok(_) => {

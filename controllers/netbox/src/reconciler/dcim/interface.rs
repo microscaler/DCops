@@ -41,7 +41,7 @@ impl Reconciler {
                             );
                             let pp = kube::api::PatchParams::default();
                             if let Err(e) = self.netbox_interface_api
-                                .patch_status(name, &pp, &kube::api::Patch::Merge(&status_patch))
+                                .patch_status(name, &pp, &kube::api::Patch::Merge(status_patch.clone()))
                                 .await
                             {
                                 warn!("Failed to clear NetBoxInterface status after drift detection: {}", e);
@@ -86,7 +86,7 @@ impl Reconciler {
                     );
                     let pp = kube::api::PatchParams::default();
                     match self.netbox_interface_api
-                        .patch_status(name, &pp, &kube::api::Patch::Merge(&status_patch))
+                        .patch_status(name, &pp, &kube::api::Patch::Merge(status_patch.clone()))
                         .await
                     {
                         Ok(_) => {
@@ -198,7 +198,7 @@ impl Reconciler {
         );
         let pp = kube::api::PatchParams::default();
         match self.netbox_interface_api
-            .patch_status(name, &pp, &kube::api::Patch::Merge(&status_patch))
+            .patch_status(name, &pp, &kube::api::Patch::Merge(status_patch.clone()))
             .await
         {
             Ok(_) => {

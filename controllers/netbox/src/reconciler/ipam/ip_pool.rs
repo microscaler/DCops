@@ -162,7 +162,7 @@ impl Reconciler {
         
         let pp = PatchParams::default();
         match self.ip_pool_api
-            .patch_status(name, &pp, &kube::api::Patch::Merge(&status_patch))
+            .patch_status(name, &pp, &kube::api::Patch::Merge(status_patch.clone()))
             .await
         {
             Ok(_) => {

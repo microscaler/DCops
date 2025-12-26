@@ -152,7 +152,7 @@ impl Reconciler {
         );
         let pp = kube::api::PatchParams::default();
         match self.netbox_mac_address_api
-            .patch_status(name, &pp, &kube::api::Patch::Merge(&status_patch))
+            .patch_status(name, &pp, &kube::api::Patch::Merge(status_patch.clone()))
             .await
         {
             Ok(_) => {

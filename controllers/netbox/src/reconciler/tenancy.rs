@@ -35,7 +35,7 @@ impl Reconciler {
                 Some(error_msg.clone()),
             );
             let pp = kube::api::PatchParams::default();
-            if let Err(e) = api.patch_status(name, &pp, &kube::api::Patch::Merge(&status_patch)).await {
+            if let Err(e) = api.patch_status(name, &pp, &kube::api::Patch::Merge(status_patch.clone())).await {
                 error!("Failed to update NetBoxTenant {}/{} error status: {}", namespace, name, e);
             } else {
                 info!("Updated NetBoxTenant {}/{} status with error", namespace, name);
@@ -76,7 +76,7 @@ impl Reconciler {
                             );
                             let pp = kube::api::PatchParams::default();
                             if let Err(e) = self.netbox_tenant_api
-                                .patch_status(name, &pp, &kube::api::Patch::Merge(&status_patch))
+                                .patch_status(name, &pp, &kube::api::Patch::Merge(status_patch.clone()))
                                 .await
                             {
                                 warn!("Failed to clear NetBoxTenant status after drift detection: {}", e);
@@ -121,7 +121,7 @@ impl Reconciler {
                     );
                     let pp = kube::api::PatchParams::default();
                     match self.netbox_tenant_api
-                        .patch_status(name, &pp, &kube::api::Patch::Merge(&status_patch))
+                        .patch_status(name, &pp, &kube::api::Patch::Merge(status_patch.clone()))
                         .await
                     {
                         Ok(_) => {
@@ -249,7 +249,7 @@ impl Reconciler {
         );
         let pp = kube::api::PatchParams::default();
         match self.netbox_tenant_api
-            .patch_status(name, &pp, &kube::api::Patch::Merge(&status_patch))
+            .patch_status(name, &pp, &kube::api::Patch::Merge(status_patch.clone()))
             .await
         {
             Ok(_) => {

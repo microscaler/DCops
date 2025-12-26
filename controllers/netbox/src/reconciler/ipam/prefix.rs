@@ -101,7 +101,7 @@ impl Reconciler {
             
             let pp = kube::api::PatchParams::default();
             if let Err(e) = api
-                .patch_status(name, &pp, &kube::api::Patch::Merge(&status_patch))
+                .patch_status(name, &pp, &kube::api::Patch::Merge(status_patch.clone()))
                 .await
             {
                 error!("Failed to update NetBoxPrefix {}/{} error status: {}", namespace, name, e);

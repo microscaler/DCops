@@ -43,7 +43,7 @@ impl Reconciler {
             
             let pp = kube::api::PatchParams::default();
             if let Err(e) = api
-                .patch_status(name, &pp, &kube::api::Patch::Merge(&status_patch))
+                .patch_status(name, &pp, &kube::api::Patch::Merge(status_patch.clone()))
                 .await
             {
                 error!("Failed to update IPClaim {}/{} error status: {}", namespace, name, e);
@@ -192,7 +192,7 @@ impl Reconciler {
                                         );
                                         let pp = kube::api::PatchParams::default();
                                         if let Err(update_err) = self.ip_claim_api
-                                            .patch_status(name, &pp, &kube::api::Patch::Merge(&status_patch))
+                                            .patch_status(name, &pp, &kube::api::Patch::Merge(status_patch.clone()))
                                             .await
                                         {
                                             error!("Failed to update IPClaim status with existing IP: {}", update_err);
@@ -243,7 +243,7 @@ impl Reconciler {
                                         );
                                         let pp = kube::api::PatchParams::default();
                                         if let Err(update_err) = self.ip_claim_api
-                                            .patch_status(name, &pp, &kube::api::Patch::Merge(&status_patch))
+                                            .patch_status(name, &pp, &kube::api::Patch::Merge(status_patch.clone()))
                                             .await
                                         {
                                             error!("Failed to update IPClaim status with existing IP: {}", update_err);
@@ -296,7 +296,7 @@ impl Reconciler {
             use kube::api::PatchParams;
             let pp = PatchParams::default();
             match self.ip_claim_api
-                .patch_status(name, &pp, &kube::api::Patch::Merge(&status_patch))
+                .patch_status(name, &pp, &kube::api::Patch::Merge(status_patch.clone()))
                 .await
             {
                 Ok(_) => {

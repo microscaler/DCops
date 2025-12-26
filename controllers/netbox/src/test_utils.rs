@@ -156,3 +156,105 @@ pub fn create_test_prefix(
     }
 }
 
+/// Helper to create test IPClaim CRD
+#[cfg(test)]
+pub fn create_test_ip_claim(
+    name: &str,
+    namespace: &str,
+    pool_ref_name: &str,
+    pool_ref_namespace: Option<&str>,
+    device_name: &str,
+    interface: Option<&str>,
+    preferred_ip: Option<&str>,
+) -> IPClaim {
+    IPClaim {
+        metadata: ObjectMeta {
+            name: Some(name.to_string()),
+            namespace: Some(namespace.to_string()),
+            ..Default::default()
+        },
+        spec: crds::IPClaimSpec {
+            pool_ref: crds::IPPoolRef {
+                name: pool_ref_name.to_string(),
+                namespace: pool_ref_namespace.map(|s| s.to_string()),
+            },
+            device_ref: crds::DeviceRef {
+                name: device_name.to_string(),
+                interface: interface.map(|s| s.to_string()),
+            },
+            preferred_ip: preferred_ip.map(|s| s.to_string()),
+        },
+        status: None,
+    }
+}
+
+/// Helper to create test NetBoxSite CRD
+#[cfg(test)]
+pub fn create_test_netbox_site(
+    name: &str,
+    namespace: &str,
+    netbox_id: Option<u64>,
+    netbox_url: Option<String>,
+) -> NetBoxSite {
+    NetBoxSite {
+        metadata: ObjectMeta {
+            name: Some(name.to_string()),
+            namespace: Some(namespace.to_string()),
+            ..Default::default()
+        },
+        spec: crds::NetBoxSiteSpec {
+            name: name.to_string(),
+            slug: None,
+            description: None,
+            physical_address: None,
+            shipping_address: None,
+            latitude: None,
+            longitude: None,
+            tenant: None,
+            region: None,
+            site_group: None,
+            status: crds::SiteStatus::Active,
+            time_zone: None,
+            comments: None,
+        },
+        status: netbox_id.map(|id| crds::NetBoxSiteStatus {
+            netbox_id: Some(id),
+            netbox_url,
+            state: crds::ResourceState::Created,
+            error: None,
+            last_reconciled: None,
+        }),
+    }
+}
+
+/// Helper to create test NetBoxTenant CRD
+#[cfg(test)]
+pub fn create_test_netbox_tenant(
+    name: &str,
+    namespace: &str,
+    netbox_id: Option<u64>,
+    netbox_url: Option<String>,
+) -> NetBoxTenant {
+    NetBoxTenant {
+        metadata: ObjectMeta {
+            name: Some(name.to_string()),
+            namespace: Some(namespace.to_string()),
+            ..Default::default()
+        },
+        spec: crds::NetBoxTenantSpec {
+            name: name.to_string(),
+            slug: None,
+            group: None,
+            description: None,
+            comments: None,
+        },
+        status: netbox_id.map(|id| crds::NetBoxTenantStatus {
+            netbox_id: Some(id),
+            netbox_url,
+            state: crds::ResourceState::Created,
+            error: None,
+            last_reconciled: None,
+        }),
+    }
+}
+

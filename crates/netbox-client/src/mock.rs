@@ -109,6 +109,78 @@ impl MockNetBoxClient {
         *id += 1;
         current
     }
+    
+    /// Helper to create NestedTenant
+    fn create_nested_tenant(&self, id: u64, name: Option<String>) -> NestedTenant {
+        let name_str = name.unwrap_or_else(|| format!("Tenant {}", id));
+        NestedTenant {
+            id,
+            url: format!("{}/api/tenancy/tenants/{}/", self.base_url, id),
+            display: name_str.clone(),
+            name: name_str.clone(),
+            slug: name_str.to_lowercase().replace(' ', "-"),
+        }
+    }
+    
+    /// Helper to create NestedSite
+    fn create_nested_site(&self, id: u64, name: Option<String>) -> NestedSite {
+        let name_str = name.unwrap_or_else(|| format!("Site {}", id));
+        NestedSite {
+            id,
+            url: format!("{}/api/dcim/sites/{}/", self.base_url, id),
+            display: name_str.clone(),
+            name: name_str.clone(),
+            slug: name_str.to_lowercase().replace(' ', "-"),
+        }
+    }
+    
+    /// Helper to create NestedRegion
+    fn create_nested_region(&self, id: u64, name: Option<String>) -> NestedRegion {
+        let name_str = name.unwrap_or_else(|| format!("Region {}", id));
+        NestedRegion {
+            id,
+            url: format!("{}/api/dcim/regions/{}/", self.base_url, id),
+            display: name_str.clone(),
+            name: name_str.clone(),
+            slug: name_str.to_lowercase().replace(' ', "-"),
+        }
+    }
+    
+    /// Helper to create NestedSiteGroup
+    fn create_nested_site_group(&self, id: u64, name: Option<String>) -> NestedSiteGroup {
+        let name_str = name.unwrap_or_else(|| format!("Site Group {}", id));
+        NestedSiteGroup {
+            id,
+            url: format!("{}/api/dcim/site-groups/{}/", self.base_url, id),
+            display: name_str.clone(),
+            name: name_str.clone(),
+            slug: name_str.to_lowercase().replace(' ', "-"),
+        }
+    }
+    
+    /// Helper to create NestedVlan
+    fn create_nested_vlan(&self, id: u64, vid: u16, name: Option<String>) -> NestedVlan {
+        let name_str = name.unwrap_or_else(|| format!("VLAN {}", vid));
+        NestedVlan {
+            id,
+            url: format!("{}/api/ipam/vlans/{}/", self.base_url, id),
+            display: name_str.clone(),
+            vid,
+            name: name_str,
+        }
+    }
+    
+    /// Helper to create NestedRole
+    fn create_nested_role(&self, id: u64, name: Option<String>) -> NestedRole {
+        let name_str = name.unwrap_or_else(|| format!("Role {}", id));
+        NestedRole {
+            id,
+            url: format!("{}/api/ipam/roles/{}/", self.base_url, id),
+            display: name_str.clone(),
+            name: name_str.clone(),
+            slug: name_str.to_lowercase().replace(' ', "-"),
+        }
+    }
 }
 
 #[async_trait::async_trait]
@@ -157,7 +229,7 @@ impl NetBoxClientTrait for MockNetBoxClient {
             family: 4, // Default to IPv4
             address: address.clone(),
             vrf: None,
-            tenant: request.as_ref().and_then(|r| r.tenant.clone()),
+            tenant: None, // AllocateIPRequest doesn't have tenant field
             status: request
                 .as_ref()
                 .and_then(|r| r.status.clone())
@@ -171,7 +243,19 @@ impl NetBoxClientTrait for MockNetBoxClient {
             dns_name: request.as_ref().and_then(|r| r.dns_name.clone()).unwrap_or_default(),
             description: request.as_ref().and_then(|r| r.description.clone()).unwrap_or_default(),
             comments: String::new(),
-            tags: request.as_ref().and_then(|r| r.tags.clone()).unwrap_or_default(),
+            tags: request.as_ref().and_then(|r| r.tags.clone())
+                .map(|tags_vec| {
+                    tags_vec.into_iter()
+                        .filter_map(|v| v.as_str().map(|s| NestedTag {
+                            id: 0,
+                            url: format!("{}/api/extras/tags/0/", self.base_url),
+                            display: s.to_string(),
+                            name: s.to_string(),
+                            slug: s.to_lowercase().replace(' ', "-"),
+                        }))
+                        .collect()
+                })
+                .unwrap_or_default(),
             custom_fields: serde_json::json!({}),
             created: chrono::Utc::now().to_rfc3339(),
             last_updated: chrono::Utc::now().to_rfc3339(),
@@ -213,20 +297,41 @@ impl NetBoxClientTrait for MockNetBoxClient {
         let id = self.next_id();
         let ip = IPAddress {
             id,
-            address: address.to_string(),
             url: format!("{}/api/ipam/ip-addresses/{}/", self.base_url, id),
+            display: address.to_string(),
+            family: if address.contains(':') { 6 } else { 4 },
+            address: address.to_string(),
+            vrf: None,
+            tenant: None, // AllocateIPRequest doesn't have tenant field
             status: request
                 .as_ref()
                 .and_then(|r| r.status.clone())
                 .unwrap_or(IPAddressStatus::Active),
-            description: request.as_ref().and_then(|r| r.description.clone()),
-            dns_name: request.as_ref().and_then(|r| r.dns_name.clone()),
             role: request.as_ref().and_then(|r| r.role.clone()),
-            tags: request.as_ref().and_then(|r| r.tags.clone()),
-            // IPAddress doesn't have a prefix field - prefix relationship is through assigned_object
-            tenant: None,
+            assigned_object_type: None,
+            assigned_object_id: None,
+            assigned_object: None,
             nat_inside: None,
-            nat_outside: None,
+            nat_outside: vec![],
+            dns_name: request.as_ref().and_then(|r| r.dns_name.clone()).unwrap_or_default(),
+            description: request.as_ref().and_then(|r| r.description.clone()).unwrap_or_default(),
+            comments: String::new(),
+            tags: request.as_ref().and_then(|r| r.tags.clone())
+                .map(|tags_vec| {
+                    tags_vec.into_iter()
+                        .filter_map(|v| v.as_str().map(|s| NestedTag {
+                            id: 0,
+                            url: format!("{}/api/extras/tags/0/", self.base_url),
+                            display: s.to_string(),
+                            name: s.to_string(),
+                            slug: s.to_lowercase().replace(' ', "-"),
+                        }))
+                        .collect()
+                })
+                .unwrap_or_default(),
+            custom_fields: serde_json::json!({}),
+            created: chrono::Utc::now().to_rfc3339(),
+            last_updated: chrono::Utc::now().to_rfc3339(),
         };
 
         self.ip_addresses.lock().unwrap().insert(id, ip.clone());
@@ -240,19 +345,27 @@ impl NetBoxClientTrait for MockNetBoxClient {
             .ok_or_else(|| NetBoxError::NotFound(format!("IP address {} not found", id)))?;
 
         if let Some(description) = request.description {
-            ip.description = Some(description);
+            ip.description = description;
         }
         if let Some(status) = request.status {
             ip.status = status;
         }
         if let Some(dns_name) = request.dns_name {
-            ip.dns_name = Some(dns_name);
+            ip.dns_name = dns_name;
         }
         if let Some(role) = request.role {
             ip.role = Some(role);
         }
         if let Some(tags) = request.tags {
-            ip.tags = Some(tags);
+            ip.tags = tags.into_iter()
+                .filter_map(|v| v.as_str().map(|s| NestedTag {
+                    id: 0,
+                    url: format!("{}/api/extras/tags/0/", self.base_url),
+                    display: s.to_string(),
+                    name: s.to_string(),
+                    slug: s.to_lowercase().replace(' ', "-"),
+                }))
+                .collect();
         }
 
         Ok(ip.clone())
@@ -269,17 +382,48 @@ impl NetBoxClientTrait for MockNetBoxClient {
 
     async fn create_prefix(&self, prefix: &str, site_id: Option<u64>, tenant_id: Option<u64>, vlan_id: Option<u32>, role_id: Option<u64>, status: Option<&str>, description: Option<&str>, tags: Option<Vec<serde_json::Value>>) -> Result<Prefix, NetBoxError> {
         let id = self.next_id();
+        let status_str = status.unwrap_or("active");
+        let prefix_status = match status_str {
+            "active" => PrefixStatus::Active,
+            "reserved" => PrefixStatus::Reserved,
+            "deprecated" => PrefixStatus::Deprecated,
+            "container" => PrefixStatus::Container,
+            _ => PrefixStatus::Active,
+        };
+        
+        let tags_vec: Vec<NestedTag> = tags
+            .unwrap_or_default()
+            .into_iter()
+            .filter_map(|v| v.as_str().map(|s| NestedTag {
+                id: 0,
+                url: format!("{}/api/extras/tags/{}/", self.base_url, 0),
+                display: s.to_string(),
+                name: s.to_string(),
+                slug: s.to_lowercase().replace(' ', "-"),
+            }))
+            .collect();
+        
         let prefix_obj = Prefix {
             id,
-            prefix: prefix.to_string(),
             url: format!("{}/api/ipam/prefixes/{}/", self.base_url, id),
-            // Prefix doesn't have a site field - skip
-            tenant: tenant_id,
-            vlan: vlan_id,
-            role: role_id,
-            status: status.unwrap_or("active").to_string(),
-            description: description.map(|s| s.to_string()),
-            tags,
+            display: prefix.to_string(),
+            family: if prefix.contains(':') { 6 } else { 4 },
+            prefix: prefix.to_string(),
+            vrf: None,
+            tenant: tenant_id.map(|id| self.create_nested_tenant(id, None)),
+            vlan: vlan_id.map(|id| self.create_nested_vlan(id as u64, id as u16, None)),
+            status: prefix_status,
+            role: role_id.map(|id| self.create_nested_role(id, None)),
+            is_pool: false,
+            mark_utilized: false,
+            description: description.map(|s| s.to_string()).unwrap_or_default(),
+            comments: String::new(),
+            tags: tags_vec,
+            custom_fields: serde_json::json!({}),
+            created: chrono::Utc::now().to_rfc3339(),
+            last_updated: chrono::Utc::now().to_rfc3339(),
+            children: 0,
+            _depth: 0,
         };
 
         self.prefixes.lock().unwrap().insert(id, prefix_obj.clone());
@@ -294,22 +438,36 @@ impl NetBoxClientTrait for MockNetBoxClient {
 
         // Prefix model doesn't have a site field - skip
         if let Some(tenant) = tenant_id {
-            prefix.tenant = Some(tenant);
+            prefix.tenant = Some(self.create_nested_tenant(tenant, None));
         }
         if let Some(vlan) = vlan_id {
-            prefix.vlan = Some(vlan);
+            prefix.vlan = Some(self.create_nested_vlan(vlan as u64, vlan as u16, None));
         }
         if let Some(role) = role_id {
-            prefix.role = Some(role);
+            prefix.role = Some(self.create_nested_role(role, None));
         }
         if let Some(status_str) = status {
-            prefix.status = status_str.to_string();
+            prefix.status = match status_str {
+                "active" => PrefixStatus::Active,
+                "reserved" => PrefixStatus::Reserved,
+                "deprecated" => PrefixStatus::Deprecated,
+                "container" => PrefixStatus::Container,
+                _ => PrefixStatus::Active,
+            };
         }
         if let Some(desc) = description {
-            prefix.description = Some(desc.to_string());
+            prefix.description = desc.to_string();
         }
         if let Some(tags_val) = tags {
-            prefix.tags = Some(tags_val);
+            prefix.tags = tags_val.into_iter()
+                .filter_map(|v| v.as_str().map(|s| NestedTag {
+                    id: 0,
+                    url: format!("{}/api/extras/tags/0/", self.base_url),
+                    display: s.to_string(),
+                    name: s.to_string(),
+                    slug: s.to_lowercase().replace(' ', "-"),
+                }))
+                .collect();
         }
 
         Ok(prefix.clone())
@@ -333,10 +491,22 @@ impl NetBoxClientTrait for MockNetBoxClient {
         let id = self.next_id();
         let aggregate = Aggregate {
             id,
-            prefix: prefix.to_string(),
             url: format!("{}/api/ipam/aggregates/{}/", self.base_url, id),
-            rir: rir_id,
+            display: prefix.to_string(),
+            prefix: prefix.to_string(),
+            rir: Some(NestedRir {
+                id: rir_id,
+                url: format!("{}/api/ipam/rirs/{}/", self.base_url, rir_id),
+                display: format!("RIR {}", rir_id),
+                name: format!("RIR {}", rir_id),
+                slug: format!("rir-{}", rir_id),
+            }),
+            date_allocated: None,
             description: description.map(|s| s.to_string()),
+            comments: None,
+            tags: vec![],
+            created: chrono::Utc::now().to_rfc3339(),
+            last_updated: chrono::Utc::now().to_rfc3339(),
         };
 
         self.aggregates.lock().unwrap().insert(id, aggregate.clone());
@@ -356,10 +526,14 @@ impl NetBoxClientTrait for MockNetBoxClient {
         let id = self.next_id();
         let rir = Rir {
             id,
+            url: format!("{}/api/ipam/rirs/{}/", self.base_url, id),
+            display: name.to_string(),
             name: name.to_string(),
             slug: slug.to_string(),
-            url: format!("{}/api/ipam/rirs/{}/", self.base_url, id),
             description: description.map(|s| s.to_string()),
+            is_private: false,
+            created: chrono::Utc::now().to_rfc3339(),
+            last_updated: chrono::Utc::now().to_rfc3339(),
         };
 
         self.rirs.lock().unwrap().insert(name.to_string(), rir.clone());
@@ -368,14 +542,31 @@ impl NetBoxClientTrait for MockNetBoxClient {
 
     async fn create_vlan(&self, site_id: u64, vid: u32, name: &str, status: Option<&str>, description: Option<&str>) -> Result<Vlan, NetBoxError> {
         let id = self.next_id();
+        let status_str = status.unwrap_or("active");
+        let vlan_status = match status_str {
+            "active" => VlanStatus::Active,
+            "reserved" => VlanStatus::Reserved,
+            "deprecated" => VlanStatus::Deprecated,
+            _ => VlanStatus::Active,
+        };
+        
         let vlan = Vlan {
             id,
-            vid,
-            name: name.to_string(),
             url: format!("{}/api/ipam/vlans/{}/", self.base_url, id),
-            site: Some(site_id),
-            status: status.unwrap_or("active").to_string(),
-            description: description.map(|s| s.to_string()),
+            display: name.to_string(),
+            site: Some(self.create_nested_site(site_id, None)),
+            group: None,
+            vid: vid as u16,
+            name: name.to_string(),
+            tenant: None,
+            status: vlan_status,
+            role: None,
+            description: description.map(|s| s.to_string()).unwrap_or_default(),
+            comments: String::new(),
+            tags: vec![],
+            custom_fields: serde_json::json!({}),
+            created: chrono::Utc::now().to_rfc3339(),
+            last_updated: chrono::Utc::now().to_rfc3339(),
         };
 
         self.vlans.lock().unwrap().insert(id, vlan.clone());
@@ -389,24 +580,24 @@ impl NetBoxClientTrait for MockNetBoxClient {
             .ok_or_else(|| NetBoxError::NotFound(format!("VLAN {} not found", id)))?;
 
         if let Some(site_id_val) = site_id {
-            vlan.site = Some(NestedSite {
-                id: site_id_val,
-                url: format!("{}/api/dcim/sites/{}/", self.base_url, site_id_val),
-                name: format!("Site {}", site_id_val),
-                slug: format!("site-{}", site_id_val),
-            });
+            vlan.site = Some(self.create_nested_site(site_id_val, None));
         }
         if let Some(vid_val) = vid {
-            vlan.vid = vid_val;
+            vlan.vid = vid_val as u16;
         }
         if let Some(name_str) = name {
             vlan.name = name_str.to_string();
         }
         if let Some(status_str) = status {
-            vlan.status = status_str.to_string();
+            vlan.status = match status_str {
+                "active" => VlanStatus::Active,
+                "reserved" => VlanStatus::Reserved,
+                "deprecated" => VlanStatus::Deprecated,
+                _ => VlanStatus::Active,
+            };
         }
         if let Some(desc) = description {
-            vlan.description = Some(desc.to_string());
+            vlan.description = desc.to_string();
         }
 
         Ok(vlan.clone())
@@ -502,20 +693,36 @@ impl NetBoxClientTrait for MockNetBoxClient {
 
     async fn create_site(&self, name: &str, slug: Option<&str>, status: &str, region_id: Option<u64>, site_group_id: Option<u64>, tenant_id: Option<u64>, facility: Option<&str>, time_zone: Option<&str>, description: Option<&str>, comments: Option<&str>) -> Result<Site, NetBoxError> {
         let id = self.next_id();
-        let slug_value = slug.unwrap_or_else(|| name.to_lowercase().replace(' ', "-"));
+        let slug_value = slug.map(|s| s.to_string()).unwrap_or_else(|| name.to_lowercase().replace(' ', "-"));
+        let status_enum = match status {
+            "active" => SiteStatus::Active,
+            "planned" => SiteStatus::Planned,
+            "retired" => SiteStatus::Retired,
+            "staging" => SiteStatus::Staging,
+            _ => SiteStatus::Active,
+        };
+        
         let site = Site {
             id,
+            url: format!("{}/api/dcim/sites/{}/", self.base_url, id),
+            display: name.to_string(),
             name: name.to_string(),
             slug: slug_value,
-            url: format!("{}/api/dcim/sites/{}/", self.base_url, id),
-            status: status.to_string(),
-            region: region_id,
-            site_group: site_group_id,
-            tenant: tenant_id,
+            status: status_enum,
+            region: region_id.map(|id| self.create_nested_region(id, None)),
+            site_group: site_group_id.map(|id| self.create_nested_site_group(id, None)),
+            tenant: tenant_id.map(|id| self.create_nested_tenant(id, None)),
             facility: facility.map(|s| s.to_string()),
+            physical_address: None,
+            shipping_address: None,
+            latitude: None,
+            longitude: None,
             time_zone: time_zone.map(|s| s.to_string()),
             description: description.map(|s| s.to_string()),
             comments: comments.map(|s| s.to_string()),
+            tags: vec![],
+            created: chrono::Utc::now().to_rfc3339(),
+            last_updated: chrono::Utc::now().to_rfc3339(),
         };
 
         self.sites.lock().unwrap().insert(id, site.clone());
@@ -535,16 +742,22 @@ impl NetBoxClientTrait for MockNetBoxClient {
             site.slug = slug_str.to_string();
         }
         if let Some(status_str) = status {
-            site.status = status_str.to_string();
+            site.status = match status_str {
+                "active" => SiteStatus::Active,
+                "planned" => SiteStatus::Planned,
+                "retired" => SiteStatus::Retired,
+                "staging" => SiteStatus::Staging,
+                _ => SiteStatus::Active,
+            };
         }
         if let Some(region) = region_id {
-            site.region = Some(region);
+            site.region = Some(self.create_nested_region(region, None));
         }
         if let Some(site_group) = site_group_id {
-            site.site_group = Some(site_group);
+            site.site_group = Some(self.create_nested_site_group(site_group, None));
         }
         if let Some(tenant) = tenant_id {
-            site.tenant = Some(tenant);
+            site.tenant = Some(self.create_nested_tenant(tenant, None));
         }
         if let Some(fac) = facility {
             site.facility = Some(fac.to_string());
@@ -585,10 +798,18 @@ impl NetBoxClientTrait for MockNetBoxClient {
         let id = self.next_id();
         let region = Region {
             id,
+            url: format!("{}/api/dcim/regions/{}/", self.base_url, id),
+            display: name.to_string(),
             name: name.to_string(),
             slug: slug.to_string(),
-            url: format!("{}/api/dcim/regions/{}/", self.base_url, id),
+            parent: None,
             description: description.map(|s| s.to_string()),
+            comments: None,
+            site_count: 0,
+            prefix_count: 0,
+            _depth: None,
+            created: chrono::Utc::now().to_rfc3339(),
+            last_updated: chrono::Utc::now().to_rfc3339(),
         };
 
         self.regions.lock().unwrap().insert(id, region.clone());
@@ -618,10 +839,18 @@ impl NetBoxClientTrait for MockNetBoxClient {
         let id = self.next_id();
         let site_group = SiteGroup {
             id,
+            url: format!("{}/api/dcim/site-groups/{}/", self.base_url, id),
+            display: name.to_string(),
             name: name.to_string(),
             slug: slug.to_string(),
-            url: format!("{}/api/dcim/site-groups/{}/", self.base_url, id),
+            parent: None,
             description: description.map(|s| s.to_string()),
+            comments: None,
+            site_count: 0,
+            prefix_count: 0,
+            _depth: None,
+            created: chrono::Utc::now().to_rfc3339(),
+            last_updated: chrono::Utc::now().to_rfc3339(),
         };
 
         self.site_groups.lock().unwrap().insert(id, site_group.clone());
@@ -644,21 +873,33 @@ impl NetBoxClientTrait for MockNetBoxClient {
 
     async fn get_location_by_name(&self, site_id: u64, name: &str) -> Result<Option<Location>, NetBoxError> {
         let locations = self.locations.lock().unwrap();
-        Ok(locations.values().find(|l| l.site == Some(site_id) && l.name == name).cloned())
+        Ok(locations.values().find(|l| l.site.id == site_id && l.name == name).cloned())
     }
 
     async fn create_location(&self, site_id: u64, name: &str, slug: Option<&str>, parent_id: Option<u64>, description: Option<String>, comments: Option<String>) -> Result<Location, NetBoxError> {
         let id = self.next_id();
-        let slug_value = slug.unwrap_or_else(|| name.to_lowercase().replace(' ', "-"));
+        let slug_value = slug.map(|s| s.to_string()).unwrap_or_else(|| name.to_lowercase().replace(' ', "-"));
         let location = Location {
             id,
+            url: format!("{}/api/dcim/locations/{}/", self.base_url, id),
+            display: name.to_string(),
             name: name.to_string(),
             slug: slug_value,
-            url: format!("{}/api/dcim/locations/{}/", self.base_url, id),
-            site: Some(site_id),
-            parent: parent_id,
+            site: self.create_nested_site(site_id, None),
+            parent: parent_id.map(|id| NestedLocation {
+                id,
+                url: format!("{}/api/dcim/locations/{}/", self.base_url, id),
+                display: format!("Location {}", id),
+                name: format!("Location {}", id),
+                slug: format!("location-{}", id),
+            }),
             description: description,
             comments: comments,
+            device_count: 0,
+            rack_count: 0,
+            _depth: None,
+            created: chrono::Utc::now().to_rfc3339(),
+            last_updated: chrono::Utc::now().to_rfc3339(),
         };
 
         self.locations.lock().unwrap().insert(id, location.clone());
@@ -678,10 +919,18 @@ impl NetBoxClientTrait for MockNetBoxClient {
         let id = self.next_id();
         let device_role = DeviceRole {
             id,
+            url: format!("{}/api/dcim/device-roles/{}/", self.base_url, id),
+            display: name.to_string(),
             name: name.to_string(),
             slug: slug.to_string(),
-            url: format!("{}/api/dcim/device-roles/{}/", self.base_url, id),
+            color: None, // DeviceRole.color is Option<String>
+            vm_role: false,
             description: description.map(|s| s.to_string()),
+            comments: None,
+            device_count: 0,
+            virtualmachine_count: 0,
+            created: chrono::Utc::now().to_rfc3339(),
+            last_updated: chrono::Utc::now().to_rfc3339(),
         };
 
         self.device_roles.lock().unwrap().insert(name.to_string(), device_role.clone());
@@ -701,10 +950,16 @@ impl NetBoxClientTrait for MockNetBoxClient {
         let id = self.next_id();
         let manufacturer = Manufacturer {
             id,
+            url: format!("{}/api/dcim/manufacturers/{}/", self.base_url, id),
+            display: name.to_string(),
             name: name.to_string(),
             slug: slug.to_string(),
-            url: format!("{}/api/dcim/manufacturers/{}/", self.base_url, id),
             description: description.map(|s| s.to_string()),
+            devicetype_count: 0,
+            inventoryitem_count: 0,
+            platform_count: 0,
+            created: chrono::Utc::now().to_rfc3339(),
+            last_updated: chrono::Utc::now().to_rfc3339(),
         };
 
         self.manufacturers.lock().unwrap().insert(name.to_string(), manufacturer.clone());
@@ -724,10 +979,19 @@ impl NetBoxClientTrait for MockNetBoxClient {
         let id = self.next_id();
         let platform = Platform {
             id,
+            url: format!("{}/api/dcim/platforms/{}/", self.base_url, id),
+            display: name.to_string(),
             name: name.to_string(),
             slug: slug.to_string(),
-            url: format!("{}/api/dcim/platforms/{}/", self.base_url, id),
+            manufacturer: None,
+            napalm_driver: None,
+            napalm_args: None,
             description: description.map(|s| s.to_string()),
+            comments: None,
+            device_count: 0,
+            virtualmachine_count: 0,
+            created: chrono::Utc::now().to_rfc3339(),
+            last_updated: chrono::Utc::now().to_rfc3339(),
         };
 
         self.platforms.lock().unwrap().insert(name.to_string(), platform.clone());
@@ -745,14 +1009,28 @@ impl NetBoxClientTrait for MockNetBoxClient {
 
     async fn create_device_type(&self, manufacturer_id: u64, model: &str, slug: Option<&str>, description: Option<&str>) -> Result<DeviceType, NetBoxError> {
         let id = self.next_id();
-        let slug_value = slug.unwrap_or_else(|| model.to_lowercase().replace(' ', "-"));
+        let slug_value = slug.map(|s| s.to_string()).unwrap_or_else(|| model.to_lowercase().replace(' ', "-"));
         let device_type = DeviceType {
             id,
+            url: format!("{}/api/dcim/device-types/{}/", self.base_url, id),
+            display: model.to_string(),
+            manufacturer: NestedManufacturer {
+                id: manufacturer_id,
+                url: format!("{}/api/dcim/manufacturers/{}/", self.base_url, manufacturer_id),
+                display: format!("Manufacturer {}", manufacturer_id),
+                name: format!("Manufacturer {}", manufacturer_id),
+                slug: format!("manufacturer-{}", manufacturer_id),
+            },
             model: model.to_string(),
             slug: slug_value,
-            url: format!("{}/api/dcim/device-types/{}/", self.base_url, id),
-            manufacturer: manufacturer_id,
+            part_number: None,
+            u_height: 0.0,
+            is_full_depth: false,
             description: description.map(|s| s.to_string()),
+            comments: None,
+            device_count: 0,
+            created: chrono::Utc::now().to_rfc3339(),
+            last_updated: chrono::Utc::now().to_rfc3339(),
         };
 
         self.device_types.lock().unwrap().insert((manufacturer_id, model.to_string()), device_type.clone());
@@ -778,16 +1056,21 @@ impl NetBoxClientTrait for MockNetBoxClient {
         let id = self.next_id();
         let tenant = Tenant {
             id,
+            url: format!("{}/api/tenancy/tenants/{}/", self.base_url, id),
+            display: name.to_string(),
             name: name.to_string(),
             slug: slug.to_string(),
-            url: format!("{}/api/tenancy/tenants/{}/", self.base_url, id),
+            description: description.map(|s| s.to_string()),
+            comments: comments.map(|s| s.to_string()),
             group: tenant_group_id.map(|id| NestedTenantGroup {
                 id,
                 url: format!("{}/api/tenancy/tenant-groups/{}/", self.base_url, id),
+                display: format!("Tenant Group {}", id),
                 name: format!("Tenant Group {}", id),
+                slug: format!("tenant-group-{}", id),
             }),
-            description: description.map(|s| s.to_string()),
-            comments: comments.map(|s| s.to_string()),
+            created: chrono::Utc::now().to_rfc3339(),
+            last_updated: chrono::Utc::now().to_rfc3339(),
         };
 
         self.tenants.lock().unwrap().insert(id, tenant.clone());
@@ -843,10 +1126,15 @@ impl NetBoxClientTrait for MockNetBoxClient {
         let id = self.next_id();
         let role = Role {
             id,
+            url: format!("{}/api/extras/roles/{}/", self.base_url, id),
+            display: name.to_string(),
             name: name.to_string(),
             slug: slug.to_string(),
-            url: format!("{}/api/extras/roles/{}/", self.base_url, id),
             description: description.map(|s| s.to_string()),
+            weight: None,
+            comments: None,
+            created: chrono::Utc::now().to_rfc3339(),
+            last_updated: chrono::Utc::now().to_rfc3339(),
         };
 
         self.roles.lock().unwrap().insert(id, role.clone());
@@ -871,10 +1159,15 @@ impl NetBoxClientTrait for MockNetBoxClient {
         let id = self.next_id();
         let tag = Tag {
             id,
+            url: format!("{}/api/extras/tags/{}/", self.base_url, id),
+            display: name.to_string(),
             name: name.to_string(),
             slug: slug.to_string(),
-            url: format!("{}/api/extras/tags/{}/", self.base_url, id),
+            color: None, // DeviceRole.color is Option<String>
             description: description.map(|s| s.to_string()),
+            comments: None,
+            created: chrono::Utc::now().to_rfc3339(),
+            last_updated: chrono::Utc::now().to_rfc3339(),
         };
 
         self.tags.lock().unwrap().insert(id, tag.clone());

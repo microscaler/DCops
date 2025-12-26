@@ -14,16 +14,19 @@ use crate::references::NetBoxResourceReference;
 /// Kubernetes structural schema compliance. Only one field should be set.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+#[schemars(rename_all = "camelCase")]
 pub struct PrimaryIPReference {
     /// IPClaim CRD reference (recommended, GitOps-friendly)
     /// Set this when referencing an IPClaim CRD
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[schemars(rename = "ipClaimRef")]
     pub ip_claim_ref: Option<NetBoxResourceReference>,
     
     /// Direct IP address string (e.g., "192.168.1.10/24" or "2001:db8::1/64")
     /// Used as fallback when IPClaim CRD is not available
     /// Set this when providing a direct IP address
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[schemars(rename = "ipAddress")]
     pub ip_address: Option<String>,
 }
 

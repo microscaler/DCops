@@ -10,10 +10,9 @@ use crate::test_utils::kube_mock::service::MockKubeService;
 use tower_test::mock::Mock;
 #[cfg(test)]
 use http::{Request, Response};
-// Note: tower-test 0.4 uses hyper 0.14, which has Body in hyper::body::Body
-// For now, we'll use a type alias that can be adjusted when tower-test supports hyper 1.0
+// Note: tower-test 0.4 uses hyper 0.14, which has hyper::Body
 #[cfg(test)]
-type Body = http_body_util::Full<bytes::Bytes>;
+use hyper::Body;
 
 /// Create a mock Kubernetes client for testing
 /// 

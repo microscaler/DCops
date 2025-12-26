@@ -35,8 +35,8 @@ netbox-client = { path = "../../crates/netbox-client", features = ["test-util"] 
 [dev-dependencies]
 # Testing dependencies
 tower-test = "0.4"
-# Note: tower-test 0.4 uses hyper 0.14, not hyper 1.0
-# Using http_body_util::Full<Bytes> as a compatible body type
-http-body-util = "0.1"
+# Note: tower-test 0.4 uses hyper 0.14, which has hyper::Body
+# We need to use hyper 0.14 for compatibility
+hyper = { version = "0.14", features = ["full"] }
 bytes = "1.0"
 

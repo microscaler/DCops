@@ -12,6 +12,7 @@ use crate::test_utils::kube_mock::store::MockKubeStore;
 /// 
 /// This wraps tower-test's mock service and provides a handle
 /// for setting up expected request/response pairs.
+#[cfg(test)]
 pub struct MockKubeService {
     /// Handle for setting up expected interactions
     pub handle: Handle<Request<Body>, Response<Body>>,
@@ -19,6 +20,7 @@ pub struct MockKubeService {
     pub store: Arc<MockKubeStore>,
 }
 
+#[cfg(test)]
 impl MockKubeService {
     /// Create a new mock service
     pub fn new() -> (Self, mock::Mock<Request<Body>, Response<Body>>) {
@@ -36,6 +38,7 @@ impl MockKubeService {
     }
 }
 
+#[cfg(test)]
 impl Default for MockKubeService {
     fn default() -> Self {
         let (service, _mock) = Self::new();

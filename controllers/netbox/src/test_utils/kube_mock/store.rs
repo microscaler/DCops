@@ -11,12 +11,14 @@ use serde::{Serialize, Deserialize};
 /// 
 /// This stores CRD objects in memory and can be used to simulate
 /// Kubernetes API responses for testing.
+#[cfg(test)]
 #[derive(Clone)]
 pub struct MockKubeStore {
     /// In-memory storage for CRDs by kind and name
     resources: Arc<Mutex<HashMap<String, HashMap<String, serde_json::Value>>>>,
 }
 
+#[cfg(test)]
 impl MockKubeStore {
     pub fn new() -> Self {
         Self {
@@ -96,6 +98,7 @@ impl MockKubeStore {
     }
 }
 
+#[cfg(test)]
 impl Default for MockKubeStore {
     fn default() -> Self {
         Self::new()

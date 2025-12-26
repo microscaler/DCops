@@ -4,6 +4,7 @@
 mod tests {
     use crate::test_utils::*;
     use netbox_client::MockNetBoxClient;
+    use crds::NetBoxPrefix;
     
     // Note: These tests require mocking the Kubernetes API (kube::Api) for full functionality.
     // The NetBoxClient is already mocked via MockNetBoxClient.
@@ -16,26 +17,8 @@ mod tests {
         let mock_client = MockNetBoxClient::new("http://test-netbox");
         
         // Setup: Create test NetBoxPrefix CRD (no status - needs creation)
-        let netbox_prefix = NetBoxPrefix {
-            metadata: k8s_openapi::apimachinery::pkg::apis::meta::v1::ObjectMeta {
-                name: Some("test-prefix".to_string()),
-                namespace: Some("default".to_string()),
-                ..Default::default()
-            },
-            spec: crds::NetBoxPrefixSpec {
-                prefix: "192.168.1.0/24".to_string(),
-                description: Some("Test prefix".to_string()),
-                site: None,
-                tenant: None,
-                aggregate: None,
-                vlan: None,
-                status: crds::PrefixStatus::Active,
-                role: None,
-                tags: None,
-                comments: None,
-            },
-            status: None,
-        };
+        let mut netbox_prefix = create_test_netbox_prefix("test-prefix", "default", 0, None);
+        netbox_prefix.status = None; // Clear status to test create path
         
         // TODO: Create reconciler with mock client
         // TODO: Mock kube API to accept status patch

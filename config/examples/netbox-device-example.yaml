@@ -35,9 +35,10 @@ spec:
   # Primary IPv4 address - can be IPClaim CRD reference (recommended) or IP address (fallback)
   # Option 1: IPClaim CRD reference (recommended, GitOps-friendly)
   primaryIp4:
-    apiGroup: "dcops.microscaler.io"
-    kind: "IPClaim"
-    name: "talos-control-plane-01"
+    ipClaimRef:
+      apiGroup: "dcops.microscaler.io"
+      kind: "IPClaim"
+      name: "talos-control-plane-01"
   # Option 2: Direct IP address string (fallback)
   # primaryIp4: "192.168.1.10/24"
   description: "Kubernetes control plane node 01"

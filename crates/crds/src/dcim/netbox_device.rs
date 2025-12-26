@@ -20,6 +20,11 @@ pub enum PrimaryIPReference {
     IPAddress(String),
 }
 
+// Note: Custom JsonSchema implementation removed due to schemars API limitations
+// The default derive will generate an anyOf schema which may not be fully structural
+// but Kubernetes will accept it with --validate=false
+// TODO: Consider using a tagged enum or different serialization strategy for better structural compliance
+
 /// NetBoxDeviceSpec defines the desired state of a NetBox device
 #[derive(CustomResource, Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[kube(

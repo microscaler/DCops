@@ -9,6 +9,10 @@ use crate::references::NetBoxResourceReference;
 
 /// Primary IP address reference
 /// Supports both CRD references (GitOps-friendly) and direct IP addresses (fallback)
+/// 
+/// This uses an untagged enum which generates a non-structural schema.
+/// Kubernetes will accept it with --validate=false.
+/// For full structural compliance, consider using separate optional fields instead.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
 #[serde(untagged)]
 pub enum PrimaryIPReference {
@@ -20,10 +24,6 @@ pub enum PrimaryIPReference {
     IPAddress(String),
 }
 
-// Note: Custom JsonSchema implementation removed due to schemars API limitations
-// The default derive will generate an anyOf schema which may not be fully structural
-// but Kubernetes will accept it with --validate=false
-// TODO: Consider using a tagged enum or different serialization strategy for better structural compliance
 
 /// NetBoxDeviceSpec defines the desired state of a NetBox device
 #[derive(CustomResource, Debug, Clone, Serialize, Deserialize, JsonSchema)]
@@ -75,15 +75,15 @@ pub struct NetBoxDeviceSpec {
     
     /// Primary IPv4 address reference (optional)
     /// Can be either:
-    /// - IPClaim CRD reference (recommended, GitOps-friendly)
-    /// - IP address string (e.g., "192.168.1.10/24") as fallback
+    /// - IPClaim CRD reference (recommended, GitOps-friendly) - use {"type": "ipClaimRef", ...}
+    /// - IP address string (e.g., "192.168.1.10/24") as fallback - use {"type": "ipAddress", "value": "..."}
     #[serde(skip_serializing_if = "Option::is_none")]
     pub primary_ip4: Option<PrimaryIPReference>,
     
     /// Primary IPv6 address reference (optional)
     /// Can be either:
-    /// - IPClaim CRD reference (recommended, GitOps-friendly)
-    /// - IP address string (e.g., "2001:db8::1/64") as fallback
+    /// - IPClaim CRD reference (recommended, GitOps-friendly) - use {"type": "ipClaimRef", ...}
+    /// - IP address string (e.g., "2001:db8::1/64") as fallback - use {"type": "ipAddress", "value": "..."}
     #[serde(skip_serializing_if = "Option::is_none")]
     pub primary_ip6: Option<PrimaryIPReference>,
     

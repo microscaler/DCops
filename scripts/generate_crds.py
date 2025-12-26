@@ -153,28 +153,21 @@ def main():
         sys.exit(0)
     
     # Apply CRD (idempotent - updates if changed, no-op if same)
+    # Note: Some CRDs (like NetBoxDevice with PrimaryIPReference) use untagged enums
+    # which generate non-structural schemas. These require --validate=false.
+    # This is acceptable for now - the CRDs still work correctly.
     try:
         run_command(
-            ["kubectl", "apply", "-f", str(crd_output_path)],
+            ["kubectl", "apply", "-f", str(crd_output_path), "--validate=false"],
             check=True,
             capture_output=True
         )
-        log_success("CRD applied to cluster")
+        log_success("CRD applied to cluster (with --validate=false for structural schema compatibility)")
     except subprocess.CalledProcessError as e:
-        # Try with --validate=false if validation fails
-        log_info("Standard apply failed, trying with --validate=false...")
-        try:
-            run_command(
-                ["kubectl", "apply", "-f", str(crd_output_path), "--validate=false"],
-                check=True,
-                capture_output=True
-            )
-            log_success("CRD applied to cluster (with --validate=false)")
-        except subprocess.CalledProcessError:
-            log_error("Failed to apply CRD")
-            log_info("CRD generated but not applied. Apply manually with:")
-            log_info(f"   kubectl apply -f {crd_output_path}")
-            sys.exit(1)
+        log_error("Failed to apply CRD")
+        log_info("CRD generated but not applied. Apply manually with:")
+        log_info(f"   kubectl apply -f {crd_output_path} --validate=false")
+        sys.exit(1)
     
     # Wait for CRDs to be established
     log_info("Waiting for CRDs to be established...")

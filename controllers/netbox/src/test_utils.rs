@@ -33,10 +33,13 @@ pub fn create_test_ip_pool(
         },
         spec: crds::IPPoolSpec {
             netbox_prefix_ref: crds::NetBoxResourceReference {
+                api_group: "dcops.microscaler.io".to_string(),
                 kind: "NetBoxPrefix".to_string(),
                 name: prefix_ref_name.to_string(),
                 namespace: prefix_ref_namespace.map(|s| s.to_string()),
             },
+            role: String::new(),
+            allocation_strategy: crds::AllocationStrategy::Sequential,
         },
         status: None,
     }
@@ -58,13 +61,22 @@ pub fn create_test_netbox_prefix(
         },
         spec: crds::NetBoxPrefixSpec {
             prefix: "192.168.1.0/24".to_string(),
-            ..Default::default()
+            description: None,
+            site: None,
+            tenant: None,
+            aggregate: None,
+            vlan: None,
+            status: crds::PrefixStatus::Active,
+            role: None,
+            tags: None,
+            comments: None,
         },
         status: Some(crds::NetBoxPrefixStatus {
             netbox_id: Some(netbox_id),
             netbox_url,
             state: crds::PrefixState::Created,
             error: None,
+            last_reconciled: None,
         }),
     }
 }
@@ -83,7 +95,7 @@ pub fn create_test_reconciler(
     use kube::Api;
     
     Reconciler::new(
-        Box::new(mock_client),
+        mock_client,
         // IPAM APIs
         Api::namespaced(kube_client.clone(), namespace),
         Api::namespaced(kube_client.clone(), namespace),

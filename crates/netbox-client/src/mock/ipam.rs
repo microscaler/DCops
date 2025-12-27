@@ -191,17 +191,15 @@ pub async fn create_prefix(client: &MockNetBoxClient, prefix: &str, description:
             _ => PrefixStatus::Active,
         };
         
-        let tags_vec: Vec<NestedTag> = tags
-            .unwrap_or_default()
-            .into_iter()
-            .map(|s| NestedTag {
-                id: 0,
-                url: format!("{}/api/extras/tags/{}/", client.base_url, 0),
-                display: s.clone(),
-                name: s.clone(),
-                slug: s.to_lowercase().replace(' ', "-"),
-            })
-            .collect();
+        // Convert Vec<String> to Vec<serde_json::Value> for helper
+        let tags_vec: Vec<NestedTag> = if let Some(tags) = tags {
+            let tags_json: Vec<serde_json::Value> = tags.into_iter()
+                .map(|s| serde_json::Value::String(s))
+                .collect();
+            client.helpers().convert_tags(tags_json)
+        } else {
+            Vec::new()
+        };
         
         let prefix_obj = Prefix {
             id,

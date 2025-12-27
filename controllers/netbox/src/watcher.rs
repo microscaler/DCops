@@ -16,7 +16,7 @@ use crds::{
 use kube::Api;
 use kube_runtime::{Controller, watcher, controller::{Action, Config as ControllerConfig}};
 use std::sync::Arc;
-use tracing::{info, error, debug};
+use tracing::{info, error, debug, warn};
 use std::time::Duration;
 use futures::StreamExt;
 
@@ -43,10 +43,30 @@ where
 {
     info!("Starting {} watcher", resource_name);
     
-    // Error policy: requeue with exponential backoff on errors
-    let error_policy = |obj: Arc<K>, error: &ControllerError, _ctx: Arc<Reconciler>| {
-        error!("Reconciliation error for {} {:?}: {}", resource_name, obj, error);
-        Action::requeue(Duration::from_secs(60))
+    // Error policy: requeue with Fibonacci backoff on errors
+    let error_policy = {
+        let resource_name = resource_name.to_string();
+        move |obj: Arc<K>, error: &ControllerError, ctx: Arc<Reconciler>| {
+            error!("Reconciliation error for {} {:?}: {}", resource_name, obj, error);
+            
+            // Get resource key for backoff tracking
+            let resource_key = format!(
+                "{}/{}",
+                obj.meta().namespace.as_deref().unwrap_or("default"),
+                obj.meta().name.as_deref().unwrap_or("unknown")
+            );
+            
+            // Increment error count and get backoff duration
+            ctx.increment_error(&resource_key);
+            let (backoff_seconds, error_count) = ctx.get_backoff_for_resource(&resource_key);
+            
+            warn!(
+                "Requeuing {} after error (attempt {}, backoff: {}s)",
+                resource_key, error_count, backoff_seconds
+            );
+            
+            Action::requeue(Duration::from_secs(backoff_seconds))
+        }
     };
     
     // Reconcile function: wraps our existing reconcile functions
@@ -60,10 +80,20 @@ where
             // Note: Controller should filter by generation automatically, but logging helps diagnose issues
             debug!("Reconciling {} {:?}", resource_name, obj);
             
-            match reconcile_fn(ctx, obj).await {
-                Ok(action) => Ok(action),
+            match reconcile_fn(ctx.clone(), obj.clone()).await {
+                Ok(action) => {
+                    // Reset error count on successful reconciliation
+                    let resource_key = format!(
+                        "{}/{}",
+                        obj.meta().namespace.as_deref().unwrap_or("default"),
+                        obj.meta().name.as_deref().unwrap_or("unknown")
+                    );
+                    ctx.reset_error(&resource_key);
+                    Ok(action)
+                }
                 Err(e) => {
                     error!("Reconciliation failed for {}: {}", resource_name, e);
+                    // Error policy will handle increment_error and backoff
                     Err(e)
                 }
             }

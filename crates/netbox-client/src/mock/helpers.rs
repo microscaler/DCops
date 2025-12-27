@@ -96,6 +96,30 @@ impl Helpers {
         }
     }
 
+    /// Helper to create NestedTenantGroup
+    pub fn create_nested_tenant_group(&self, id: u64, name: Option<String>) -> NestedTenantGroup {
+        let name_str = name.unwrap_or_else(|| format!("Tenant Group {}", id));
+        NestedTenantGroup {
+            id,
+            url: format!("{}/api/tenancy/tenant-groups/{}/", self.base_url, id),
+            display: name_str.clone(),
+            name: name_str.clone(),
+            slug: name_str.to_lowercase().replace(' ', "-"),
+        }
+    }
+
+    /// Helper to create NestedManufacturer
+    pub fn create_nested_manufacturer(&self, id: u64, name: Option<String>) -> NestedManufacturer {
+        let name_str = name.unwrap_or_else(|| format!("Manufacturer {}", id));
+        NestedManufacturer {
+            id,
+            url: format!("{}/api/dcim/manufacturers/{}/", self.base_url, id),
+            display: name_str.clone(),
+            name: name_str.clone(),
+            slug: name_str.to_lowercase().replace(' ', "-"),
+        }
+    }
+
     /// Helper to create NestedTag from serde_json::Value
     pub fn create_nested_tag(&self, value: &serde_json::Value) -> Option<NestedTag> {
         value.as_str().map(|s| NestedTag {

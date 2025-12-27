@@ -5,13 +5,21 @@ use crate::error::ControllerError;
 use crate::reconcile_helpers;
 use tracing::{info, error, debug, warn};
 use crds::{NetBoxLocation, ResourceState};
+use netbox_client::NetBoxClientTrait;
 
 impl Reconciler {
     pub async fn reconcile_netbox_location(&self, location_crd: &NetBoxLocation) -> Result<(), ControllerError> {
+        // Extract namespace and tenant reference
+        let namespace = location_crd.metadata.namespace.as_deref().unwrap_or("default");
+        let tenant_ref = &location_crd.spec.tenant;
+        
+        // SINGLE POINT: Get tenant-specific client
+        let netbox_client = self.token_resolver
+            .create_client_for_tenant(namespace, tenant_ref)
+            .await?;
+        
         let name = location_crd.metadata.name.as_ref()
             .ok_or_else(|| ControllerError::InvalidConfig("NetBoxLocation missing name".to_string()))?;
-        let namespace = location_crd.metadata.namespace.as_deref()
-            .unwrap_or("default");
         
         info!("Reconciling NetBoxLocation {}/{}", namespace, name);
         
@@ -21,10 +29,10 @@ impl Reconciler {
                 if let Some(netbox_id) = status.netbox_id {
                     // Use simple helper function for drift detection (no update logic)
                     match reconcile_helpers::check_existing(
-                        self.netbox_client.as_ref(),
+                        &netbox_client,
                         netbox_id,
                         &format!("NetBoxLocation {}/{}", namespace, name),
-                        self.netbox_client.get_location(netbox_id),
+                        netbox_client.get_location(netbox_id),
                     ).await {
                         Ok(Some(resource)) => {
                             // Resource exists and is up-to-date
@@ -150,8 +158,30 @@ impl Reconciler {
                     None
                 };
                 
+                // Resolve tenant ID (required)
+                if location_crd.spec.tenant.kind != "NetBoxTenant" {
+                    return Err(ControllerError::InvalidConfig(
+                        format!("Invalid kind '{}' for tenant reference in location {}, expected 'NetBoxTenant'", location_crd.spec.tenant.kind, name)
+                    ));
+                }
+                let tenant_id = match self.netbox_tenant_api.get(&location_crd.spec.tenant.name).await {
+                    Ok(tenant_crd) => {
+                        tenant_crd.status
+                            .as_ref()
+                            .and_then(|s| s.netbox_id)
+                            .ok_or_else(|| ControllerError::InvalidConfig(
+                                format!("Tenant '{}' has not been created in NetBox yet (no netbox_id in status)", location_crd.spec.tenant.name)
+                            ))?
+                    }
+                    Err(_) => {
+                        return Err(ControllerError::InvalidConfig(
+                            format!("Tenant CRD '{}' not found for location {}", location_crd.spec.tenant.name, name)
+                        ));
+                    }
+                };
+                
                 // Try to find existing location by name and site
-                let existing_location = match self.netbox_client.query_locations(
+                let existing_location = match netbox_client.query_locations(
                     &[("site_id", &site_id.to_string()), ("name", &location_crd.spec.name)],
                     false,
                 ).await {
@@ -163,11 +193,13 @@ impl Reconciler {
                     info!("Location {} already exists in NetBox (ID: {})", location_crd.spec.name, existing.id);
                     existing
                 } else {
-                    match self.netbox_client.create_location(
+                    match netbox_client.create_location(
                         site_id,
                         &location_crd.spec.name,
                         location_crd.spec.slug.as_deref(),
                         parent_id,
+                        Some(tenant_id),
+                        location_crd.spec.facility.as_deref(),
                         location_crd.spec.description.clone(),
                         None, // comments not in spec
                     ).await {

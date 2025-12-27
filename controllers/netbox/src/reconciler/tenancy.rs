@@ -7,6 +7,7 @@ use crate::error::ControllerError;
 use crate::reconcile_helpers;
 use crate::kube_api_trait::KubeApiTrait;
 use crds::{NetBoxTenant, ResourceState};
+use netbox_client::NetBoxClientTrait;
 use tracing::{info, error, debug, warn};
 
 impl Reconciler {
@@ -49,6 +50,19 @@ impl Reconciler {
         
         info!("Reconciling NetBoxTenant {}/{}", namespace, name);
         
+        // SPECIAL CASE: Tenant reconciler needs to use the token from the tenant's own secret
+        // We can't use TokenResolver here because it would create a circular dependency
+        // Instead, we resolve the token directly from the tenant's token_secret
+        let token = self.token_resolver
+            .resolve_token(namespace, &crds::NetBoxResourceReference::netbox("NetBoxTenant", name.clone()))
+            .await?;
+        
+        // Create client with the resolved token
+        let netbox_client = netbox_client::NetBoxClient::new(
+            self.token_resolver.netbox_url.clone(),
+            token,
+        ).map_err(|e| ControllerError::InvalidConfig(format!("Failed to create NetBoxClient: {}", e)))?;
+        
         // Check if already created - use helper for drift detection
         // Note: Tenants don't have update logic yet, so we use the simple check_existing helper
         let netbox_tenant = if let Some(status) = &tenant_crd.status {
@@ -56,10 +70,10 @@ impl Reconciler {
                 if let Some(netbox_id) = status.netbox_id {
                     // Use simple helper function for drift detection (no update logic)
                     match reconcile_helpers::check_existing(
-                        self.netbox_client.as_ref(),
+                        &netbox_client,
                         netbox_id,
                         &format!("NetBoxTenant {}/{}", namespace, name),
-                        self.netbox_client.get_tenant(netbox_id),
+                        netbox_client.get_tenant(netbox_id),
                     ).await {
                         Ok(Some(resource)) => {
                             // Resource exists and is up-to-date
@@ -141,7 +155,7 @@ impl Reconciler {
             }
             None => {
                 // Need to create tenant - try to find existing by name (idempotency fallback)
-                let existing_tenant = match self.netbox_client.query_tenants(
+                let existing_tenant = match netbox_client.query_tenants(
                     &[("name", &tenant_crd.spec.name)],
                     false,
                 ).await {
@@ -162,7 +176,7 @@ impl Reconciler {
                         None
                     } else {
                         info!("Tenant group specified in CRD: '{}'", group_ref.name);
-                        match self.netbox_client.get_tenant_group_by_name(&group_ref.name).await {
+                        match netbox_client.get_tenant_group_by_name(&group_ref.name).await {
                             Ok(Some(group)) => {
                                 info!("Resolved tenant group '{}' to ID {}", group_ref.name, group.id);
                                 Some(group.id)
@@ -180,7 +194,7 @@ impl Reconciler {
                 } else {
                     info!("No tenant group specified in CRD, checking for existing tenant groups");
                     // Check if any tenant groups exist, if not create a default one
-                    match self.netbox_client.query_tenant_groups(&[], false).await {
+                    match netbox_client.query_tenant_groups(&[], false).await {
                         Ok(groups) if !groups.is_empty() => {
                             // Use the first available tenant group
                             let group = &groups[0];
@@ -190,10 +204,12 @@ impl Reconciler {
                         _ => {
                             // Create a default tenant group
                             info!("No tenant groups found, creating default tenant group 'Default'");
-                            match self.netbox_client.create_tenant_group(
+                            match netbox_client.create_tenant_group(
                                 "Default",
-                                "default", // Slug is required
-                                Some("Default tenant group for DCops"),
+                                Some("default"), // Slug is required
+                                Some("Default tenant group for DCops".to_string()),
+                                None, // comments
+                                None, // parent_id
                             ).await {
                                 Ok(group) => {
                                     info!("Created default tenant group '{}' (ID: {})", group.name, group.id);
@@ -216,12 +232,12 @@ impl Reconciler {
                     info!("Creating tenant {} in NetBox", tenant_crd.spec.name);
                     let slug = tenant_crd.spec.slug.as_deref().map(|s| s.to_string())
                         .unwrap_or_else(|| tenant_crd.spec.name.to_lowercase().replace(' ', "-"));
-                    match self.netbox_client.create_tenant(
+                    match netbox_client.create_tenant(
                         &tenant_crd.spec.name,
-                        &slug,
+                        Some(&slug),
+                        tenant_crd.spec.description.clone(),
+                        tenant_crd.spec.comments.clone(),
                         group_id,
-                        tenant_crd.spec.description.as_deref(),
-                        tenant_crd.spec.comments.as_deref(),
                     ).await {
                         Ok(created) => {
                             info!("Created tenant {} in NetBox (ID: {})", created.name, created.id);

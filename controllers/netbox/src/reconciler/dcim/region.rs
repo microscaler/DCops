@@ -3,8 +3,10 @@
 use super::super::Reconciler;
 use crate::error::ControllerError;
 use crate::reconcile_helpers;
+use crate::kube_api_trait::KubeApiTrait;
 use tracing::{info, error, debug, warn};
-use crds::{NetBoxRegion, ResourceState};
+use crds::{NetBoxRegion, NetBoxRegionStatus, ResourceState};
+use netbox_client::NetBoxClientTrait;
 
 impl Reconciler {
     pub async fn reconcile_netbox_region(&self, region_crd: &NetBoxRegion) -> Result<(), ControllerError> {
@@ -15,16 +17,44 @@ impl Reconciler {
         
         info!("Reconciling NetBoxRegion {}/{}", namespace, name);
         
+        // Get client for shared resource (finds tenant from referencing Sites)
+        let netbox_client = self.token_resolver
+            .create_client_for_shared_resource(namespace, "NetBoxRegion", name)
+            .await
+            .map_err(|e| ControllerError::TokenResolution(e))?;
+        
+        // Resolve parent region ID if parent reference provided
+        let parent_id = if let Some(parent_ref) = &region_crd.spec.parent {
+            if parent_ref.kind != "NetBoxRegion" {
+                warn!("Invalid kind '{}' for parent reference in region {}, expected 'NetBoxRegion'", parent_ref.kind, name);
+                None
+            } else {
+                match self.netbox_region_api.get(&parent_ref.name).await {
+                    Ok(parent_crd) => {
+                        parent_crd.status
+                            .as_ref()
+                            .and_then(|s| s.netbox_id)
+                    }
+                    Err(_) => {
+                        warn!("Parent Region CRD '{}' not found for region {}, skipping parent reference", parent_ref.name, name);
+                        None
+                    }
+                }
+            }
+        } else {
+            None
+        };
+        
         // Check if already created - use helper for drift detection
         let netbox_region = if let Some(status) = &region_crd.status {
             if status.state == ResourceState::Created && status.netbox_id.is_some() {
                 if let Some(netbox_id) = status.netbox_id {
-                    // Use simple helper function for drift detection (no update logic)
+                    // Use simple helper function for drift detection (no update logic yet)
                     match reconcile_helpers::check_existing(
-                        self.netbox_client.as_ref(),
+                        &netbox_client,
                         netbox_id,
                         &format!("NetBoxRegion {}/{}", namespace, name),
-                        self.netbox_client.get_region(netbox_id),
+                        netbox_client.get_region(netbox_id),
                     ).await {
                         Ok(Some(resource)) => {
                             // Resource exists and is up-to-date
@@ -106,132 +136,45 @@ impl Reconciler {
             }
             None => {
                 // Need to create region - try to find existing by name (idempotency fallback)
-                // Resolve parent region ID if parent reference provided
-                let parent_id = if let Some(parent_ref) = &region_crd.spec.parent {
-            if parent_ref.kind != "NetBoxRegion" {
-                warn!("Invalid kind '{}' for parent region reference in region {}, expected 'NetBoxRegion'", parent_ref.kind, name);
-                None
-            } else {
-                match self.netbox_region_api.get(&parent_ref.name).await {
-                    Ok(parent_crd) => {
-                        parent_crd.status
-                            .as_ref()
-                            .and_then(|s| s.netbox_id)
+                let existing_region = match netbox_client.get_region_by_name(&region_crd.spec.name).await {
+                    Ok(Some(region)) => {
+                        info!("Region {} already exists in NetBox (ID: {}), acknowledging existence (idempotency)", region_crd.spec.name, region.id);
+                        Some(region)
                     }
-                    Err(_) => {
-                        warn!("Parent region CRD '{}' not found for region {}", parent_ref.name, name);
+                    Ok(None) => None,
+                    Err(e) => {
+                        warn!("Failed to query region by name: {}, will try to create", e);
                         None
                     }
-                }
-            }
-                } else {
-                    None
                 };
                 
-                // Try to find existing region by name
-                let existing_region = match self.netbox_client.query_regions(
-                    &[("name", &region_crd.spec.name)],
-                    false,
-                ).await {
-                    Ok(regions) => regions.first().cloned(),
-                    Err(_) => None
-                };
-                
-                let netbox_region = if let Some(existing) = existing_region {
-                    info!("Region {} already exists in NetBox (ID: {})", region_crd.spec.name, existing.id);
+                if let Some(existing) = existing_region {
                     existing
                 } else {
-                    let slug = region_crd.spec.slug.as_deref().map(|s| s.to_string())
-                        .unwrap_or_else(|| region_crd.spec.name.to_lowercase().replace(' ', "-"));
-                    match self.netbox_client.create_region(
+                    // Create region
+                    info!("Creating region {} in NetBox", region_crd.spec.name);
+                    match netbox_client.create_region(
                         &region_crd.spec.name,
-                        &slug,
-                        region_crd.spec.description.as_deref(),
+                        region_crd.spec.slug.as_deref(),
+                        parent_id,
+                        region_crd.spec.description.clone(),
+                        None, // comments - not in CRD spec yet
                     ).await {
                         Ok(created) => {
                             info!("Created region {} in NetBox (ID: {})", created.name, created.id);
                             created
                         }
                         Err(e) => {
-                            // Check if error is "already exists" - if so, try to find it (idempotency)
-                            let error_str = format!("{}", e);
-                            if error_str.contains("already exists") || error_str.contains("duplicate") || error_str.contains("unique constraint") {
-                                warn!("Region {} already exists in NetBox, attempting to retrieve it (idempotency)", region_crd.spec.name);
-                                
-                                // Try to find the existing region by name or slug
-                                let found_region: Option<_> = match self.netbox_client.query_regions(
-                                    &[("name", &region_crd.spec.name)],
-                                    false,
-                                ).await {
-                                    Ok(regions) => {
-                                        if let Some(found) = regions.first() {
-                                            info!("Found existing region {} in NetBox (ID: {}) after create conflict", found.name, found.id);
-                                            Some(found.clone())
-                                        } else {
-                                            // Try by slug
-                                            if let Some(slug) = &region_crd.spec.slug {
-                                                match self.netbox_client.query_regions(
-                                                    &[("slug", slug)],
-                                                    false,
-                                                ).await {
-                                                    Ok(regions_by_slug) => {
-                                                        if let Some(found) = regions_by_slug.first() {
-                                                            info!("Found existing region {} in NetBox (ID: {}) by slug after create conflict", found.name, found.id);
-                                                            Some(found.clone())
-                                                        } else {
-                                                            None
-                                                        }
-                                                    }
-                                                    Err(_) => None
-                                                }
-                                            } else {
-                                                None
-                                            }
-                                        }
-                                    }
-                                    Err(_query_err) => {
-                                        // Query failed (likely deserialization issue), try fallback: query all regions
-                                        warn!("Query by name failed for region {}, trying fallback: query all regions", region_crd.spec.name);
-                                        match self.netbox_client.query_regions(&[], true).await {
-                                            Ok(all_regions) => {
-                                                // Try to match by name first, then by slug
-                                                let found = all_regions.iter().find(|r| {
-                                                    r.name == region_crd.spec.name || 
-                                                    (region_crd.spec.slug.is_some() && r.slug.as_str() == region_crd.spec.slug.as_ref().unwrap().as_str())
-                                                });
-                                                if let Some(found) = found {
-                                                    info!("Found existing region {} in NetBox (ID: {}) via fallback query", found.name, found.id);
-                                                    Some(found.clone())
-                                                } else {
-                                                    None
-                                                }
-                                            }
-                                            Err(_) => None
-                                        }
-                                    }
-                                };
-                                
-                                if let Some(found) = found_region {
-                                    found
-                                } else {
-                                    let error_msg = format!("Region {} already exists in NetBox but could not retrieve it: {}", region_crd.spec.name, e);
-                                    error!("{}", error_msg);
-                                    return Err(ControllerError::NetBox(e));
-                                }
-                            } else {
-                                let error_msg = format!("Failed to create region in NetBox: {}", e);
-                                error!("{}", error_msg);
-                                return Err(ControllerError::NetBox(e));
-                            }
+                            let error_msg = format!("Failed to create region in NetBox: {}", e);
+                            error!("{}", error_msg);
+                            return Err(ControllerError::NetBox(e));
                         }
                     }
-                };
-                
-                netbox_region
+                }
             }
         };
         
-        // Update status (use lowercase state to match CRD validation schema)
+        // Update status
         let status_patch = Self::create_resource_status_patch(
             netbox_region.id,
             netbox_region.url.clone(),

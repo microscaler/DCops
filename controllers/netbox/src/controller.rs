@@ -12,13 +12,13 @@ use crate::reconciler::Reconciler;
 use crate::watcher::Watcher;
 use crate::error::ControllerError;
 use crate::kube_api_trait::KubeApiWrapper;
+use crate::token_resolver::TokenResolver;
 use crds::{
     IPClaim, IPPool, NetBoxPrefix, NetBoxTenant, NetBoxSite, NetBoxRole, NetBoxTag, NetBoxAggregate,
     NetBoxVLAN, NetBoxDeviceRole, NetBoxManufacturer, NetBoxPlatform, NetBoxDeviceType,
     NetBoxDevice, NetBoxInterface, NetBoxMACAddress, NetBoxRegion, NetBoxSiteGroup, NetBoxLocation,
 };
 use kube::{Api, Client};
-use netbox_client::NetBoxClient;
 use std::sync::Arc;
 use tokio::task::JoinHandle;
 use tracing::{info, warn, error};
@@ -54,31 +54,17 @@ impl Controller {
     /// Creates a new controller instance.
     pub async fn new(
         netbox_url: String,
-        netbox_token: String,
         namespace: Option<String>,
     ) -> Result<Self, ControllerError> {
-        info!("Initializing NetBox Controller");
+        info!("Initializing NetBox Controller (Multi-Tenant Mode)");
         
         // Create Kubernetes client
         let kube_client = Client::try_default().await
             .map_err(|e| ControllerError::Kube(e.into()))?;
         
-        // Create NetBox client
-        let netbox_client = NetBoxClient::new(netbox_url.clone(), netbox_token.clone())
-            .map_err(|e| ControllerError::NetBox(e))?;
-        
-        // Validate token and connectivity before proceeding
-        info!("Validating NetBox token and connectivity...");
-        netbox_client.validate_token().await
-            .map_err(|e| {
-                error!("Failed to validate NetBox token: {}", e);
-                error!("Please ensure:");
-                error!("  1. NETBOX_TOKEN environment variable is set correctly");
-                error!("  2. The token is valid in NetBox");
-                error!("  3. NetBox is reachable at {}", netbox_url);
-                ControllerError::NetBox(e)
-            })?;
-        info!("✅ NetBox token validated and connectivity established");
+        // Create TokenResolver (single point of dependency injection)
+        let token_resolver = Arc::new(TokenResolver::new(kube_client.clone(), netbox_url.clone()));
+        info!("✅ TokenResolver initialized - tokens will be resolved from Tenant CRDs");
         
         // Create API clients for all CRD types
         // NOTE: These are REAL kube::Api<T> instances that connect to the actual Kubernetes cluster
@@ -112,7 +98,7 @@ impl Controller {
         // NOTE: KubeApiWrapper is a thin delegation layer - all calls forward to real Api<T>
         // This preserves 100% real cluster operation while enabling unit testing with mocks
         let reconciler = Reconciler::new(
-            netbox_client,
+            token_resolver.clone(),
             // IPAM
             KubeApiWrapper::new(netbox_prefix_api.clone()), // Wraps REAL Api<T> - zero overhead
             KubeApiWrapper::new(netbox_role_api.clone()),

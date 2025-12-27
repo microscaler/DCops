@@ -6,7 +6,7 @@ use crate::reconcile_helpers;
 use crate::kube_api_trait::KubeApiTrait;
 use tracing::{info, error, debug, warn};
 use crds::{NetBoxPrefix, NetBoxPrefixStatus, PrefixState};
-use netbox_client;
+use netbox_client::{NetBoxClient, NetBoxClientTrait};
 
 impl Reconciler {
     /// Check if prefix needs updating by comparing spec with existing NetBox resource
@@ -18,7 +18,7 @@ impl Reconciler {
     fn prefix_needs_update(
         spec: &crds::NetBoxPrefixSpec,
         existing: &netbox_client::Prefix,
-        desired_tenant_id: Option<u64>,
+        desired_tenant_id: u64, // tenant is now required
         _desired_site_id: Option<u64>, // Prefix model doesn't have site field, can't compare
         desired_vlan_id: Option<u32>,
         desired_role_id: Option<u64>,
@@ -26,8 +26,8 @@ impl Reconciler {
     ) -> bool {
         // Compare tenant
         let existing_tenant_id = existing.tenant.as_ref().map(|t| t.id);
-        if desired_tenant_id != existing_tenant_id {
-            debug!("Prefix tenant changed: {:?} -> {:?}", existing_tenant_id, desired_tenant_id);
+        if Some(desired_tenant_id) != existing_tenant_id {
+            debug!("Prefix tenant changed: {:?} -> {}", existing_tenant_id, desired_tenant_id);
             return true;
         }
         
@@ -74,6 +74,12 @@ impl Reconciler {
             .unwrap_or("default");
         
         info!("Reconciling NetBoxPrefix {}/{}", namespace, name);
+        
+        // SINGLE POINT: Get tenant-specific client
+        let tenant_ref = &prefix_crd.spec.tenant;
+        let netbox_client = self.token_resolver
+            .create_client_for_tenant(namespace, tenant_ref)
+            .await?;
         
         // Helper function to update status with error
         async fn update_status_error(
@@ -164,26 +170,26 @@ impl Reconciler {
             None
         };
         
-        // Resolve Tenant reference if provided
-        let tenant_id = if let Some(tenant_ref) = &prefix_crd.spec.tenant {
-            if tenant_ref.kind != "NetBoxTenant" {
-                warn!("Invalid kind '{}' for tenant reference in prefix {}, expected 'NetBoxTenant'", tenant_ref.kind, name);
-                None
-            } else {
-                match self.netbox_tenant_api.get(&tenant_ref.name).await {
-                    Ok(tenant_crd) => {
-                        tenant_crd.status
-                            .as_ref()
-                            .and_then(|s| s.netbox_id)
-                    }
-                    Err(_) => {
-                        warn!("Tenant CRD '{}' not found for prefix {}, skipping tenant reference", tenant_ref.name, name);
-                        None
-                    }
-                }
+        // Resolve Tenant reference (required)
+        if prefix_crd.spec.tenant.kind != "NetBoxTenant" {
+            return Err(ControllerError::InvalidConfig(
+                format!("Invalid kind '{}' for tenant reference in prefix {}, expected 'NetBoxTenant'", prefix_crd.spec.tenant.kind, name)
+            ));
+        }
+        let tenant_id = match self.netbox_tenant_api.get(&prefix_crd.spec.tenant.name).await {
+            Ok(tenant_crd) => {
+                tenant_crd.status
+                    .as_ref()
+                    .and_then(|s| s.netbox_id)
+                    .ok_or_else(|| ControllerError::InvalidConfig(
+                        format!("Tenant '{}' has not been created in NetBox yet (no netbox_id in status)", prefix_crd.spec.tenant.name)
+                    ))?
             }
-        } else {
-            None
+            Err(_) => {
+                return Err(ControllerError::InvalidConfig(
+                    format!("Tenant CRD '{}' not found for prefix {}", prefix_crd.spec.tenant.name, name)
+                ));
+            }
         };
         
         // Resolve Role reference if provided
@@ -224,10 +230,10 @@ impl Reconciler {
                 if let Some(netbox_id) = status.netbox_id {
                     // Use helper function for drift detection, diffing, and updating
                     match reconcile_helpers::check_and_update_existing(
-                        self.netbox_client.as_ref(),
+                        &netbox_client,
                         netbox_id,
                         &format!("NetBoxPrefix {}/{}", namespace, name),
-                        self.netbox_client.get_prefix(netbox_id),
+                        netbox_client.get_prefix(netbox_id),
                         |existing| Self::prefix_needs_update(
                             &prefix_crd.spec,
                             existing,
@@ -237,14 +243,15 @@ impl Reconciler {
                             role_id,
                             &status_str,
                         ),
-                        self.netbox_client.update_prefix(
+                        netbox_client.update_prefix(
                             netbox_id,
-                            site_id, // Include site if resolved
-                            tenant_id,
-                            vlan_id, // Include vlan if resolved
-                            role_id,
+                            None, // prefix - don't update prefix CIDR
+                            prefix_crd.spec.description.clone(),
                             Some(status_str),
-                            prefix_crd.spec.description.as_deref(),
+                            None, // role - role_id not easily convertible to role name, omit for now
+                            Some(tenant_id), // tenant is now required
+                            site_id, // Include site if resolved
+                            vlan_id, // Include vlan if resolved
                             None, // tags - omit for now
                         ),
                     ).await {
@@ -285,7 +292,7 @@ impl Reconciler {
                     if let Some(netbox_id) = status.netbox_id {
                         info!("NetBoxPrefix {}/{} has Failed status, checking if resource exists in NetBox for idempotency", namespace, name);
                         // Try to get the resource - if it exists, we'll update status to Created
-                        match self.netbox_client.get_prefix(netbox_id).await {
+                        match netbox_client.get_prefix(netbox_id).await {
                             Ok(existing) => {
                                 info!("NetBoxPrefix {}/{} exists in NetBox (ID: {}), updating status from Failed to Created", namespace, name, netbox_id);
                                 Some(existing)
@@ -401,28 +408,26 @@ impl Reconciler {
                     None
                 };
                 
-                // Resolve Tenant reference if provided - need ID for NetBox API
-                let tenant_id = if let Some(tenant_ref) = &prefix_crd.spec.tenant {
-                    // Validate kind
-                    if tenant_ref.kind != "NetBoxTenant" {
-                        warn!("Invalid kind '{}' for tenant reference in prefix {}, expected 'NetBoxTenant'", tenant_ref.kind, name);
-                        None
-                    } else {
-                        // Resolve to NetBox ID
-                        match self.netbox_tenant_api.get(&tenant_ref.name).await {
-                            Ok(tenant_crd) => {
-                                tenant_crd.status
-                                    .as_ref()
-                                    .and_then(|s| s.netbox_id)
-                            }
-                            Err(_) => {
-                                warn!("Tenant CRD '{}' not found for prefix {}, skipping tenant reference", tenant_ref.name, name);
-                                None
-                            }
-                        }
+                // Resolve Tenant reference (required) - need ID for NetBox API
+                if prefix_crd.spec.tenant.kind != "NetBoxTenant" {
+                    return Err(ControllerError::InvalidConfig(
+                        format!("Invalid kind '{}' for tenant reference in prefix {}, expected 'NetBoxTenant'", prefix_crd.spec.tenant.kind, name)
+                    ));
+                }
+                let tenant_id = match self.netbox_tenant_api.get(&prefix_crd.spec.tenant.name).await {
+                    Ok(tenant_crd) => {
+                        tenant_crd.status
+                            .as_ref()
+                            .and_then(|s| s.netbox_id)
+                            .ok_or_else(|| ControllerError::InvalidConfig(
+                                format!("Tenant '{}' has not been created in NetBox yet (no netbox_id in status)", prefix_crd.spec.tenant.name)
+                            ))?
                     }
-                } else {
-                    None
+                    Err(_) => {
+                        return Err(ControllerError::InvalidConfig(
+                            format!("Tenant CRD '{}' not found for prefix {}", prefix_crd.spec.tenant.name, name)
+                        ));
+                    }
                 };
                 
                 // Resolve Role reference if provided - need ID for NetBox API
@@ -450,7 +455,7 @@ impl Reconciler {
                 };
         
                 // Try to find existing prefix by querying NetBox (idempotency fallback)
-                let existing_prefix = match self.netbox_client.query_prefixes(
+                let existing_prefix = match netbox_client.query_prefixes(
                     &[("prefix", &prefix_crd.spec.prefix)],
                     false, // Just check first page
                 ).await {
@@ -462,7 +467,7 @@ impl Reconciler {
                         warn!("Failed to query prefixes in NetBox: {}, trying alternative methods", e);
                         
                         // Try to get all prefixes and search (if fetch_all works)
-                        match self.netbox_client.query_prefixes(
+                        match netbox_client.query_prefixes(
                             &[],
                             true, // fetch_all
                         ).await {
@@ -483,14 +488,15 @@ impl Reconciler {
                     
                     // Update prefix if needed (tenant, site, vlan, description, status)
                     // Note: Omitting role and tags for now (requires numeric IDs or string slugs)
-                    match self.netbox_client.update_prefix(
+                    match netbox_client.update_prefix(
                         existing.id,
-                        site_id, // Include site if resolved
-                        tenant_id, // Include tenant if resolved
-                        vlan_id, // Include vlan if resolved
-                        role_id,
+                        None, // prefix - don't update prefix CIDR
+                        prefix_crd.spec.description.clone(),
                         Some(status_str),
-                        prefix_crd.spec.description.as_deref(),
+                        None, // role - role_id not easily convertible to role name, omit for now
+                        Some(tenant_id), // tenant is now required
+                        site_id, // Include site if resolved
+                        vlan_id, // Include vlan if resolved
                         None, // tags - omit for now (requires numeric IDs or tag slugs)
                     ).await {
                         Ok(updated) => {
@@ -511,14 +517,14 @@ impl Reconciler {
                     // NetBox API requires site and role to be numeric IDs
                     // Tags must be numeric IDs or tag slugs
                     // TODO: Add support for resolving tag names to tag slugs
-                    match self.netbox_client.create_prefix(
+                    match netbox_client.create_prefix(
                         &prefix_crd.spec.prefix,
+                        prefix_crd.spec.description.clone(),
                         site_id,
-                        tenant_id, // Include tenant if resolved
                         vlan_id,
-                        role_id,
                         Some(status_str),
-                        prefix_crd.spec.description.as_deref(),
+                        role_id,
+                        Some(tenant_id), // tenant is now required
                         None, // tags - omit for now (requires numeric IDs or tag slugs)
                     ).await {
                         Ok(created) => {
@@ -532,7 +538,7 @@ impl Reconciler {
                                 warn!("Prefix {} already exists in NetBox, attempting to retrieve it (idempotency)", prefix_crd.spec.prefix);
                                 
                                 // Try to find the existing prefix using fetch_all
-                                match self.netbox_client.query_prefixes(
+                                match netbox_client.query_prefixes(
                                     &[],
                                     true, // fetch_all
                                 ).await {
@@ -552,7 +558,7 @@ impl Reconciler {
                                         // Couldn't query - this is a real error
                                         let error_msg = format!("Failed to create prefix in NetBox (may already exist, but could not verify): {} (query error: {})", e, query_err);
                                         error!("{}", error_msg);
-                                        update_status_error(&**self.netbox_prefix_api, name, namespace, error_msg.clone(), prefix_crd.status.as_ref()).await;
+                                        update_status_error(&*self.netbox_prefix_api, name, namespace, error_msg.clone(), prefix_crd.status.as_ref()).await;
                                         return Err(ControllerError::NetBox(e));
                                     }
                                 }
@@ -560,7 +566,7 @@ impl Reconciler {
                                 // Real creation error
                                 let error_msg = format!("Failed to create prefix in NetBox: {}", e);
                                 error!("{}", error_msg);
-                                update_status_error(&**self.netbox_prefix_api, name, namespace, error_msg.clone(), prefix_crd.status.as_ref()).await;
+                                update_status_error(&*self.netbox_prefix_api, name, namespace, error_msg.clone(), prefix_crd.status.as_ref()).await;
                                 return Err(ControllerError::NetBox(e));
                             }
                         }
@@ -597,7 +603,7 @@ impl Reconciler {
             Err(e) => {
                 let error_msg = format!("Failed to update NetBoxPrefix status: {}", e);
                 error!("{}", error_msg);
-                update_status_error(&self.netbox_prefix_api, name, namespace, error_msg.clone(), prefix_crd.status.as_ref()).await;
+                update_status_error(&*self.netbox_prefix_api, name, namespace, error_msg.clone(), prefix_crd.status.as_ref()).await;
                 Err(ControllerError::Kube(e.into()))
             }
         }

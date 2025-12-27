@@ -3,8 +3,10 @@
 use super::super::Reconciler;
 use crate::error::ControllerError;
 use crate::reconcile_helpers;
+use crate::kube_api_trait::KubeApiTrait;
 use tracing::{info, error, debug, warn};
-use crds::{NetBoxSiteGroup, ResourceState};
+use crds::{NetBoxSiteGroup, NetBoxSiteGroupStatus, ResourceState};
+use netbox_client::NetBoxClientTrait;
 
 impl Reconciler {
     pub async fn reconcile_netbox_site_group(&self, site_group_crd: &NetBoxSiteGroup) -> Result<(), ControllerError> {
@@ -15,16 +17,44 @@ impl Reconciler {
         
         info!("Reconciling NetBoxSiteGroup {}/{}", namespace, name);
         
+        // Get client for shared resource (finds tenant from referencing Sites)
+        let netbox_client = self.token_resolver
+            .create_client_for_shared_resource(namespace, "NetBoxSiteGroup", name)
+            .await
+            .map_err(|e| ControllerError::TokenResolution(e))?;
+        
+        // Resolve parent site group ID if parent reference provided
+        let parent_id = if let Some(parent_ref) = &site_group_crd.spec.parent {
+            if parent_ref.kind != "NetBoxSiteGroup" {
+                warn!("Invalid kind '{}' for parent reference in site group {}, expected 'NetBoxSiteGroup'", parent_ref.kind, name);
+                None
+            } else {
+                match self.netbox_site_group_api.get(&parent_ref.name).await {
+                    Ok(parent_crd) => {
+                        parent_crd.status
+                            .as_ref()
+                            .and_then(|s| s.netbox_id)
+                    }
+                    Err(_) => {
+                        warn!("Parent SiteGroup CRD '{}' not found for site group {}, skipping parent reference", parent_ref.name, name);
+                        None
+                    }
+                }
+            }
+        } else {
+            None
+        };
+        
         // Check if already created - use helper for drift detection
         let netbox_site_group = if let Some(status) = &site_group_crd.status {
             if status.state == ResourceState::Created && status.netbox_id.is_some() {
                 if let Some(netbox_id) = status.netbox_id {
-                    // Use simple helper function for drift detection (no update logic)
+                    // Use simple helper function for drift detection (no update logic yet)
                     match reconcile_helpers::check_existing(
-                        self.netbox_client.as_ref(),
+                        &netbox_client,
                         netbox_id,
                         &format!("NetBoxSiteGroup {}/{}", namespace, name),
-                        self.netbox_client.get_site_group(netbox_id),
+                        netbox_client.get_site_group(netbox_id),
                     ).await {
                         Ok(Some(resource)) => {
                             // Resource exists and is up-to-date
@@ -106,136 +136,45 @@ impl Reconciler {
             }
             None => {
                 // Need to create site group - try to find existing by name (idempotency fallback)
-                // Resolve parent site group ID if parent reference provided
-                let parent_id = if let Some(parent_ref) = &site_group_crd.spec.parent {
-            if parent_ref.kind != "NetBoxSiteGroup" {
-                warn!("Invalid kind '{}' for parent site group reference in site group {}, expected 'NetBoxSiteGroup'", parent_ref.kind, name);
-                None
-            } else {
-                match self.netbox_site_group_api.get(&parent_ref.name).await {
-                    Ok(parent_crd) => {
-                        parent_crd.status
-                            .as_ref()
-                            .and_then(|s| s.netbox_id)
+                let existing_site_group = match netbox_client.get_site_group_by_name(&site_group_crd.spec.name).await {
+                    Ok(Some(sg)) => {
+                        info!("SiteGroup {} already exists in NetBox (ID: {}), acknowledging existence (idempotency)", site_group_crd.spec.name, sg.id);
+                        Some(sg)
                     }
-                    Err(_) => {
-                        warn!("Parent site group CRD '{}' not found for site group {}", parent_ref.name, name);
+                    Ok(None) => None,
+                    Err(e) => {
+                        warn!("Failed to query site group by name: {}, will try to create", e);
                         None
                     }
-                }
-            }
-                } else {
-                    None
                 };
                 
-                // Try to find existing site group by name
-                let existing_site_group = match self.netbox_client.query_site_groups(
-                    &[("name", &site_group_crd.spec.name)],
-                    false,
-                ).await {
-                    Ok(site_groups) => site_groups.first().cloned(),
-                    Err(_) => None
-                };
-                
-                let netbox_site_group = if let Some(existing) = existing_site_group {
-                    info!("Site group {} already exists in NetBox (ID: {})", site_group_crd.spec.name, existing.id);
+                if let Some(existing) = existing_site_group {
                     existing
                 } else {
-                    let slug = site_group_crd.spec.slug.as_deref().map(|s| s.to_string())
-                        .unwrap_or_else(|| site_group_crd.spec.name.to_lowercase().replace(' ', "-"));
-                    match self.netbox_client.create_site_group(
+                    // Create site group
+                    info!("Creating site group {} in NetBox", site_group_crd.spec.name);
+                    match netbox_client.create_site_group(
                         &site_group_crd.spec.name,
-                        &slug,
-                        site_group_crd.spec.description.as_deref(),
+                        site_group_crd.spec.slug.as_deref(),
+                        parent_id,
+                        site_group_crd.spec.description.clone(),
+                        None, // comments - not in CRD spec yet
                     ).await {
                         Ok(created) => {
                             info!("Created site group {} in NetBox (ID: {})", created.name, created.id);
                             created
                         }
                         Err(e) => {
-                            // Check if error is "already exists" - if so, try to find it (idempotency)
-                            let error_str = format!("{}", e);
-                            if error_str.contains("already exists") || error_str.contains("duplicate") || error_str.contains("unique constraint") {
-                                warn!("Site group {} already exists in NetBox, attempting to retrieve it (idempotency)", site_group_crd.spec.name);
-                                
-                                // Try to find the existing site group by name or slug
-                                let found_site_group: Option<_> = match self.netbox_client.query_site_groups(
-                                    &[("name", &site_group_crd.spec.name)],
-                                    false,
-                                ).await {
-                                    Ok(site_groups) => {
-                                        if let Some(found) = site_groups.first() {
-                                            info!("Found existing site group {} in NetBox (ID: {}) after create conflict", found.name, found.id);
-                                            Some(found.clone())
-                                        } else {
-                                            // Try by slug
-                                            if let Some(slug) = &site_group_crd.spec.slug {
-                                                match self.netbox_client.query_site_groups(
-                                                    &[("slug", slug)],
-                                                    false,
-                                                ).await {
-                                                    Ok(site_groups_by_slug) => {
-                                                        if let Some(found) = site_groups_by_slug.first() {
-                                                            info!("Found existing site group {} in NetBox (ID: {}) by slug after create conflict", found.name, found.id);
-                                                            Some(found.clone())
-                                                        } else {
-                                                            None
-                                                        }
-                                                    }
-                                                    Err(_) => None
-                                                }
-                                            } else {
-                                                None
-                                            }
-                                        }
-                                    }
-                                    Err(_query_err) => {
-                                        // Query failed (likely deserialization issue), try fallback: query all site groups
-                                        warn!("Query by name failed for site group {}, trying fallback: query all site groups", site_group_crd.spec.name);
-                                        match self.netbox_client.query_site_groups(&[], true).await {
-                                            Ok(all_site_groups) => {
-                                                // Try to match by name first, then by slug
-                                                let found = all_site_groups.iter().find(|sg| {
-                                                    sg.name == site_group_crd.spec.name || 
-                                                    (site_group_crd.spec.slug.is_some() && sg.slug.as_str() == site_group_crd.spec.slug.as_ref().unwrap().as_str())
-                                                });
-                                                if let Some(found) = found {
-                                                    info!("Found existing site group {} in NetBox (ID: {}) via fallback query", found.name, found.id);
-                                                    Some(found.clone())
-                                                } else {
-                                                    warn!("Fallback query returned {} site groups but none matched name '{}' or slug '{:?}'", all_site_groups.len(), site_group_crd.spec.name, site_group_crd.spec.slug);
-                                                    None
-                                                }
-                                            }
-                                            Err(e) => {
-                                                warn!("Fallback query for all site groups failed: {}", e);
-                                                None
-                                            }
-                                        }
-                                    }
-                                };
-                                
-                                if let Some(found) = found_site_group {
-                                    found
-                                } else {
-                                    let error_msg = format!("Site group {} already exists in NetBox but could not retrieve it: {}", site_group_crd.spec.name, e);
-                                    error!("{}", error_msg);
-                                    return Err(ControllerError::NetBox(e));
-                                }
-                            } else {
-                                let error_msg = format!("Failed to create site group in NetBox: {}", e);
-                                error!("{}", error_msg);
-                                return Err(ControllerError::NetBox(e));
-                            }
+                            let error_msg = format!("Failed to create site group in NetBox: {}", e);
+                            error!("{}", error_msg);
+                            return Err(ControllerError::NetBox(e));
                         }
                     }
-                };
-                
-                netbox_site_group
+                }
             }
         };
         
-        // Update status (use lowercase state to match CRD validation schema)
+        // Update status
         let status_patch = Self::create_resource_status_patch(
             netbox_site_group.id,
             netbox_site_group.url.clone(),

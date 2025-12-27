@@ -2,6 +2,81 @@
 
 This document provides specific guidance for AI agents working on the DCops codebase, with **explicit modularization requirements** from the start.
 
+## 🚨 CRITICAL: Check for Existing Helpers/Traits First
+
+> **MANDATORY:** Before creating ANY new function, method, or helper, you MUST:
+> 1. **Search the codebase** for existing helpers, traits, or utilities that already do what you need
+> 2. **Check if existing code can be extended** rather than duplicated
+> 3. **Use existing patterns** - don't reinvent the wheel
+> 4. **Refactor to use helpers** - if helpers exist but aren't being used, fix the code to use them
+
+**Why:** The whole point of creating a client/library is to have **DRY (Don't Repeat Yourself)** code, not to move calls out of reconcilers into a WET (Write Everything Twice) mess.
+
+### Before Creating New Code Checklist
+
+**ALWAYS ask yourself:**
+- [ ] Does a helper function already exist that does this?
+- [ ] Is there a trait that can be extended?
+- [ ] Can I refactor existing code to use a helper instead of duplicating?
+- [ ] Have I searched the codebase for similar patterns?
+- [ ] Am I following the DRY principle?
+
+### Example: NetBox Client Helpers
+
+**❌ BAD:** Duplicating slug generation in 12 methods
+```rust
+// BAD: Duplicated in every create method
+let slug_value = if let Some(slug_str) = slug {
+    slug_str.to_string()
+} else {
+    name.to_lowercase().replace(' ', "-")
+};
+```
+
+**✅ GOOD:** Using a helper function
+```rust
+// GOOD: Single helper used everywhere
+let slug_value = Self::generate_slug(name, slug);
+```
+
+### Search Strategy
+
+Before writing new code:
+1. **Grep for similar patterns:**
+   ```bash
+   grep -r "to_lowercase().replace" crates/
+   grep -r "if let Some.*body\[" crates/
+   ```
+
+2. **Check for existing helpers:**
+   ```bash
+   grep -r "fn.*helper\|fn.*add_\|fn.*generate" crates/
+   ```
+
+3. **Look for traits:**
+   ```bash
+   grep -r "trait.*Trait" crates/
+   ```
+
+4. **Check documentation:**
+   - Read `docs/NETBOX_CLIENT_AUDIT.md` for known helpers
+   - Check `rust-guidelines.txt` for patterns
+   - Review existing code for established patterns
+
+### Refactoring Existing Code
+
+If you find existing code that duplicates patterns:
+1. **Extract to helper** - Create a helper function
+2. **Refactor all uses** - Update all methods to use the helper
+3. **Verify compilation** - Ensure everything still compiles
+4. **Run tests** - Verify functionality is preserved
+5. **Update documentation** - Document the helper
+
+**Never:**
+- ❌ Leave duplicate code "for now"
+- ❌ Create a new helper but not use it everywhere
+- ❌ Claim code is done when duplication exists
+
 ## Critical Rule: Modularize Immediately
 
 > **MANDATORY:** When creating new code, **always** create proper module structure from the beginning. Never write monolithic files that will need to be refactored later.

@@ -17,7 +17,7 @@ spec:
     spec:
       initContainers:
       - name: migrate
-        image: netboxcommunity/netbox:v4.0.0
+        image: microscaler/netbox:v4.0.0-fix11
         command:
         - /opt/netbox/venv/bin/python
         - /opt/netbox/netbox/manage.py
@@ -40,7 +40,7 @@ spec:
         - name: ALLOWED_HOSTS
           value: "*"
       - name: create-superuser
-        image: netboxcommunity/netbox:v4.0.0
+        image: microscaler/netbox:v4.0.0-fix11
         command:
         - /bin/bash
         - -c
@@ -72,7 +72,7 @@ spec:
           value: admin
       containers:
       - name: netbox
-        image: netboxcommunity/netbox:v4.0.0
+        image: microscaler/netbox:v4.0.0-fix11
         ports:
         - containerPort: 8080
           name: http

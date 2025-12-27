@@ -8,4 +8,11 @@ spec:
   slug: "datacenter-ops"
   description: "Primary tenant for datacenter operations"
   comments: "Managed by DCops"
+  # Secret reference containing the NetBox API token for this tenant
+  # The Secret must exist in the same namespace (or specified namespace)
+  # and contain a key (defaults to "token") with the NetBox API token
+  tokenSecret:
+    name: netbox-token-datacenter-tenant
+    # namespace: default  # Optional: defaults to same namespace as Tenant CR
+    # key: token          # Optional: defaults to "token"
 

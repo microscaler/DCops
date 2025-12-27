@@ -3,11 +3,12 @@
 use super::Reconciler;
 use crate::error::ControllerError;
 use crate::reconcile_helpers;
-use crds::{NetBoxRole, NetBoxTag, ResourceState};
-use tracing::{info, error, warn, debug};
+use tracing::{info, error, debug, warn};
+use crds::{NetBoxRole, NetBoxRoleStatus, NetBoxTag, NetBoxTagStatus, ResourceState};
+use netbox_client::NetBoxClientTrait;
 
 impl Reconciler {
-    /// Reconciles a NetBoxRole resource.
+    /// Reconciles a NetBoxRole resource (Extras Role, not IPAM Role).
     pub async fn reconcile_netbox_role(&self, role_crd: &NetBoxRole) -> Result<(), ControllerError> {
         let name = role_crd.metadata.name.as_ref()
             .ok_or_else(|| ControllerError::InvalidConfig("NetBoxRole missing name".to_string()))?;
@@ -16,29 +17,34 @@ impl Reconciler {
         
         info!("Reconciling NetBoxRole {}/{}", namespace, name);
         
+        // Get client for shared resource (finds tenant from referencing resources or uses system tenant)
+        let netbox_client = self.token_resolver
+            .create_client_for_shared_resource(namespace, "NetBoxRole", name)
+            .await
+            .map_err(|e| ControllerError::TokenResolution(e))?;
+        
         // Check if already created - use helper for drift detection
-        // Note: Roles don't have update logic yet, so we use the simple check_existing helper
         let netbox_role = if let Some(status) = &role_crd.status {
             if status.state == ResourceState::Created && status.netbox_id.is_some() {
                 if let Some(netbox_id) = status.netbox_id {
-                    // Use simple helper function for drift detection (no update logic)
                     match reconcile_helpers::check_existing(
-                        self.netbox_client.as_ref(),
+                        &netbox_client,
                         netbox_id,
                         &format!("NetBoxRole {}/{}", namespace, name),
-                        self.netbox_client.get_role(netbox_id),
+                        async {
+                            let id_str = netbox_id.to_string();
+                            netbox_client.query_roles(&[("id", &id_str)], false)
+                                .await
+                                .and_then(|mut roles| {
+                                    roles.pop().ok_or_else(|| netbox_client::NetBoxError::NotFound(format!("Role {} not found", netbox_id)))
+                                })
+                        },
                     ).await {
-                        Ok(Some(resource)) => {
-                            // Resource exists and is up-to-date
-                            Some(resource)
-                        }
+                        Ok(Some(resource)) => Some(resource),
                         Ok(None) => {
-                            // Drift detected - resource was deleted, clear status and recreate
                             warn!("NetBoxRole {}/{} was deleted in NetBox (ID: {}), clearing status and will recreate", namespace, name, netbox_id);
                             let status_patch = Self::create_resource_status_patch(
-                                0, // Clear netbox_id
-                                String::new(), // Clear URL
-                                ResourceState::Pending,
+                                0, String::new(), ResourceState::Pending,
                                 Some("Resource was deleted in NetBox, will recreate".to_string()),
                             );
                             let pp = kube::api::PatchParams::default();
@@ -48,28 +54,22 @@ impl Reconciler {
                             {
                                 warn!("Failed to clear NetBoxRole status after drift detection: {}", e);
                             }
-                            // Fall through to creation
                             None
                         }
-                        Err(e) => {
-                            // Error during drift detection - return to retry
-                            return Err(e);
-                        }
+                        Err(e) => return Err(e),
                     }
                 } else {
-                    None // No netbox_id, need to create
+                    None
                 }
             } else {
-                None // Not in Created state, need to create
+                None
             }
         } else {
-            None // No status, need to create
+            None
         };
         
-        // Handle existing role (from helper) or create new
         let netbox_role = match netbox_role {
             Some(role) => {
-                // Resource exists and is up-to-date - only update status if it changed
                 use crate::reconcile_helpers::status_needs_update;
                 let needs_status_update = status_needs_update(
                     role_crd.status.as_ref(),
@@ -96,8 +96,7 @@ impl Reconciler {
                             return Ok(());
                         }
                         Err(e) => {
-                            let error_msg = format!("Failed to update NetBoxRole status: {}", e);
-                            error!("{}", error_msg);
+                            error!("Failed to update NetBoxRole status: {}", e);
                             return Err(ControllerError::Kube(e.into()));
                         }
                     }
@@ -107,26 +106,30 @@ impl Reconciler {
                 }
             }
             None => {
-                // Need to create role - try to find existing by name (idempotency fallback)
-                let existing_role = match self.netbox_client.query_roles(
-                    &[("name", &role_crd.spec.name)],
-                    false,
-                ).await {
-                    Ok(roles) => roles.first().cloned(),
-                    Err(_) => None
+                let existing_role = match netbox_client.query_roles(&[("name", &role_crd.spec.name)], false).await {
+                    Ok(mut roles) => {
+                        roles.pop()
+                    }
+                    Err(e) => {
+                        warn!("Failed to query role by name: {}, will try to create", e);
+                        None
+                    }
                 };
                 
+                if let Some(r) = existing_role.as_ref() {
+                    info!("Role {} already exists in NetBox (ID: {}), acknowledging existence (idempotency)", role_crd.spec.name, r.id);
+                }
+                
                 if let Some(existing) = existing_role {
-                    info!("Role {} already exists in NetBox (ID: {})", role_crd.spec.name, existing.id);
                     existing
                 } else {
-                    // Create new role
-                    let slug = role_crd.spec.slug.as_deref().map(|s| s.to_string())
-                        .unwrap_or_else(|| role_crd.spec.name.to_lowercase().replace(' ', "-"));
-                    match self.netbox_client.create_role(
+                    info!("Creating role {} in NetBox", role_crd.spec.name);
+                    match netbox_client.create_role(
                         &role_crd.spec.name,
-                        &slug,
-                        role_crd.spec.description.as_deref(),
+                        role_crd.spec.slug.as_deref(),
+                        role_crd.spec.description.clone(),
+                        role_crd.spec.weight,
+                        role_crd.spec.comments.clone(),
                     ).await {
                         Ok(created) => {
                             info!("Created role {} in NetBox (ID: {})", created.name, created.id);
@@ -135,20 +138,6 @@ impl Reconciler {
                         Err(e) => {
                             let error_msg = format!("Failed to create role in NetBox: {}", e);
                             error!("{}", error_msg);
-                            // Update status with error
-                            let status_patch = Self::create_resource_status_patch(
-                                0,
-                                String::new(),
-                                ResourceState::Failed,
-                                Some(error_msg.clone()),
-                            );
-                            let pp = kube::api::PatchParams::default();
-                            if let Err(status_err) = self.netbox_role_api
-                                .patch_status(name, &pp, &kube::api::Patch::Merge(status_patch.clone()))
-                                .await
-                            {
-                                error!("Failed to update NetBoxRole error status: {}", status_err);
-                            }
                             return Err(ControllerError::NetBox(e));
                         }
                     }
@@ -156,7 +145,6 @@ impl Reconciler {
             }
         };
         
-        // Update status
         let status_patch = Self::create_resource_status_patch(
             netbox_role.id,
             netbox_role.url.clone(),
@@ -189,29 +177,34 @@ impl Reconciler {
         
         info!("Reconciling NetBoxTag {}/{}", namespace, name);
         
+        // Get client for shared resource (finds tenant from referencing resources or uses system tenant)
+        let netbox_client = self.token_resolver
+            .create_client_for_shared_resource(namespace, "NetBoxTag", name)
+            .await
+            .map_err(|e| ControllerError::TokenResolution(e))?;
+        
         // Check if already created - use helper for drift detection
-        // Note: Tags don't have update logic yet, so we use the simple check_existing helper
         let netbox_tag = if let Some(status) = &tag_crd.status {
             if status.state == ResourceState::Created && status.netbox_id.is_some() {
                 if let Some(netbox_id) = status.netbox_id {
-                    // Use simple helper function for drift detection (no update logic)
                     match reconcile_helpers::check_existing(
-                        self.netbox_client.as_ref(),
+                        &netbox_client,
                         netbox_id,
                         &format!("NetBoxTag {}/{}", namespace, name),
-                        self.netbox_client.get_tag(netbox_id),
+                        async {
+                            let id_str = netbox_id.to_string();
+                            netbox_client.query_tags(&[("id", &id_str)], false)
+                                .await
+                                .and_then(|mut tags| {
+                                    tags.pop().ok_or_else(|| netbox_client::NetBoxError::NotFound(format!("Tag {} not found", netbox_id)))
+                                })
+                        },
                     ).await {
-                        Ok(Some(resource)) => {
-                            // Resource exists and is up-to-date
-                            Some(resource)
-                        }
+                        Ok(Some(resource)) => Some(resource),
                         Ok(None) => {
-                            // Drift detected - resource was deleted, clear status and recreate
                             warn!("NetBoxTag {}/{} was deleted in NetBox (ID: {}), clearing status and will recreate", namespace, name, netbox_id);
                             let status_patch = Self::create_resource_status_patch(
-                                0, // Clear netbox_id
-                                String::new(), // Clear URL
-                                ResourceState::Pending,
+                                0, String::new(), ResourceState::Pending,
                                 Some("Resource was deleted in NetBox, will recreate".to_string()),
                             );
                             let pp = kube::api::PatchParams::default();
@@ -221,28 +214,22 @@ impl Reconciler {
                             {
                                 warn!("Failed to clear NetBoxTag status after drift detection: {}", e);
                             }
-                            // Fall through to creation
                             None
                         }
-                        Err(e) => {
-                            // Error during drift detection - return to retry
-                            return Err(e);
-                        }
+                        Err(e) => return Err(e),
                     }
                 } else {
-                    None // No netbox_id, need to create
+                    None
                 }
             } else {
-                None // Not in Created state, need to create
+                None
             }
         } else {
-            None // No status, need to create
+            None
         };
         
-        // Handle existing tag (from helper) or create new
         let netbox_tag = match netbox_tag {
             Some(tag) => {
-                // Resource exists and is up-to-date - only update status if it changed
                 use crate::reconcile_helpers::status_needs_update;
                 let needs_status_update = status_needs_update(
                     tag_crd.status.as_ref(),
@@ -269,8 +256,7 @@ impl Reconciler {
                             return Ok(());
                         }
                         Err(e) => {
-                            let error_msg = format!("Failed to update NetBoxTag status: {}", e);
-                            error!("{}", error_msg);
+                            error!("Failed to update NetBoxTag status: {}", e);
                             return Err(ControllerError::Kube(e.into()));
                         }
                     }
@@ -280,26 +266,30 @@ impl Reconciler {
                 }
             }
             None => {
-                // Need to create tag - try to find existing by name (idempotency fallback)
-                let existing_tag = match self.netbox_client.query_tags(
-                    &[("name", &tag_crd.spec.name)],
-                    false,
-                ).await {
-                    Ok(tags) => tags.first().cloned(),
-                    Err(_) => None
+                let existing_tag = match netbox_client.query_tags(&[("name", &tag_crd.spec.name)], false).await {
+                    Ok(mut tags) => {
+                        tags.pop()
+                    }
+                    Err(e) => {
+                        warn!("Failed to query tag by name: {}, will try to create", e);
+                        None
+                    }
                 };
                 
+                if let Some(t) = existing_tag.as_ref() {
+                    info!("Tag {} already exists in NetBox (ID: {}), acknowledging existence (idempotency)", tag_crd.spec.name, t.id);
+                }
+                
                 if let Some(existing) = existing_tag {
-                    info!("Tag {} already exists in NetBox (ID: {})", tag_crd.spec.name, existing.id);
                     existing
                 } else {
-                    // Create new tag
-                    let slug = tag_crd.spec.slug.as_deref().map(|s| s.to_string())
-                        .unwrap_or_else(|| tag_crd.spec.name.to_lowercase().replace(' ', "-"));
-                    match self.netbox_client.create_tag(
+                    info!("Creating tag {} in NetBox", tag_crd.spec.name);
+                    match netbox_client.create_tag(
                         &tag_crd.spec.name,
-                        &slug,
-                        tag_crd.spec.description.as_deref(),
+                        tag_crd.spec.slug.as_deref(),
+                        tag_crd.spec.color.as_deref(),
+                        tag_crd.spec.description.clone(),
+                        tag_crd.spec.comments.clone(),
                     ).await {
                         Ok(created) => {
                             info!("Created tag {} in NetBox (ID: {})", created.name, created.id);
@@ -308,20 +298,6 @@ impl Reconciler {
                         Err(e) => {
                             let error_msg = format!("Failed to create tag in NetBox: {}", e);
                             error!("{}", error_msg);
-                            // Update status with error
-                            let status_patch = Self::create_resource_status_patch(
-                                0,
-                                String::new(),
-                                ResourceState::Failed,
-                                Some(error_msg.clone()),
-                            );
-                            let pp = kube::api::PatchParams::default();
-                            if let Err(status_err) = self.netbox_tag_api
-                                .patch_status(name, &pp, &kube::api::Patch::Merge(status_patch.clone()))
-                                .await
-                            {
-                                error!("Failed to update NetBoxTag error status: {}", status_err);
-                            }
                             return Err(ControllerError::NetBox(e));
                         }
                     }
@@ -329,7 +305,6 @@ impl Reconciler {
             }
         };
         
-        // Update status
         let status_patch = Self::create_resource_status_patch(
             netbox_tag.id,
             netbox_tag.url.clone(),
@@ -353,4 +328,3 @@ impl Reconciler {
         }
     }
 }
-

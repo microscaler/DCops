@@ -5,13 +5,21 @@ use crate::error::ControllerError;
 use crate::reconcile_helpers;
 use tracing::{info, error, debug, warn};
 use crds::{NetBoxDevice, ResourceState};
+use netbox_client::NetBoxClientTrait;
 
 impl Reconciler {
     pub async fn reconcile_netbox_device(&self, device_crd: &NetBoxDevice) -> Result<(), ControllerError> {
+        // Extract namespace and tenant reference
+        let namespace = device_crd.metadata.namespace.as_deref().unwrap_or("default");
+        let tenant_ref = &device_crd.spec.tenant;
+        
+        // SINGLE POINT: Get tenant-specific client
+        let netbox_client = self.token_resolver
+            .create_client_for_tenant(namespace, tenant_ref)
+            .await?;
+        
         let name = device_crd.metadata.name.as_ref()
             .ok_or_else(|| ControllerError::InvalidConfig("NetBoxDevice missing name".to_string()))?;
-        let namespace = device_crd.metadata.namespace.as_deref()
-            .unwrap_or("default");
         
         info!("Reconciling NetBoxDevice {}/{}", namespace, name);
         
@@ -21,10 +29,10 @@ impl Reconciler {
                 if let Some(netbox_id) = status.netbox_id {
                     // Use simple helper function for drift detection (no update logic)
                     match reconcile_helpers::check_existing(
-                        self.netbox_client.as_ref(),
+                        &netbox_client,
                         netbox_id,
                         &format!("NetBoxDevice {}/{}", namespace, name),
-                        self.netbox_client.get_device(netbox_id),
+                        netbox_client.get_device(netbox_id),
                     ).await {
                         Ok(Some(resource)) => {
                             // Resource exists and is up-to-date
@@ -171,21 +179,26 @@ impl Reconciler {
                     }
                 };
                 
-                let tenant_id = if let Some(tenant_ref) = &device_crd.spec.tenant {
-                    if tenant_ref.kind != "NetBoxTenant" {
-                        warn!("Invalid kind '{}' for tenant reference in device {}, expected 'NetBoxTenant'", tenant_ref.kind, name);
-                        None
-                    } else {
-                        match self.netbox_tenant_api.get(&tenant_ref.name).await {
-                            Ok(tenant_crd) => tenant_crd.status.as_ref().and_then(|s| s.netbox_id),
-                            Err(_) => {
-                                warn!("Tenant CRD '{}' not found for device {}", tenant_ref.name, name);
-                                None
-                            }
-                        }
+                // Resolve tenant ID (required)
+                if device_crd.spec.tenant.kind != "NetBoxTenant" {
+                    return Err(ControllerError::InvalidConfig(
+                        format!("Invalid kind '{}' for tenant reference in device {}, expected 'NetBoxTenant'", device_crd.spec.tenant.kind, name)
+                    ));
+                }
+                let tenant_id = match self.netbox_tenant_api.get(&device_crd.spec.tenant.name).await {
+                    Ok(tenant_crd) => {
+                        tenant_crd.status
+                            .as_ref()
+                            .and_then(|s| s.netbox_id)
+                            .ok_or_else(|| ControllerError::InvalidConfig(
+                                format!("Tenant '{}' has not been created in NetBox yet (no netbox_id in status)", device_crd.spec.tenant.name)
+                            ))?
                     }
-                } else {
-                    None
+                    Err(_) => {
+                        return Err(ControllerError::InvalidConfig(
+                            format!("Tenant CRD '{}' not found for device {}", device_crd.spec.tenant.name, name)
+                        ));
+                    }
                 };
                 
                 let platform_id = if let Some(platform_ref) = &device_crd.spec.platform {
@@ -269,7 +282,7 @@ impl Reconciler {
                         }
                     } else if let Some(ip_addr) = &ip_ref.ip_address {
                         // Query NetBox by IP address (fallback)
-                        match self.netbox_client.query_ip_addresses(&[("address", ip_addr)], false).await {
+                        match netbox_client.query_ip_addresses(&[("address", ip_addr)], false).await {
                             Ok(ips) => {
                                 if let Some(ip) = ips.first() {
                                     debug!("Resolved primary_ip4 from IP address {} to NetBox IP ID {}", ip_addr, ip.id);
@@ -336,7 +349,7 @@ impl Reconciler {
                         }
                     } else if let Some(ip_addr) = &ip_ref.ip_address {
                         // Query NetBox by IP address (fallback)
-                        match self.netbox_client.query_ip_addresses(&[("address", ip_addr)], false).await {
+                        match netbox_client.query_ip_addresses(&[("address", ip_addr)], false).await {
                             Ok(ips) => {
                                 if let Some(ip) = ips.first() {
                                     debug!("Resolved primary_ip6 from IP address {} to NetBox IP ID {}", ip_addr, ip.id);
@@ -370,7 +383,7 @@ impl Reconciler {
                 };
                 
                 // Try to find existing device by name
-                let existing_device = match self.netbox_client.query_devices(
+                let existing_device = match netbox_client.query_devices(
                     &[("name", device_crd.spec.name.as_deref().unwrap_or(name))],
                     false,
                 ).await {
@@ -385,21 +398,21 @@ impl Reconciler {
                     let device_name = device_crd.spec.name.as_deref().ok_or_else(|| {
                         ControllerError::InvalidConfig("Device name is required".to_string())
                     })?;
-                    match self.netbox_client.create_device(
-                        device_name,
+                    match netbox_client.create_device(
                         device_type_id,
                         device_role_id,
                         site_id,
-                        location_id,
-                        tenant_id,
+                        Some(device_name),
+                        Some(tenant_id), // tenant is now required
                         platform_id,
+                        location_id,
                         device_crd.spec.serial.as_deref(),
                         device_crd.spec.asset_tag.as_deref(),
-                        status_str,
+                        Some(status_str),
                         primary_ip4_id,
                         primary_ip6_id,
-                        device_crd.spec.description.as_deref(),
-                        device_crd.spec.comments.as_deref(),
+                        device_crd.spec.description.clone(),
+                        device_crd.spec.comments.clone(),
                     ).await {
                         Ok(created) => {
                             info!("Created device {} in NetBox (ID: {})", device_crd.spec.name.as_deref().unwrap_or("<unnamed>"), created.id);
@@ -416,7 +429,7 @@ impl Reconciler {
                                 
                                 // First try: query by asset_tag
                                 if let Some(asset_tag) = &device_crd.spec.asset_tag {
-                                    match self.netbox_client.query_devices(&[("asset_tag", asset_tag)], false).await {
+                                    match netbox_client.query_devices(&[("asset_tag", asset_tag)], false).await {
                                         Ok(devices) => {
                                             if let Some(device) = devices.first() {
                                                 info!("Found existing device by asset_tag '{}' in NetBox (ID: {})", asset_tag, device.id);
@@ -434,7 +447,7 @@ impl Reconciler {
                                 // Second try: query by name if not found by asset_tag
                                 if found_device.is_none() {
                                     let device_name = device_crd.spec.name.as_deref().unwrap_or(name);
-                                    match self.netbox_client.query_devices(
+                                    match netbox_client.query_devices(
                                         &[("name", device_name)],
                                         false,
                                     ).await {
@@ -455,7 +468,7 @@ impl Reconciler {
                                 // Third try: fallback - query all devices and filter
                                 if found_device.is_none() {
                                     warn!("Fallback: querying all devices to find existing device");
-                                    match self.netbox_client.query_devices(&[], true).await {
+                                    match netbox_client.query_devices(&[], true).await {
                                         Ok(all_devices) => {
                                             // Try to match by asset_tag first, then by name
                                             let matched = if let Some(asset_tag) = &device_crd.spec.asset_tag {

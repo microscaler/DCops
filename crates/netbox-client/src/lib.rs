@@ -45,8 +45,13 @@
 
 pub mod client;
 pub mod common;
+pub mod core;
+pub mod dcim;
 pub mod error;
+pub mod extras;
+pub mod ipam;
 pub mod models;
+pub mod tenancy;
 #[path = "trait.rs"]
 pub mod netbox_trait;
 #[cfg(feature = "test-util")]

@@ -65,4 +65,48 @@ impl NetBoxResourceReference {
     }
 }
 
+/// Reference to a Kubernetes Secret
+///
+/// Used to reference secrets containing sensitive data like API tokens.
+/// Follows Kubernetes Secret reference patterns.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct SecretReference {
+    /// Name of the Kubernetes Secret
+    pub name: String,
+    
+    /// Namespace of the Secret (optional, defaults to the namespace of the referencing resource)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub namespace: Option<String>,
+    
+    /// Key within the Secret data (optional, defaults to "token")
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub key: Option<String>,
+}
+
+impl SecretReference {
+    /// Create a new Secret reference with just the name
+    pub fn new(name: String) -> Self {
+        Self {
+            name,
+            namespace: None,
+            key: None,
+        }
+    }
+    
+    /// Create a new Secret reference with name and namespace
+    pub fn with_namespace(name: String, namespace: String) -> Self {
+        Self {
+            name,
+            namespace: Some(namespace),
+            key: None,
+        }
+    }
+    
+    /// Get the key to use for extracting the token (defaults to "token")
+    pub fn key(&self) -> &str {
+        self.key.as_deref().unwrap_or("token")
+    }
+}
+
 

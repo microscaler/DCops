@@ -2,8 +2,10 @@
 
 use super::super::Reconciler;
 use crate::error::ControllerError;
+use crate::reconcile_helpers;
 use tracing::{info, error, debug, warn};
-use crds::{NetBoxDeviceType, ResourceState};
+use crds::{NetBoxDeviceType, NetBoxDeviceTypeStatus, ResourceState};
+use netbox_client::NetBoxClientTrait;
 
 impl Reconciler {
     pub async fn reconcile_netbox_device_type(&self, device_type_crd: &NetBoxDeviceType) -> Result<(), ControllerError> {
@@ -14,59 +16,57 @@ impl Reconciler {
         
         info!("Reconciling NetBoxDeviceType {}/{}", namespace, name);
         
-        // Validate manufacturer reference kind
-        if device_type_crd.spec.manufacturer.kind != "NetBoxManufacturer" {
-            let error_msg = format!("Invalid kind '{}' for manufacturer reference in device type {}, expected 'NetBoxManufacturer'", device_type_crd.spec.manufacturer.kind, name);
-            error!("{}", error_msg);
-            return Err(ControllerError::InvalidConfig(error_msg));
-        }
+        // Get client for shared resource (finds tenant from referencing Devices)
+        let netbox_client = self.token_resolver
+            .create_client_for_shared_resource(namespace, "NetBoxDeviceType", name)
+            .await
+            .map_err(|e| ControllerError::TokenResolution(e))?;
         
-        // Resolve manufacturer ID first (required for drift detection)
-        let manufacturer_id = match self.netbox_manufacturer_api.get(&device_type_crd.spec.manufacturer.name).await {
-            Ok(mfg_crd) => {
-                match mfg_crd.status
-                    .as_ref()
-                    .and_then(|s| s.netbox_id) {
-                    Some(id) => id,
-                    None => {
-                        // Manufacturer CR exists but not yet created in NetBox - retry later
-                        let error_msg = format!(
-                            "Manufacturer '{}' has not been created in NetBox yet (will retry)",
-                            device_type_crd.spec.manufacturer.name
-                        );
-                        warn!("{}", error_msg);
-                        return Err(ControllerError::InvalidConfig(error_msg));
-                    }
+        // Resolve manufacturer ID (required)
+        let manufacturer_id = if device_type_crd.spec.manufacturer.kind != "NetBoxManufacturer" {
+            return Err(ControllerError::InvalidConfig(
+                format!("Invalid kind '{}' for manufacturer reference in device type {}, expected 'NetBoxManufacturer'", device_type_crd.spec.manufacturer.kind, name)
+            ));
+        } else {
+            match self.netbox_manufacturer_api.get(&device_type_crd.spec.manufacturer.name).await {
+                Ok(manufacturer_crd) => {
+                    manufacturer_crd.status
+                        .as_ref()
+                        .and_then(|s| s.netbox_id)
+                        .ok_or_else(|| ControllerError::InvalidConfig(
+                            format!("Manufacturer '{}' has not been created in NetBox yet (no netbox_id in status)", device_type_crd.spec.manufacturer.name)
+                        ))?
                 }
-            }
-            Err(_) => {
-                let error_msg = format!("Manufacturer CRD '{}' not found", device_type_crd.spec.manufacturer.name);
-                error!("{}", error_msg);
-                return Err(ControllerError::InvalidConfig(error_msg));
+                Err(_) => {
+                    return Err(ControllerError::InvalidConfig(
+                        format!("Manufacturer CRD '{}' not found for device type {}", device_type_crd.spec.manufacturer.name, name)
+                    ));
+                }
             }
         };
         
         // Check if already created - use helper for drift detection
-        // Note: DeviceType requires manufacturer_id to query, so we check after resolving it
         let netbox_device_type = if let Some(status) = &device_type_crd.status {
             if status.state == ResourceState::Created && status.netbox_id.is_some() {
                 if let Some(netbox_id) = status.netbox_id {
-                    // Query by manufacturer and model, then check if ID matches
-                    match self.netbox_client.get_device_type_by_model(
-                        manufacturer_id,
-                        &device_type_crd.spec.model,
+                    match reconcile_helpers::check_existing(
+                        &netbox_client,
+                        netbox_id,
+                        &format!("NetBoxDeviceType {}/{}", namespace, name),
+                        async {
+                            let id_str = netbox_id.to_string();
+                            netbox_client.query_device_types(&[("id", &id_str)], false)
+                                .await
+                                .and_then(|mut device_types| {
+                                    device_types.pop().ok_or_else(|| netbox_client::NetBoxError::NotFound(format!("DeviceType {} not found", netbox_id)))
+                                })
+                        },
                     ).await {
-                        Ok(Some(dt)) if dt.id == netbox_id => {
-                            // Resource exists and matches ID
-                            Some(dt)
-                        }
-                        _ => {
-                            // Resource not found or ID mismatch - drift detected
+                        Ok(Some(resource)) => Some(resource),
+                        Ok(None) => {
                             warn!("NetBoxDeviceType {}/{} was deleted in NetBox (ID: {}), clearing status and will recreate", namespace, name, netbox_id);
                             let status_patch = Self::create_resource_status_patch(
-                                0, // Clear netbox_id
-                                String::new(), // Clear URL
-                                ResourceState::Pending,
+                                0, String::new(), ResourceState::Pending,
                                 Some("Resource was deleted in NetBox, will recreate".to_string()),
                             );
                             let pp = kube::api::PatchParams::default();
@@ -76,24 +76,22 @@ impl Reconciler {
                             {
                                 warn!("Failed to clear NetBoxDeviceType status after drift detection: {}", e);
                             }
-                            // Fall through to creation
                             None
                         }
+                        Err(e) => return Err(e),
                     }
                 } else {
-                    None // No netbox_id, need to create
+                    None
                 }
             } else {
-                None // Not in Created state, need to create
+                None
             }
         } else {
-            None // No status, need to create
+            None
         };
         
-        // Handle existing device type (from helper) or create new
         let netbox_device_type = match netbox_device_type {
             Some(device_type) => {
-                // Resource exists and is up-to-date - only update status if it changed
                 use crate::reconcile_helpers::status_needs_update;
                 let needs_status_update = status_needs_update(
                     device_type_crd.status.as_ref(),
@@ -120,8 +118,7 @@ impl Reconciler {
                             return Ok(());
                         }
                         Err(e) => {
-                            let error_msg = format!("Failed to update NetBoxDeviceType status: {}", e);
-                            error!("{}", error_msg);
+                            error!("Failed to update NetBoxDeviceType status: {}", e);
                             return Err(ControllerError::Kube(e.into()));
                         }
                     }
@@ -131,25 +128,32 @@ impl Reconciler {
                 }
             }
             None => {
-                // Need to create device type - try to find existing by manufacturer and model (idempotency fallback)
-                let existing_device_type = match self.netbox_client.get_device_type_by_model(
-                    manufacturer_id,
-                    &device_type_crd.spec.model,
-                ).await {
-                    Ok(Some(dt)) => Some(dt),
+                // Try to find existing by model and manufacturer
+                let existing_device_type = match netbox_client.get_device_type_by_model(manufacturer_id, &device_type_crd.spec.model).await {
+                    Ok(Some(dt)) => {
+                        info!("DeviceType {} (manufacturer ID: {}) already exists in NetBox (ID: {}), acknowledging existence (idempotency)", device_type_crd.spec.model, manufacturer_id, dt.id);
+                        Some(dt)
+                    }
                     Ok(None) => None,
-                    Err(_) => None
+                    Err(e) => {
+                        warn!("Failed to query device type by model: {}, will try to create", e);
+                        None
+                    }
                 };
                 
                 if let Some(existing) = existing_device_type {
-                    info!("Device type {} already exists in NetBox (ID: {})", device_type_crd.spec.model, existing.id);
                     existing
                 } else {
-                    match self.netbox_client.create_device_type(
+                    info!("Creating device type {} in NetBox", device_type_crd.spec.model);
+                    match netbox_client.create_device_type(
                         manufacturer_id,
                         &device_type_crd.spec.model,
                         device_type_crd.spec.slug.as_deref(),
-                        device_type_crd.spec.description.as_deref(),
+                        device_type_crd.spec.part_number.as_deref(),
+                        Some(device_type_crd.spec.u_height),
+                        Some(device_type_crd.spec.is_full_depth),
+                        device_type_crd.spec.description.clone(),
+                        device_type_crd.spec.comments.clone(),
                     ).await {
                         Ok(created) => {
                             info!("Created device type {} in NetBox (ID: {})", created.model, created.id);
@@ -158,14 +162,13 @@ impl Reconciler {
                         Err(e) => {
                             let error_msg = format!("Failed to create device type in NetBox: {}", e);
                             error!("{}", error_msg);
-                            return Err(ControllerError::NetBox(netbox_client::NetBoxError::Api(error_msg)));
+                            return Err(ControllerError::NetBox(e));
                         }
                     }
                 }
             }
         };
         
-        // Update status (use lowercase state to match CRD validation schema)
         let status_patch = Self::create_resource_status_patch(
             netbox_device_type.id,
             netbox_device_type.url.clone(),

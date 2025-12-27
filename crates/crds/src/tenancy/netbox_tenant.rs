@@ -5,7 +5,7 @@
 use kube::CustomResource;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use crate::references::NetBoxResourceReference;
+use crate::references::{NetBoxResourceReference, SecretReference};
 
 /// NetBoxTenantSpec defines the desired state of a NetBox tenant
 #[derive(CustomResource, Debug, Clone, Serialize, Deserialize, JsonSchema)]
@@ -36,6 +36,13 @@ pub struct NetBoxTenantSpec {
     /// Tenant group reference (references NetBoxTenantGroup CRD, optional)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub group: Option<NetBoxResourceReference>,
+    
+    /// Secret reference containing the NetBox API token for this tenant
+    /// 
+    /// The Secret must contain a key (defaults to "token") with the NetBox API token.
+    /// If namespace is not specified, the Secret is expected to be in the same namespace
+    /// as the Tenant CRD.
+    pub token_secret: SecretReference,
 }
 
 /// NetBoxTenantStatus defines the observed state of a NetBox tenant

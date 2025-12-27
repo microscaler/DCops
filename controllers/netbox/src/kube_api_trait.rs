@@ -21,9 +21,10 @@
 #[cfg(test)]
 pub mod mock;
 
-use crate::error::ControllerError;
 use kube::api::{ListParams, Patch, PatchParams};
 use kube::Resource;
+use serde::de::DeserializeOwned;
+use std::fmt::Debug;
 
 /// Trait for Kubernetes API operations
 ///
@@ -32,7 +33,7 @@ use kube::Resource;
 #[async_trait::async_trait]
 pub trait KubeApiTrait<T>: Send + Sync
 where
-    T: Resource + Clone + Send + Sync + 'static,
+    T: Resource + Clone + Send + Sync + Debug + DeserializeOwned + 'static,
     <T as Resource>::DynamicType: Send + Sync,
 {
     /// Get a resource by name
@@ -70,7 +71,7 @@ pub struct KubeApiWrapper<T> {
 
 impl<T> KubeApiWrapper<T>
 where
-    T: Resource + Clone + Send + Sync + 'static,
+    T: Resource + Clone + Send + Sync + Debug + DeserializeOwned + 'static,
     <T as Resource>::DynamicType: Send + Sync,
 {
     /// Create a new wrapper from a `kube::Api<T>`
@@ -87,7 +88,7 @@ where
 #[async_trait::async_trait]
 impl<T> KubeApiTrait<T> for KubeApiWrapper<T>
 where
-    T: Resource + Clone + Send + Sync + 'static,
+    T: Resource + Clone + Send + Sync + Debug + DeserializeOwned + 'static,
     <T as Resource>::DynamicType: Send + Sync,
 {
     async fn get(&self, name: &str) -> Result<T, kube::Error> {

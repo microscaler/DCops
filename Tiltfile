@@ -87,6 +87,29 @@ local_resource(
 )
 
 # ====================
+# NetBox Tenant Setup
+# ====================
+# Automatically setup NetBox tenant, user, and API token
+# This resource:
+# 1. Waits for NetBox to be ready
+# 2. Creates tenant in NetBox (or uses existing)
+# 3. Creates API token for admin user (or uses existing)
+# 4. Creates Kubernetes Secret that Tenant CRDs can reference
+# Note: The secret name must match the tokenSecret.name in the Tenant CRD
+local_resource(
+    'setup-netbox-tenant',
+    # Setup tenant, user, and token for datacenter-tenant
+    cmd='python3 scripts/setup_netbox_tenant.py --tenant-name datacenter-tenant --secret-name netbox-token-datacenter-tenant --namespace default 2>&1 || echo "⚠️  Tenant setup failed. Check NetBox logs and ensure admin credentials are correct."',
+    deps=[
+        'scripts/setup_netbox_tenant.py',
+    ],
+    resource_deps=['netbox', 'postgres'],  # Wait for NetBox and PostgreSQL to be ready
+    labels=['infrastructure'],
+    allow_parallel=False,
+    # Runs when script changes or NetBox/PostgreSQL becomes ready
+)
+
+# ====================
 # CRD Generation
 # ====================
 # Generate and apply CRDs when CRD code changes
@@ -101,7 +124,7 @@ local_resource(
         'Cargo.lock',
         'scripts/generate_crds.py',
     ],
-    resource_deps=['manage-netbox-token'],  # Ensure token is set before controllers start
+    resource_deps=['manage-netbox-token', 'setup-netbox-tenant'],  # Ensure tokens are set before controllers start
     labels=['infrastructure'],
     allow_parallel=True,
 )
@@ -202,7 +225,8 @@ k8s_resource(
 # - After controller becomes ready (via resource_deps)
 local_resource(
     'verify-netbox-crs',
-    cmd='python3 scripts/verify_netbox_crs.py --all 2>&1 || echo "⚠️  Some CRs failed verification. Check controller logs and CR status."',
+    # Script exits with code 1 on failures - don't mask it with || echo
+    cmd='python3 scripts/verify_netbox_crs.py --all',
     deps=[
         'scripts/verify_netbox_crs.py',
     ],

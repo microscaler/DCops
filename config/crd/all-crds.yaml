@@ -352,8 +352,9 @@ spec:
                 nullable: true
                 type: array
               tenant:
-                description: Tenant reference (references NetBoxTenant CRD)
-                nullable: true
+                description: |-
+                  Tenant reference (references NetBoxTenant CRD, required)
+                  Tenant is required in NetBox for proper resource organization and access control
                 properties:
                   apiGroup:
                     description: API group of the referenced resource (e.g., "dcops.microscaler.io")
@@ -397,6 +398,7 @@ spec:
                 type: object
             required:
             - prefix
+            - tenant
             type: object
           status:
             description: NetBoxPrefixStatus defines the observed state of a NetBox prefix
@@ -501,8 +503,31 @@ spec:
                 description: Tenant slug (optional, auto-generated from name if not provided)
                 nullable: true
                 type: string
+              tokenSecret:
+                description: |-
+                  Secret reference containing the NetBox API token for this tenant
+
+                  The Secret must contain a key (defaults to "token") with the NetBox API token.
+                  If namespace is not specified, the Secret is expected to be in the same namespace
+                  as the Tenant CRD.
+                properties:
+                  key:
+                    description: Key within the Secret data (optional, defaults to "token")
+                    nullable: true
+                    type: string
+                  name:
+                    description: Name of the Kubernetes Secret
+                    type: string
+                  namespace:
+                    description: Namespace of the Secret (optional, defaults to the namespace of the referencing resource)
+                    nullable: true
+                    type: string
+                required:
+                - name
+                type: object
             required:
             - name
+            - tokenSecret
             type: object
           status:
             description: NetBoxTenantStatus defines the observed state of a NetBox tenant
@@ -778,11 +803,17 @@ spec:
                 description: Description of the location
                 nullable: true
                 type: string
+              facility:
+                description: Facility identifier (optional but recommended for data center locations)
+                nullable: true
+                type: string
               name:
                 description: Location name
                 type: string
               parent:
-                description: Parent location reference (references NetBoxLocation CRD for nested locations)
+                description: |-
+                  Parent location reference (references NetBoxLocation CRD for nested locations)
+                  If not provided, this is a top-level location (parent will be null in NetBox)
                 nullable: true
                 properties:
                   apiGroup:
@@ -804,7 +835,7 @@ spec:
                 - name
                 type: object
               site:
-                description: Site reference (references NetBoxSite CRD)
+                description: Site reference (references NetBoxSite CRD, required)
                 properties:
                   apiGroup:
                     description: API group of the referenced resource (e.g., "dcops.microscaler.io")
@@ -828,9 +859,33 @@ spec:
                 description: Location slug (optional, auto-generated from name if not provided)
                 nullable: true
                 type: string
+              tenant:
+                description: |-
+                  Tenant reference (references NetBoxTenant CRD, required)
+                  Tenant is required in NetBox for proper resource organization and access control
+                properties:
+                  apiGroup:
+                    description: API group of the referenced resource (e.g., "dcops.microscaler.io")
+                    type: string
+                  kind:
+                    description: Kind of the referenced resource (e.g., "NetBoxSite", "NetBoxTenant")
+                    type: string
+                  name:
+                    description: Name of the referenced NetBox CRD resource
+                    type: string
+                  namespace:
+                    description: Namespace of the referenced resource (defaults to same namespace as the referencing resource)
+                    nullable: true
+                    type: string
+                required:
+                - apiGroup
+                - kind
+                - name
+                type: object
             required:
             - name
             - site
+            - tenant
             type: object
           status:
             description: NetBoxLocationStatus defines the observed state of a NetBox location
@@ -989,8 +1044,9 @@ spec:
                 - staging
                 type: string
               tenant:
-                description: Tenant reference (references NetBoxTenant CRD)
-                nullable: true
+                description: |-
+                  Tenant reference (references NetBoxTenant CRD, required)
+                  Tenant is required in NetBox for proper resource organization and access control
                 properties:
                   apiGroup:
                     description: API group of the referenced resource (e.g., "dcops.microscaler.io")
@@ -1016,6 +1072,7 @@ spec:
                 type: string
             required:
             - name
+            - tenant
             type: object
           status:
             description: NetBoxSiteStatus defines the observed state of a NetBox site
@@ -1436,8 +1493,9 @@ spec:
                 - deprecated
                 type: string
               tenant:
-                description: Tenant reference (references NetBoxTenant CRD, optional)
-                nullable: true
+                description: |-
+                  Tenant reference (references NetBoxTenant CRD, required)
+                  Tenant is required in NetBox for proper resource organization and access control
                 properties:
                   apiGroup:
                     description: API group of the referenced resource (e.g., "dcops.microscaler.io")
@@ -1465,6 +1523,7 @@ spec:
                 type: integer
             required:
             - name
+            - tenant
             - vid
             type: object
           status:
@@ -2316,8 +2375,9 @@ spec:
                 - decommissioning
                 type: string
               tenant:
-                description: Tenant reference (references NetBoxTenant CRD, optional)
-                nullable: true
+                description: |-
+                  Tenant reference (references NetBoxTenant CRD, required)
+                  Tenant is required in NetBox for proper resource organization and access control
                 properties:
                   apiGroup:
                     description: API group of the referenced resource (e.g., "dcops.microscaler.io")
@@ -2341,6 +2401,7 @@ spec:
             - deviceRole
             - deviceType
             - site
+            - tenant
             type: object
           status:
             description: NetBoxDeviceStatus defines the observed state of a NetBox device

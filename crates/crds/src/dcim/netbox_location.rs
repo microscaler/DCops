@@ -25,12 +25,21 @@ pub struct NetBoxLocationSpec {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub slug: Option<String>,
     
-    /// Site reference (references NetBoxSite CRD)
+    /// Site reference (references NetBoxSite CRD, required)
     pub site: NetBoxResourceReference,
     
+    /// Tenant reference (references NetBoxTenant CRD, required)
+    /// Tenant is required in NetBox for proper resource organization and access control
+    pub tenant: NetBoxResourceReference,
+    
     /// Parent location reference (references NetBoxLocation CRD for nested locations)
+    /// If not provided, this is a top-level location (parent will be null in NetBox)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub parent: Option<NetBoxResourceReference>,
+    
+    /// Facility identifier (optional but recommended for data center locations)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub facility: Option<String>,
     
     /// Description of the location
     #[serde(skip_serializing_if = "Option::is_none")]

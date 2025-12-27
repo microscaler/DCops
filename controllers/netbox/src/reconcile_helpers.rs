@@ -77,6 +77,10 @@ impl NetBoxResource for netbox_client::Vlan {
     fn id(&self) -> u64 { self.id }
     fn url(&self) -> &str { &self.url }
 }
+impl NetBoxResource for netbox_client::MACAddress {
+    fn id(&self) -> u64 { self.id }
+    fn url(&self) -> &str { &self.url }
+}
 
 /// Generic drift detection and update pattern
 /// 

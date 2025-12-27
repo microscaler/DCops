@@ -32,9 +32,9 @@ pub struct NetBoxVLANSpec {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub group: Option<NetBoxResourceReference>,
     
-    /// Tenant reference (references NetBoxTenant CRD, optional)
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub tenant: Option<NetBoxResourceReference>,
+    /// Tenant reference (references NetBoxTenant CRD, required)
+    /// Tenant is required in NetBox for proper resource organization and access control
+    pub tenant: NetBoxResourceReference,
     
     /// Role reference (references NetBoxRole CRD, optional)
     #[serde(skip_serializing_if = "Option::is_none")]

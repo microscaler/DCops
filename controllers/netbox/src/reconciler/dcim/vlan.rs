@@ -5,13 +5,21 @@ use crate::error::ControllerError;
 use crate::reconcile_helpers;
 use tracing::{info, error, debug, warn};
 use crds::{NetBoxVLAN, ResourceState};
+use netbox_client::NetBoxClientTrait;
 
 impl Reconciler {
     pub async fn reconcile_netbox_vlan(&self, vlan_crd: &NetBoxVLAN) -> Result<(), ControllerError> {
+        // Extract namespace and tenant reference
+        let namespace = vlan_crd.metadata.namespace.as_deref().unwrap_or("default");
+        let tenant_ref = &vlan_crd.spec.tenant;
+        
+        // SINGLE POINT: Get tenant-specific client
+        let netbox_client = self.token_resolver
+            .create_client_for_tenant(namespace, tenant_ref)
+            .await?;
+        
         let name = vlan_crd.metadata.name.as_ref()
             .ok_or_else(|| ControllerError::InvalidConfig("NetBoxVLAN missing name".to_string()))?;
-        let namespace = vlan_crd.metadata.namespace.as_deref()
-            .unwrap_or("default");
         
         info!("Reconciling NetBoxVLAN {}/{}", namespace, name);
         
@@ -21,10 +29,10 @@ impl Reconciler {
                 if let Some(netbox_id) = status.netbox_id {
                     // Use simple helper function for drift detection (no update logic)
                     match reconcile_helpers::check_existing(
-                        self.netbox_client.as_ref(),
+                        &netbox_client,
                         netbox_id,
                         &format!("NetBoxVLAN {}/{}", namespace, name),
-                        self.netbox_client.get_vlan(netbox_id),
+                        netbox_client.get_vlan(netbox_id),
                     ).await {
                         Ok(Some(resource)) => {
                             // Resource exists and is up-to-date
@@ -125,27 +133,30 @@ impl Reconciler {
                     None
                 };
                 
-                // Resolve tenant ID if tenant reference provided
-                let tenant_id = if let Some(tenant_ref) = &vlan_crd.spec.tenant {
-                    if tenant_ref.kind != "NetBoxTenant" {
-                        warn!("Invalid kind '{}' for tenant reference in VLAN {}, expected 'NetBoxTenant'", tenant_ref.kind, name);
-                        None
-                    } else {
-                        match self.netbox_tenant_api.get(&tenant_ref.name).await {
-                            Ok(tenant_crd) => {
-                                tenant_crd.status
-                                    .as_ref()
-                                    .and_then(|s| s.netbox_id)
-                            }
-                            Err(_) => None
-                        }
+                // Resolve tenant ID (required)
+                if vlan_crd.spec.tenant.kind != "NetBoxTenant" {
+                    return Err(ControllerError::InvalidConfig(
+                        format!("Invalid kind '{}' for tenant reference in VLAN {}, expected 'NetBoxTenant'", vlan_crd.spec.tenant.kind, name)
+                    ));
+                }
+                let tenant_id = match self.netbox_tenant_api.get(&vlan_crd.spec.tenant.name).await {
+                    Ok(tenant_crd) => {
+                        tenant_crd.status
+                            .as_ref()
+                            .and_then(|s| s.netbox_id)
+                            .ok_or_else(|| ControllerError::InvalidConfig(
+                                format!("Tenant '{}' has not been created in NetBox yet (no netbox_id in status)", vlan_crd.spec.tenant.name)
+                            ))?
                     }
-                } else {
-                    None
+                    Err(_) => {
+                        return Err(ControllerError::InvalidConfig(
+                            format!("Tenant CRD '{}' not found for VLAN {}", vlan_crd.spec.tenant.name, name)
+                        ));
+                    }
                 };
                 
                 // Resolve role ID if role reference provided
-                let role_id = if let Some(role_ref) = &vlan_crd.spec.role {
+                let _role_id = if let Some(role_ref) = &vlan_crd.spec.role {
                     if role_ref.kind != "NetBoxRole" {
                         warn!("Invalid kind '{}' for role reference in VLAN {}, expected 'NetBoxRole'", role_ref.kind, name);
                         None
@@ -171,7 +182,7 @@ impl Reconciler {
                 };
                 
                 // Try to find existing VLAN by VID
-                let existing_vlan = match self.netbox_client.query_vlans(
+                let existing_vlan = match netbox_client.query_vlans(
                     &[("vid", &vlan_crd.spec.vid.to_string())],
                     false,
                 ).await {
@@ -186,12 +197,16 @@ impl Reconciler {
                     let site_id_value = site_id.ok_or_else(|| {
                         ControllerError::InvalidConfig("Site ID is required for VLAN".to_string())
                     })?;
-                    match self.netbox_client.create_vlan(
-                        site_id_value,
-                        vlan_crd.spec.vid as u32,
+                    match netbox_client.create_vlan(
+                        vlan_crd.spec.vid,
                         &vlan_crd.spec.name,
-                        status_str,
-                        vlan_crd.spec.description.as_deref(),
+                        Some(site_id_value),
+                        None, // group_id
+                        Some(tenant_id),
+                        None, // role_id
+                        status_str, // status_str is already Option<&str>
+                        vlan_crd.spec.description.clone(),
+                        None, // comments
                     ).await {
                         Ok(created) => {
                             info!("Created VLAN {} ({}) in NetBox (ID: {})", created.vid, created.name, created.id);

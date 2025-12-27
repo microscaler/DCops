@@ -57,5 +57,9 @@ pub enum ControllerError {
     /// Resource watch failed
     #[error("Resource watch failed: {0}")]
     Watch(String),
+    
+    /// Token resolution failed
+    #[error("Token resolution failed: {0}")]
+    TokenResolution(#[from] crate::token_resolver::TokenResolutionError),
 }
 

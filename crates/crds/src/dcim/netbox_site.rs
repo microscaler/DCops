@@ -45,9 +45,9 @@ pub struct NetBoxSiteSpec {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub longitude: Option<f64>,
     
-    /// Tenant reference (references NetBoxTenant CRD)
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub tenant: Option<NetBoxResourceReference>,
+    /// Tenant reference (references NetBoxTenant CRD, required)
+    /// Tenant is required in NetBox for proper resource organization and access control
+    pub tenant: NetBoxResourceReference,
     
     /// Region reference (references NetBoxRegion CRD, optional)
     #[serde(skip_serializing_if = "Option::is_none")]

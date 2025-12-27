@@ -2,84 +2,87 @@
 
 use super::super::Reconciler;
 use crate::error::ControllerError;
+use crate::reconcile_helpers;
+use crate::kube_api_trait::KubeApiTrait;
 use tracing::{info, error, debug, warn};
-use crds::{NetBoxDeviceRole, ResourceState};
+use crds::{NetBoxDeviceRole, NetBoxDeviceRoleStatus, ResourceState};
+use netbox_client::NetBoxClientTrait;
 
 impl Reconciler {
-    pub async fn reconcile_netbox_device_role(&self, role_crd: &NetBoxDeviceRole) -> Result<(), ControllerError> {
-        let name = role_crd.metadata.name.as_ref()
+    pub async fn reconcile_netbox_device_role(&self, device_role_crd: &NetBoxDeviceRole) -> Result<(), ControllerError> {
+        let name = device_role_crd.metadata.name.as_ref()
             .ok_or_else(|| ControllerError::InvalidConfig("NetBoxDeviceRole missing name".to_string()))?;
-        let namespace = role_crd.metadata.namespace.as_deref()
+        let namespace = device_role_crd.metadata.namespace.as_deref()
             .unwrap_or("default");
         
         info!("Reconciling NetBoxDeviceRole {}/{}", namespace, name);
         
+        // Get client for shared resource (finds tenant from referencing Devices)
+        let netbox_client = self.token_resolver
+            .create_client_for_shared_resource(namespace, "NetBoxDeviceRole", name)
+            .await
+            .map_err(|e| ControllerError::TokenResolution(e))?;
+        
         // Check if already created - use helper for drift detection
-        let netbox_role = if let Some(status) = &role_crd.status {
+        let netbox_device_role = if let Some(status) = &device_role_crd.status {
             if status.state == ResourceState::Created && status.netbox_id.is_some() {
                 if let Some(netbox_id) = status.netbox_id {
-                    // Use simple helper function for drift detection (no update logic)
-                    // Note: DeviceRole doesn't have get_device_role(id), so we query by name and check ID
-                    match self.netbox_client.query_device_roles(
-                        &[("name", &role_crd.spec.name)],
-                        false,
+                    match reconcile_helpers::check_existing(
+                        &netbox_client,
+                        netbox_id,
+                        &format!("NetBoxDeviceRole {}/{}", namespace, name),
+                        async {
+                            let id_str = netbox_id.to_string();
+                            netbox_client.query_device_roles(&[("id", &id_str)], false)
+                                .await
+                                .and_then(|mut device_roles| {
+                                    device_roles.pop().ok_or_else(|| netbox_client::NetBoxError::NotFound(format!("DeviceRole {} not found", netbox_id)))
+                                })
+                        },
                     ).await {
-                        Ok(roles) => {
-                            if let Some(found) = roles.iter().find(|r| r.id == netbox_id) {
-                                // Resource exists and matches ID
-                                Some(found.clone())
-                            } else {
-                                // Resource not found or ID mismatch - drift detected
-                                warn!("NetBoxDeviceRole {}/{} was deleted in NetBox (ID: {}), clearing status and will recreate", namespace, name, netbox_id);
-                                let status_patch = Self::create_resource_status_patch(
-                                    0, // Clear netbox_id
-                                    String::new(), // Clear URL
-                                    ResourceState::Pending,
-                                    Some("Resource was deleted in NetBox, will recreate".to_string()),
-                                );
-                                let pp = kube::api::PatchParams::default();
-                                if let Err(e) = self.netbox_device_role_api
-                                    .patch_status(name, &pp, &kube::api::Patch::Merge(status_patch.clone()))
-                                    .await
-                                {
-                                    warn!("Failed to clear NetBoxDeviceRole status after drift detection: {}", e);
-                                }
-                                // Fall through to creation
-                                None
+                        Ok(Some(resource)) => Some(resource),
+                        Ok(None) => {
+                            warn!("NetBoxDeviceRole {}/{} was deleted in NetBox (ID: {}), clearing status and will recreate", namespace, name, netbox_id);
+                            let status_patch = Self::create_resource_status_patch(
+                                0, String::new(), ResourceState::Pending,
+                                Some("Resource was deleted in NetBox, will recreate".to_string()),
+                            );
+                            let pp = kube::api::PatchParams::default();
+                            if let Err(e) = self.netbox_device_role_api
+                                .patch_status(name, &pp, &kube::api::Patch::Merge(status_patch.clone()))
+                                .await
+                            {
+                                warn!("Failed to clear NetBoxDeviceRole status after drift detection: {}", e);
                             }
+                            None
                         }
-                        Err(e) => {
-                            // Query error - return to retry
-                            return Err(ControllerError::NetBox(e));
-                        }
+                        Err(e) => return Err(e),
                     }
                 } else {
-                    None // No netbox_id, need to create
+                    None
                 }
             } else {
-                None // Not in Created state, need to create
+                None
             }
         } else {
-            None // No status, need to create
+            None
         };
         
-        // Handle existing role (from helper) or create new
-        let netbox_role = match netbox_role {
-            Some(role) => {
-                // Resource exists and is up-to-date - only update status if it changed
+        let netbox_device_role = match netbox_device_role {
+            Some(device_role) => {
                 use crate::reconcile_helpers::status_needs_update;
                 let needs_status_update = status_needs_update(
-                    role_crd.status.as_ref(),
-                    role.id,
-                    &role.url,
+                    device_role_crd.status.as_ref(),
+                    device_role.id,
+                    &device_role.url,
                     "Created",
                     None,
                 );
                 
                 if needs_status_update {
                     let status_patch = Self::create_resource_status_patch(
-                        role.id,
-                        role.url.clone(),
+                        device_role.id,
+                        device_role.url.clone(),
                         ResourceState::Created,
                         None,
                     );
@@ -89,41 +92,43 @@ impl Reconciler {
                         .await
                     {
                         Ok(_) => {
-                            debug!("Updated NetBoxDeviceRole {}/{} status: NetBox ID {}", namespace, name, role.id);
+                            debug!("Updated NetBoxDeviceRole {}/{} status: NetBox ID {}", namespace, name, device_role.id);
                             return Ok(());
                         }
                         Err(e) => {
-                            let error_msg = format!("Failed to update NetBoxDeviceRole status: {}", e);
-                            error!("{}", error_msg);
+                            error!("Failed to update NetBoxDeviceRole status: {}", e);
                             return Err(ControllerError::Kube(e.into()));
                         }
                     }
                 } else {
-                    debug!("NetBoxDeviceRole {}/{} already has correct status (ID: {}), skipping update", namespace, name, role.id);
+                    debug!("NetBoxDeviceRole {}/{} already has correct status (ID: {}), skipping update", namespace, name, device_role.id);
                     return Ok(());
                 }
             }
             None => {
-                // Need to create device role - try to find existing by name (idempotency fallback)
-                // Try to find existing device role by name
-                let existing_role = match self.netbox_client.query_device_roles(
-                    &[("name", &role_crd.spec.name)],
-                    false,
-                ).await {
-                    Ok(roles) => roles.first().cloned(),
-                    Err(_) => None
+                let existing_device_role = match netbox_client.get_device_role_by_name(&device_role_crd.spec.name).await {
+                    Ok(Some(dr)) => {
+                        info!("DeviceRole {} already exists in NetBox (ID: {}), acknowledging existence (idempotency)", device_role_crd.spec.name, dr.id);
+                        Some(dr)
+                    }
+                    Ok(None) => None,
+                    Err(e) => {
+                        warn!("Failed to query device role by name: {}, will try to create", e);
+                        None
+                    }
                 };
                 
-                let netbox_role = if let Some(existing) = existing_role {
-                    info!("Device role {} already exists in NetBox (ID: {})", role_crd.spec.name, existing.id);
+                if let Some(existing) = existing_device_role {
                     existing
                 } else {
-                    let slug = role_crd.spec.slug.as_deref().map(|s| s.to_string())
-                        .unwrap_or_else(|| role_crd.spec.name.to_lowercase().replace(' ', "-"));
-                    match self.netbox_client.create_device_role(
-                        &role_crd.spec.name,
-                        &slug,
-                        role_crd.spec.description.as_deref(),
+                    info!("Creating device role {} in NetBox", device_role_crd.spec.name);
+                    match netbox_client.create_device_role(
+                        &device_role_crd.spec.name,
+                        device_role_crd.spec.slug.as_deref(),
+                        device_role_crd.spec.color.as_deref(),
+                        Some(device_role_crd.spec.vm_role),
+                        device_role_crd.spec.description.clone(),
+                        device_role_crd.spec.comments.clone(),
                     ).await {
                         Ok(created) => {
                             info!("Created device role {} in NetBox (ID: {})", created.name, created.id);
@@ -132,19 +137,16 @@ impl Reconciler {
                         Err(e) => {
                             let error_msg = format!("Failed to create device role in NetBox: {}", e);
                             error!("{}", error_msg);
-                            return Err(ControllerError::NetBox(netbox_client::NetBoxError::Api(error_msg)));
+                            return Err(ControllerError::NetBox(e));
                         }
                     }
-                };
-                
-                netbox_role
+                }
             }
         };
         
-        // Update status (use lowercase state to match CRD validation schema)
         let status_patch = Self::create_resource_status_patch(
-            netbox_role.id,
-            netbox_role.url.clone(),
+            netbox_device_role.id,
+            netbox_device_role.url.clone(),
             ResourceState::Created,
             None,
         );
@@ -154,7 +156,7 @@ impl Reconciler {
             .await
         {
             Ok(_) => {
-                info!("Updated NetBoxDeviceRole {}/{} status: NetBox ID {}", namespace, name, netbox_role.id);
+                info!("Updated NetBoxDeviceRole {}/{} status: NetBox ID {}", namespace, name, netbox_device_role.id);
                 Ok(())
             }
             Err(e) => {

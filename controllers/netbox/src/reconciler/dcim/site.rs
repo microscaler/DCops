@@ -5,13 +5,13 @@ use crate::error::ControllerError;
 use crate::kube_api_trait::KubeApiTrait;
 use tracing::{info, error, debug, warn};
 use crds::{NetBoxSite, NetBoxSiteStatus, ResourceState};
-use netbox_client;
+use netbox_client::{NetBoxClient, NetBoxClientTrait};
 
 impl Reconciler {
     fn site_needs_update(
         spec: &crds::NetBoxSiteSpec,
         existing: &netbox_client::Site,
-        desired_tenant_id: Option<u64>,
+        desired_tenant_id: u64, // tenant is now required
         desired_region_id: Option<u64>,
         desired_site_group_id: Option<u64>,
         desired_status: &str,
@@ -62,8 +62,8 @@ impl Reconciler {
         
         // Compare tenant
         let existing_tenant_id = existing.tenant.as_ref().map(|t| t.id);
-        if desired_tenant_id != existing_tenant_id {
-            debug!("Site tenant changed: {:?} -> {:?}", existing_tenant_id, desired_tenant_id);
+        if Some(desired_tenant_id) != existing_tenant_id {
+            debug!("Site tenant changed: {:?} -> {}", existing_tenant_id, desired_tenant_id);
             return true;
         }
         
@@ -154,23 +154,33 @@ impl Reconciler {
         
         info!("Reconciling NetBoxSite {}/{}", namespace, name);
         
-        // Resolve tenant ID if tenant reference provided (needed for diffing and creation)
-        let tenant_id = if let Some(tenant_ref) = &site_crd.spec.tenant {
-            if tenant_ref.kind != "NetBoxTenant" {
-                warn!("Invalid kind '{}' for tenant reference in site {}, expected 'NetBoxTenant'", tenant_ref.kind, name);
-                None
-            } else {
-                match self.netbox_tenant_api.get(&tenant_ref.name).await {
-                    Ok(tenant_crd) => {
-                        tenant_crd.status
-                            .as_ref()
-                            .and_then(|s| s.netbox_id)
-                    }
-                    Err(_) => None
-                }
+        // Validate tenant reference
+        if site_crd.spec.tenant.kind != "NetBoxTenant" {
+            return Err(ControllerError::InvalidConfig(
+                format!("Invalid kind '{}' for tenant reference in site {}, expected 'NetBoxTenant'", site_crd.spec.tenant.kind, name)
+            ));
+        }
+        
+        // SINGLE POINT OF DEPENDENCY INJECTION: Get tenant-specific NetBoxClient
+        let netbox_client = self.token_resolver
+            .create_client_for_tenant(namespace, &site_crd.spec.tenant)
+            .await?;
+        
+        // Resolve tenant ID (required)
+        let tenant_id = match self.netbox_tenant_api.get(&site_crd.spec.tenant.name).await {
+            Ok(tenant_crd) => {
+                tenant_crd.status
+                    .as_ref()
+                    .and_then(|s| s.netbox_id)
+                    .ok_or_else(|| ControllerError::InvalidConfig(
+                        format!("Tenant '{}' has not been created in NetBox yet (no netbox_id in status)", site_crd.spec.tenant.name)
+                    ))?
             }
-        } else {
-            None
+            Err(_) => {
+                return Err(ControllerError::InvalidConfig(
+                    format!("Tenant CRD '{}' not found for site {}", site_crd.spec.tenant.name, name)
+                ));
+            }
         };
         
         // Resolve region ID if region reference provided
@@ -232,34 +242,29 @@ impl Reconciler {
                     // Use helper function for drift detection, diffing, and updating
                     // Only pass tenant_id/region_id/site_group_id if they're different from existing
                     // This prevents NetBox validation errors when sending unchanged nested objects
-                    match self.netbox_client.get_site(netbox_id).await {
+                    match netbox_client.get_site(netbox_id).await {
                         Ok(existing_site) => {
                             // Check which nested fields actually changed (independent of other field changes)
                             // This is critical: NetBox 4.0 validates nested objects strictly, so we only
                             // include them in the update if they've actually changed
                             let existing_tenant_id = existing_site.tenant.as_ref().map(|t| t.id);
-                            let existing_region_id = existing_site.region.as_ref().map(|r| r.id);
-                            let existing_site_group_id = existing_site.site_group.as_ref().map(|sg| sg.id);
+                            let _existing_region_id = existing_site.region.as_ref().map(|r| r.id);
+                            let _existing_site_group_id = existing_site.site_group.as_ref().map(|sg| sg.id);
                             
-                            // Only include tenant/region/site_group if they've changed
-                            // If unchanged, we pass None to exclude them from the update body (PATCH semantics)
-                            let update_tenant_id = if tenant_id != existing_tenant_id {
-                                tenant_id // Only include if changed
-                            } else {
-                                None // Don't include if unchanged (avoids NetBox validation errors)
-                            };
+                            // ALWAYS include tenant/region/site_group in PATCH requests
+                            // NetBox 4.0 seems to require these fields to be present even if unchanged
+                            // If we don't include them, NetBox may try to validate them as empty/blank
+                            let update_tenant_id = tenant_id; // Always include if we have a tenant_id
+                            let update_region_id = region_id; // Always include if we have a region_id
+                            let update_site_group_id = site_group_id; // Always include if we have a site_group_id
                             
-                            let update_region_id = if region_id != existing_region_id {
-                                region_id
+                            if Some(tenant_id) != existing_tenant_id {
+                                warn!("Site tenant changed: existing={:?}, desired={}", existing_tenant_id, tenant_id);
                             } else {
-                                None
-                            };
+                                debug!("Site tenant unchanged: {}, but will include in update", tenant_id);
+                            }
                             
-                            let update_site_group_id = if site_group_id != existing_site_group_id {
-                                site_group_id
-                            } else {
-                                None
-                            };
+                            // Note: update_region_id and update_site_group_id are now set above
                             
                             // Check if any field (including nested) changed
                             if Self::site_needs_update(
@@ -271,18 +276,22 @@ impl Reconciler {
                                 &status_str,
                             ) {
                                 // Update the site with only changed fields
-                                match self.netbox_client.update_site(
+                                match netbox_client.update_site(
                                     netbox_id,
                                     Some(&site_crd.spec.name),
                                     site_crd.spec.slug.as_deref(),
+                                    site_crd.spec.description.clone(),
+                                    site_crd.spec.physical_address.clone(),
+                                    site_crd.spec.shipping_address.clone(),
+                                    site_crd.spec.latitude,
+                                    site_crd.spec.longitude,
+                                    Some(update_tenant_id), // tenant is now required
+                                    update_region_id,
+                                    update_site_group_id,
                                     Some(status_str),
-                                    update_region_id, // Only include if changed
-                                    update_site_group_id, // Only include if changed
-                                    update_tenant_id, // Only include if changed
-                                    site_crd.spec.facility.as_deref(),
-                                    site_crd.spec.time_zone.as_deref(),
-                                    site_crd.spec.description.as_deref(),
-                                    site_crd.spec.comments.as_deref(),
+                                    site_crd.spec.facility.clone(),
+                                    site_crd.spec.time_zone.clone(),
+                                    site_crd.spec.comments.clone(),
                                 ).await {
                                     Ok(updated_site) => {
                                         // Update successful
@@ -371,7 +380,7 @@ impl Reconciler {
             }
             None => {
                 // Need to create site - try to find existing by name (idempotency fallback)
-                let existing_site = match self.netbox_client.query_sites(
+                let existing_site = match netbox_client.query_sites(
                     &[("name", &site_crd.spec.name)],
                     false,
                 ).await {
@@ -384,17 +393,23 @@ impl Reconciler {
                     existing
                 } else {
                     // Create new site
-                    match self.netbox_client.create_site(
+                    // NOTE: Parameter order matches trait signature:
+                    // name, slug, status, region_id, site_group_id, tenant_id, facility, time_zone, description, comments
+                    match netbox_client.create_site(
                         &site_crd.spec.name,
                         site_crd.spec.slug.as_deref(),
-                        status_str,
+                        site_crd.spec.description.clone(),
+                        site_crd.spec.physical_address.clone(),
+                        site_crd.spec.shipping_address.clone(),
+                        site_crd.spec.latitude,
+                        site_crd.spec.longitude,
+                        Some(tenant_id), // tenant is now required
                         region_id,
                         site_group_id,
-                        tenant_id,
-                        site_crd.spec.facility.as_deref(),
-                        site_crd.spec.time_zone.as_deref(),
-                        site_crd.spec.description.as_deref(),
-                        site_crd.spec.comments.as_deref(),
+                        Some(status_str),
+                        site_crd.spec.facility.clone(),
+                        site_crd.spec.time_zone.clone(),
+                        site_crd.spec.comments.clone(),
                     ).await {
                         Ok(created) => {
                             info!("Created site {} in NetBox (ID: {})", created.name, created.id);

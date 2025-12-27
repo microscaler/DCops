@@ -5,7 +5,7 @@ use crate::error::ControllerError;
 use crate::kube_api_trait::KubeApiTrait;
 use tracing::{info, error, debug, warn};
 use crds::{IPClaim, IPClaimStatus, AllocationState};
-use netbox_client::{AllocateIPRequest, IPAddressStatus};
+use netbox_client::{AllocateIPRequest, IPAddressStatus, NetBoxClientTrait};
 
 impl Reconciler {
     pub async fn reconcile_ip_claim(&self, claim: &IPClaim) -> Result<(), ControllerError> {
@@ -106,8 +106,26 @@ impl Reconciler {
             self.resolve_prefix_id_from_pool_spec(&pool.spec.netbox_prefix_ref, pool_namespace, name, namespace, &resource_key).await?
         };
         
+        // Get prefix CRD to extract tenant reference
+        let prefix_ref = &pool.spec.netbox_prefix_ref;
+        let prefix_crd_name = &prefix_ref.name;
+        let prefix_crd_namespace = prefix_ref.namespace.as_deref().unwrap_or(pool_namespace);
+        let prefix_crd = self.netbox_prefix_api.get(prefix_crd_name).await
+            .map_err(|e| {
+                let error_msg = format!("Failed to get NetBoxPrefix CRD {}/{}: {}", prefix_crd_namespace, prefix_crd_name, e);
+                ControllerError::PrefixNotFound(error_msg)
+            })?;
+        
+        // Get tenant from the referenced prefix CRD
+        let tenant_ref = &prefix_crd.spec.tenant;
+        
+        // SINGLE POINT: Get tenant-specific client
+        let netbox_client = self.token_resolver
+            .create_client_for_tenant(prefix_crd_namespace, tenant_ref)
+            .await?;
+        
         // Verify prefix exists in NetBox
-        let _prefix = match self.netbox_client.get_prefix(prefix_id).await {
+        let _prefix = match netbox_client.get_prefix(prefix_id).await {
             Ok(p) => p,
             Err(e) => {
                 let error_msg = format!("Prefix {} not found in NetBox: {}", prefix_id, e);
@@ -124,7 +142,7 @@ impl Reconciler {
             let tag_names = vec!["managed-by-dcops", "owner-ip-claim-controller"];
             
             for tag_name in tag_names {
-                match self.netbox_client.query_tags(&[("name", tag_name)], false).await {
+                match netbox_client.query_tags(&[("name", tag_name)], false).await {
                     Ok(tags) => {
                         if let Some(tag) = tags.first() {
                             // Use numeric ID (tags always have IDs in NetBox)
@@ -155,7 +173,7 @@ impl Reconciler {
             tags: tag_refs,
         };
         
-        let allocated_ip = match self.netbox_client.allocate_ip(prefix_id, Some(allocation_request)).await {
+        let allocated_ip = match netbox_client.allocate_ip(prefix_id, Some(allocation_request)).await {
             Ok(ip) => ip,
             Err(e) => {
                 // Check if error is "already exists" - if so, try to find it (idempotency)
@@ -166,7 +184,7 @@ impl Reconciler {
                     // Try to find the existing IP address
                     if let Some(preferred_ip) = &claim.spec.preferred_ip {
                         // Query by the preferred IP address
-                        match self.netbox_client.query_ip_addresses(
+                        match netbox_client.query_ip_addresses(
                             &[("address", preferred_ip)],
                             false,
                         ).await {
@@ -215,7 +233,7 @@ impl Reconciler {
                     // If we couldn't find it by preferred IP, try querying all IPs in the prefix
                     // This is a fallback - less efficient but more reliable
                     warn!("Could not find IP by preferred address, querying all IPs in prefix {} (idempotency)", prefix_id);
-                    match self.netbox_client.query_ip_addresses(
+                    match netbox_client.query_ip_addresses(
                         &[("prefix_id", &prefix_id.to_string())],
                         true, // fetch_all
                     ).await {

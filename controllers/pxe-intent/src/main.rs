@@ -10,7 +10,6 @@ mod reconciler;
 mod watcher;
 mod error;
 
-use controller::Controller;
 use anyhow::Result;
 use tracing::info;
 

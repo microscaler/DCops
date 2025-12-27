@@ -4,6 +4,7 @@ use super::super::Reconciler;
 use crate::error::ControllerError;
 use tracing::{info, error, debug};
 use crds::{IPPool, IPPoolStatus};
+use netbox_client::NetBoxClientTrait;
 
 impl Reconciler {
     pub async fn reconcile_ip_pool(&self, pool: &IPPool) -> Result<(), ControllerError> {
@@ -68,8 +69,14 @@ impl Reconciler {
         info!("Resolved NetBoxPrefix CRD {}/{} to NetBox ID {} for IPPool {}", 
             prefix_crd_namespace, prefix_crd_name, prefix_id, name);
         
+        // Get tenant from the NetBoxPrefix CRD to create tenant-specific client
+        let tenant_ref = &prefix_crd.spec.tenant;
+        let netbox_client = self.token_resolver
+            .create_client_for_tenant(prefix_crd_namespace, tenant_ref)
+            .await?;
+        
         // Get prefix from NetBox
-        let prefix = match self.netbox_client.get_prefix(prefix_id).await {
+        let prefix = match netbox_client.get_prefix(prefix_id).await {
             Ok(p) => p,
             Err(netbox_client::NetBoxError::NotFound(_)) => {
                 // Prefix not found - this indicates drift (prefix was deleted in NetBox)
@@ -88,7 +95,7 @@ impl Reconciler {
         };
         
         // Get available IPs
-        let available_ips = match self.netbox_client.get_available_ips(prefix_id, None).await {
+        let available_ips = match netbox_client.get_available_ips(prefix_id, None).await {
             Ok(ips) => ips,
             Err(e) => {
                 let error_msg = format!("Failed to get available IPs: {}", e);
@@ -98,7 +105,7 @@ impl Reconciler {
         };
         
         // Query allocated IPs from this prefix
-        let allocated_ips = match self.netbox_client.query_ip_addresses(
+        let allocated_ips = match netbox_client.query_ip_addresses(
             &[("prefix", &prefix.prefix)],
             true, // fetch all pages
         ).await {
@@ -161,7 +168,7 @@ impl Reconciler {
         });
         
         let pp = PatchParams::default();
-        match self.ip_pool_api
+        match (*self.ip_pool_api)
             .patch_status(name, &pp, &kube::api::Patch::Merge(status_patch.clone()))
             .await
         {

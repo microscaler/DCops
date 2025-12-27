@@ -94,7 +94,7 @@ pub async fn query_ip_addresses(client: &MockNetBoxClient, filters: &[(&str, &st
         Ok(results)
 }
 
-pub async fn query_prefixes(client: &MockNetBoxClient, filters: &[(&str, &str)], _fetch_all: bool) -> Result<Vec<Prefix>, NetBoxError> {
+pub async fn query_prefixes(client: &MockNetBoxClient, _filters: &[(&str, &str)], _fetch_all: bool) -> Result<Vec<Prefix>, NetBoxError> {
         let prefixes = client.prefixes.lock().unwrap();
         Ok(prefixes.values().cloned().collect())
 }
@@ -180,7 +180,7 @@ pub async fn delete_ip_address(client: &MockNetBoxClient, id: u64) -> Result<(),
             .map(|_| ())
 }
 
-pub async fn create_prefix(client: &MockNetBoxClient, prefix: &str, site_id: Option<u64>, tenant_id: Option<u64>, vlan_id: Option<u32>, role_id: Option<u64>, status: Option<&str>, description: Option<&str>, tags: Option<Vec<serde_json::Value>>) -> Result<Prefix, NetBoxError> {
+pub async fn create_prefix(client: &MockNetBoxClient, prefix: &str, description: Option<String>, site_id: Option<u64>, vlan_id: Option<u32>, status: Option<&str>, role_id: Option<u64>, tenant_id: Option<u64>, tags: Option<Vec<String>>) -> Result<Prefix, NetBoxError> {
         let id = client.next_id();
         let status_str = status.unwrap_or("active");
         let prefix_status = match status_str {
@@ -194,13 +194,13 @@ pub async fn create_prefix(client: &MockNetBoxClient, prefix: &str, site_id: Opt
         let tags_vec: Vec<NestedTag> = tags
             .unwrap_or_default()
             .into_iter()
-            .filter_map(|v| v.as_str().map(|s| NestedTag {
+            .map(|s| NestedTag {
                 id: 0,
                 url: format!("{}/api/extras/tags/{}/", client.base_url, 0),
-                display: s.to_string(),
-                name: s.to_string(),
+                display: s.clone(),
+                name: s.clone(),
                 slug: s.to_lowercase().replace(' ', "-"),
-            }))
+            })
             .collect();
         
         let prefix_obj = Prefix {
@@ -216,7 +216,7 @@ pub async fn create_prefix(client: &MockNetBoxClient, prefix: &str, site_id: Opt
             role: role_id.map(|id| client.helpers().create_nested_role(id, None)),
             is_pool: false,
             mark_utilized: false,
-            description: description.map(|s| s.to_string()).unwrap_or_default(),
+            description: description.unwrap_or_default(),
             comments: String::new(),
             tags: tags_vec,
             custom_fields: serde_json::json!({}),
@@ -228,26 +228,32 @@ pub async fn create_prefix(client: &MockNetBoxClient, prefix: &str, site_id: Opt
 
         client.prefixes.lock().unwrap().insert(id, prefix_obj.clone());
         Ok(prefix_obj)
-}
+    }
 
-pub async fn update_prefix(client: &MockNetBoxClient, id: u64, site_id: Option<u64>, tenant_id: Option<u64>, vlan_id: Option<u32>, role_id: Option<u64>, status: Option<&str>, description: Option<&str>, tags: Option<Vec<serde_json::Value>>) -> Result<Prefix, NetBoxError> {
+pub async fn update_prefix(client: &MockNetBoxClient, id: u64, prefix: Option<&str>, description: Option<String>, status: Option<&str>, role: Option<String>, tenant_id: Option<u64>, site_id: Option<u64>, vlan_id: Option<u32>, tags: Option<Vec<String>>) -> Result<Prefix, NetBoxError> {
         let mut prefixes = client.prefixes.lock().unwrap();
-        let prefix = prefixes
+        let prefix_obj = prefixes
             .get_mut(&id)
             .ok_or_else(|| NetBoxError::NotFound(format!("Prefix {} not found", id)))?;
 
-        // Prefix model doesn't have a site field - skip
+        if let Some(prefix_str) = prefix {
+            prefix_obj.prefix = prefix_str.to_string();
+            prefix_obj.display = prefix_str.to_string();
+        }
         if let Some(tenant) = tenant_id {
-            prefix.tenant = Some(client.helpers().create_nested_tenant(tenant, None));
+            prefix_obj.tenant = Some(client.helpers().create_nested_tenant(tenant, None));
         }
         if let Some(vlan) = vlan_id {
-            prefix.vlan = Some(client.helpers().create_nested_vlan(vlan as u64, vlan as u16, None));
+            prefix_obj.vlan = Some(client.helpers().create_nested_vlan(vlan as u64, vlan as u16, None));
         }
-        if let Some(role) = role_id {
-            prefix.role = Some(client.helpers().create_nested_role(role, None));
+        if let Some(role_str) = role {
+            // Parse role string to ID (simplified - in real mock would look up)
+            if let Ok(role_id) = role_str.parse::<u64>() {
+                prefix_obj.role = Some(client.helpers().create_nested_role(role_id, None));
+            }
         }
         if let Some(status_str) = status {
-            prefix.status = match status_str {
+            prefix_obj.status = match status_str {
                 "active" => PrefixStatus::Active,
                 "reserved" => PrefixStatus::Reserved,
                 "deprecated" => PrefixStatus::Deprecated,
@@ -256,22 +262,22 @@ pub async fn update_prefix(client: &MockNetBoxClient, id: u64, site_id: Option<u
             };
         }
         if let Some(desc) = description {
-            prefix.description = desc.to_string();
+            prefix_obj.description = desc;
         }
         if let Some(tags_val) = tags {
-            prefix.tags = tags_val.into_iter()
-                .filter_map(|v| v.as_str().map(|s| NestedTag {
+            prefix_obj.tags = tags_val.into_iter()
+                .map(|s| NestedTag {
                     id: 0,
                     url: format!("{}/api/extras/tags/0/", client.base_url),
-                    display: s.to_string(),
-                    name: s.to_string(),
+                    display: s.clone(),
+                    name: s.clone(),
                     slug: s.to_lowercase().replace(' ', "-"),
-                }))
+                })
                 .collect();
         }
 
-        Ok(prefix.clone())
-}
+        Ok(prefix_obj.clone())
+    }
 
 pub async fn query_aggregates(client: &MockNetBoxClient, _filters: &[(&str, &str)], _fetch_all: bool) -> Result<Vec<Aggregate>, NetBoxError> {
         let aggregates = client.aggregates.lock().unwrap();
@@ -287,23 +293,23 @@ pub async fn get_aggregate(client: &MockNetBoxClient, id: u64) -> Result<Aggrega
             .ok_or_else(|| NetBoxError::NotFound(format!("Aggregate {} not found", id)))
 }
 
-pub async fn create_aggregate(client: &MockNetBoxClient, prefix: &str, rir_id: u64, description: Option<&str>) -> Result<Aggregate, NetBoxError> {
+pub async fn create_aggregate(client: &MockNetBoxClient, prefix: &str, rir_id: Option<u64>, date_allocated: Option<&str>, description: Option<String>, comments: Option<String>) -> Result<Aggregate, NetBoxError> {
         let id = client.next_id();
         let aggregate = Aggregate {
             id,
             url: format!("{}/api/ipam/aggregates/{}/", client.base_url, id),
             display: prefix.to_string(),
             prefix: prefix.to_string(),
-            rir: Some(NestedRir {
-                id: rir_id,
-                url: format!("{}/api/ipam/rirs/{}/", client.base_url, rir_id),
-                display: format!("RIR {}", rir_id),
-                name: format!("RIR {}", rir_id),
-                slug: format!("rir-{}", rir_id),
+            rir: rir_id.map(|id| NestedRir {
+                id,
+                url: format!("{}/api/ipam/rirs/{}/", client.base_url, id),
+                display: format!("RIR {}", id),
+                name: format!("RIR {}", id),
+                slug: format!("rir-{}", id),
             }),
-            date_allocated: None,
-            description: description.map(|s| s.to_string()),
-            comments: None,
+            date_allocated: date_allocated.map(|s| s.to_string()),
+            description,
+            comments,
             tags: vec![],
             created: chrono::Utc::now().to_rfc3339(),
             last_updated: chrono::Utc::now().to_rfc3339(),
@@ -311,7 +317,7 @@ pub async fn create_aggregate(client: &MockNetBoxClient, prefix: &str, rir_id: u
 
         client.aggregates.lock().unwrap().insert(id, aggregate.clone());
         Ok(aggregate)
-}
+    }
 
 pub async fn query_rirs(client: &MockNetBoxClient, _filters: &[(&str, &str)], _fetch_all: bool) -> Result<Vec<Rir>, NetBoxError> {
         let rirs = client.rirs.lock().unwrap();
@@ -322,25 +328,26 @@ pub async fn get_rir_by_name(client: &MockNetBoxClient, name: &str) -> Result<Op
         Ok(client.rirs.lock().unwrap().get(name).cloned())
 }
 
-pub async fn create_rir(client: &MockNetBoxClient, name: &str, slug: &str, description: Option<&str>) -> Result<Rir, NetBoxError> {
+pub async fn create_rir(client: &MockNetBoxClient, name: &str, slug: Option<&str>, description: Option<String>, is_private: Option<bool>) -> Result<Rir, NetBoxError> {
         let id = client.next_id();
+        let slug_value = slug.map(|s| s.to_string()).unwrap_or_else(|| name.to_lowercase().replace(' ', "-"));
         let rir = Rir {
             id,
             url: format!("{}/api/ipam/rirs/{}/", client.base_url, id),
             display: name.to_string(),
             name: name.to_string(),
-            slug: slug.to_string(),
-            description: description.map(|s| s.to_string()),
-            is_private: false,
+            slug: slug_value,
+            description,
+            is_private: is_private.unwrap_or(false),
             created: chrono::Utc::now().to_rfc3339(),
             last_updated: chrono::Utc::now().to_rfc3339(),
         };
 
         client.rirs.lock().unwrap().insert(name.to_string(), rir.clone());
         Ok(rir)
-}
+    }
 
-pub async fn create_vlan(client: &MockNetBoxClient, site_id: u64, vid: u32, name: &str, status: Option<&str>, description: Option<&str>) -> Result<Vlan, NetBoxError> {
+pub async fn create_vlan(client: &MockNetBoxClient, vid: u16, name: &str, site_id: Option<u64>, group_id: Option<u64>, tenant_id: Option<u64>, role_id: Option<u64>, status: Option<&str>, description: Option<String>, comments: Option<String>) -> Result<Vlan, NetBoxError> {
         let id = client.next_id();
         let status_str = status.unwrap_or("active");
         let vlan_status = match status_str {
@@ -354,15 +361,15 @@ pub async fn create_vlan(client: &MockNetBoxClient, site_id: u64, vid: u32, name
             id,
             url: format!("{}/api/ipam/vlans/{}/", client.base_url, id),
             display: name.to_string(),
-            site: Some(client.helpers().create_nested_site(site_id, None)),
-            group: None,
+            site: site_id.map(|id| client.helpers().create_nested_site(id, None)),
+            group: None, // VLAN group not yet implemented in mock helpers
             vid: vid as u16,
             name: name.to_string(),
-            tenant: None,
+            tenant: tenant_id.map(|id| client.helpers().create_nested_tenant(id, None)),
             status: vlan_status,
-            role: None,
-            description: description.map(|s| s.to_string()).unwrap_or_default(),
-            comments: String::new(),
+            role: role_id.map(|id| client.helpers().create_nested_role(id, None)),
+            description: description.unwrap_or_default(),
+            comments: comments.unwrap_or_default(),
             tags: vec![],
             custom_fields: serde_json::json!({}),
             created: chrono::Utc::now().to_rfc3339(),
@@ -373,20 +380,26 @@ pub async fn create_vlan(client: &MockNetBoxClient, site_id: u64, vid: u32, name
         Ok(vlan)
 }
 
-pub async fn update_vlan(client: &MockNetBoxClient, id: u64, site_id: Option<u64>, vid: Option<u32>, name: Option<&str>, status: Option<&str>, description: Option<&str>) -> Result<Vlan, NetBoxError> {
+pub async fn update_vlan(client: &MockNetBoxClient, id: u64, vid: Option<u16>, name: Option<&str>, site_id: Option<u64>, group_id: Option<u64>, tenant_id: Option<u64>, role_id: Option<u64>, status: Option<&str>, description: Option<String>, comments: Option<String>) -> Result<Vlan, NetBoxError> {
         let mut vlans = client.vlans.lock().unwrap();
         let vlan = vlans
             .get_mut(&id)
             .ok_or_else(|| NetBoxError::NotFound(format!("VLAN {} not found", id)))?;
 
-        if let Some(site_id_val) = site_id {
-            vlan.site = Some(client.helpers().create_nested_site(site_id_val, None));
-        }
         if let Some(vid_val) = vid {
-            vlan.vid = vid_val as u16;
+            vlan.vid = vid_val;
         }
         if let Some(name_str) = name {
             vlan.name = name_str.to_string();
+        }
+        if let Some(site_id_val) = site_id {
+            vlan.site = Some(client.helpers().create_nested_site(site_id_val, None));
+        }
+        if let Some(tenant) = tenant_id {
+            vlan.tenant = Some(client.helpers().create_nested_tenant(tenant, None));
+        }
+        if let Some(role) = role_id {
+            vlan.role = Some(client.helpers().create_nested_role(role, None));
         }
         if let Some(status_str) = status {
             vlan.status = match status_str {
@@ -397,11 +410,14 @@ pub async fn update_vlan(client: &MockNetBoxClient, id: u64, site_id: Option<u64
             };
         }
         if let Some(desc) = description {
-            vlan.description = desc.to_string();
+            vlan.description = desc;
+        }
+        if let Some(comments_str) = comments {
+            vlan.comments = comments_str;
         }
 
         Ok(vlan.clone())
-}
+    }
 
 pub async fn query_vlans(client: &MockNetBoxClient, _filters: &[(&str, &str)], _fetch_all: bool) -> Result<Vec<Vlan>, NetBoxError> {
         let vlans = client.vlans.lock().unwrap();

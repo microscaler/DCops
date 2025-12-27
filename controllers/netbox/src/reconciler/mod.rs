@@ -16,13 +16,14 @@ pub mod extras;
 use crate::error::ControllerError;
 use crate::backoff::FibonacciBackoff;
 use crate::kube_api_trait::KubeApiTrait;
+use crate::token_resolver::TokenResolver;
+use netbox_client::NetBoxClientTrait;
 use crds::{
     IPClaim, IPPool, NetBoxPrefix, NetBoxTenant, NetBoxSite, NetBoxRole, NetBoxTag, NetBoxAggregate,
     NetBoxDeviceRole, NetBoxManufacturer, NetBoxPlatform, NetBoxDeviceType, NetBoxDevice,
     NetBoxInterface, NetBoxMACAddress, NetBoxVLAN, NetBoxRegion, NetBoxSiteGroup, NetBoxLocation,
     PrefixState, ResourceState,
 };
-use netbox_client::NetBoxClientTrait;
 use tracing::{info, error, debug, warn};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -54,7 +55,7 @@ impl BackoffState {
 
 /// Reconciles NetBox-related resources.
 pub struct Reconciler {
-    pub(crate) netbox_client: Box<dyn NetBoxClientTrait + Send + Sync>,
+    pub(crate) token_resolver: Arc<TokenResolver>,
     // IPAM APIs
     pub(crate) netbox_prefix_api: Box<dyn KubeApiTrait<NetBoxPrefix> + Send + Sync>,
     pub(crate) netbox_role_api: Box<dyn KubeApiTrait<NetBoxRole> + Send + Sync>,
@@ -170,7 +171,7 @@ impl Reconciler {
     
     /// Creates a new reconciler instance.
     pub fn new(
-        netbox_client: impl NetBoxClientTrait + Send + Sync + 'static,
+        token_resolver: Arc<TokenResolver>,
         // IPAM APIs
         netbox_prefix_api: impl KubeApiTrait<NetBoxPrefix> + Send + Sync + 'static,
         netbox_role_api: impl KubeApiTrait<NetBoxRole> + Send + Sync + 'static,
@@ -196,7 +197,7 @@ impl Reconciler {
         ip_claim_api: impl KubeApiTrait<IPClaim> + Send + Sync + 'static,
     ) -> Self {
         Self {
-            netbox_client: Box::new(netbox_client),
+            token_resolver,
             // IPAM
             netbox_prefix_api: Box::new(netbox_prefix_api),
             netbox_role_api: Box::new(netbox_role_api),
@@ -265,6 +266,20 @@ impl Reconciler {
                 }
             }
             
+            // Get tenant-specific client for this prefix
+            let tenant_ref = &prefix_crd.spec.tenant;
+            let netbox_client = match self.token_resolver
+                .create_client_for_tenant(namespace, tenant_ref)
+                .await
+            {
+                Ok(client) => client,
+                Err(e) => {
+                    warn!("Failed to resolve token for tenant {} in prefix {}/{}: {}", 
+                        tenant_ref.name, namespace, name, e);
+                    continue; // Skip this prefix, will be reconciled later
+                }
+            };
+            
             // Try to find this prefix in NetBox by CIDR
             let prefix_cidr = &prefix_crd.spec.prefix;
             info!("Mapping NetBoxPrefix {}/{} (prefix: {}) to NetBox resource...", namespace, name, prefix_cidr);
@@ -274,7 +289,7 @@ impl Reconciler {
             // 2. Query by prefix CIDR (if deserialization works)
             // 3. List all prefixes and match by CIDR (fallback)
             
-            let netbox_prefix = if let Ok(prefixes) = self.netbox_client.query_prefixes(
+            let netbox_prefix = if let Ok(prefixes) = netbox_client.query_prefixes(
                 &[("prefix", prefix_cidr)],
                 false,
             ).await {
@@ -287,7 +302,7 @@ impl Reconciler {
             } else {
                 // Query failed (deserialization issue), try fallback: get by ID 1 and check
                 warn!("Query failed for prefix {}, trying fallback method", prefix_cidr);
-                match self.netbox_client.get_prefix(1).await {
+                match netbox_client.get_prefix(1).await {
                     Ok(prefix) if prefix.prefix == *prefix_cidr => {
                         info!("Found prefix {} via fallback method (ID: 1)", prefix_cidr);
                         Some(prefix)

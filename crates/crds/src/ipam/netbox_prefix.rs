@@ -30,9 +30,9 @@ pub struct NetBoxPrefixSpec {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub site: Option<NetBoxResourceReference>,
     
-    /// Tenant reference (references NetBoxTenant CRD)
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub tenant: Option<NetBoxResourceReference>,
+    /// Tenant reference (references NetBoxTenant CRD, required)
+    /// Tenant is required in NetBox for proper resource organization and access control
+    pub tenant: NetBoxResourceReference,
     
     /// Aggregate reference (references NetBoxAggregate CRD)
     #[serde(skip_serializing_if = "Option::is_none")]

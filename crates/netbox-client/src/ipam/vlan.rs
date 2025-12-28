@@ -106,7 +106,8 @@ pub async fn create_vlan(
     // For CREATE operations, NetBox 4.0 requires full tenant object (id, name, slug)
     helpers::add_nested_reference(&mut body, "site", site_id.map(|id| id.into()));
     helpers::add_nested_reference(&mut body, "group", group_id.map(|id| id.into()));
-    helpers::add_tenant_for_create(&mut body, core, tenant_id.map(|id| id.into())).await;
+    // For CREATE operations, NetBox requires just the tenant ID reference
+    helpers::add_nested_reference(&mut body, "tenant", tenant_id.map(|id| id.into()));
     helpers::add_nested_reference(&mut body, "role", role_id.map(|id| id.into()));
     helpers::add_optional_string_field(&mut body, "status", status);
     helpers::add_optional_string_field_owned(&mut body, "description", description);

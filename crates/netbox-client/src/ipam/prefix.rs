@@ -149,7 +149,8 @@ pub async fn create_prefix(
     helpers::add_nested_reference(&mut body, "vlan", vlan_id.map(|id| id as u64));
     helpers::add_nested_reference(&mut body, "role", role_id.map(|id| id.into()));
     // For CREATE operations, NetBox 4.0 requires full tenant object (id, name, slug)
-    helpers::add_tenant_for_create(&mut body, core, tenant_id).await;
+    // For CREATE operations, NetBox requires just the tenant ID reference
+    helpers::add_nested_reference(&mut body, "tenant", tenant_id.map(|id| id.into()));
     
     if let Some(tags_vec) = tags {
         body["tags"] = serde_json::to_value(tags_vec)

@@ -10,7 +10,9 @@
 
 The NetBox controller is experiencing **multiple recurring errors** preventing resource creation. The primary error indicates that NetBox API requires full tenant objects (with `name` and `slug` fields) during CREATE operations, but the code is only sending tenant IDs.
 
-**Primary Error**: `400 Bad Request - {"tenant":{"name":["This field is required."],"slug":["This field is required."]}}`
+**Primary Error**: 
+- Initially: `400 Bad Request - {"tenant":{"name":["This field is required."],"slug":["This field is required."]}}`
+- After fix attempt: `400 Bad Request - {"tenant":{"name":["tenant with this name already exists."],"slug":["tenant with this slug already exists."]}}`
 
 **Affected Resources**: 
 - `NetBoxSite` CRD `default/datacenter-1` - **PRIMARY ISSUE** (tenant reference)
@@ -37,14 +39,16 @@ NetBox API error: Failed to create site: 400 Bad Request -
 
 **Location**: `crates/netbox-client/src/dcim/site.rs` - `create_site` function
 
-**Problem**: The `create_site` function uses `helpers::add_nested_reference` for the tenant, which only sends `{"id": X}`. However, NetBox 4.0 API requires the full tenant object `{"id": X, "name": "...", "slug": "..."}` for CREATE operations.
+**Problem**: The `create_site` function was changed to use `helpers::add_tenant_for_create`, which sends the full tenant object `{"id": X, "name": "...", "slug": "..."}`. However, NetBox interprets this as an attempt to CREATE a new tenant, causing a conflict error: `{"tenant":{"name":["tenant with this name already exists."],"slug":["tenant with this slug already exists."]}}`
+
+**Root Cause**: For CREATE operations on resources (like sites), NetBox requires only the tenant ID reference `{"id": X}`, not the full object. The full object format causes NetBox to attempt tenant creation, which conflicts with existing tenants.
 
 **Current Code** (line ~110):
 ```rust
-helpers::add_nested_reference(&mut body, "tenant", tenant_id);
+helpers::add_tenant_for_create(&mut body, core, tenant_id).await;  // ❌ Sends full object
 ```
 
-**Expected Behavior**: Should use `helpers::add_tenant_for_create` which fetches the full tenant object and includes `name` and `slug`.
+**Expected Behavior**: Should use `helpers::add_nested_reference` which sends only `{"id": X}` for CREATE operations.
 
 ### 3. Code Flow
 
@@ -282,12 +286,14 @@ Replace `add_nested_reference` with `add_tenant_for_create` in `create_site` fun
 
 **Change**:
 ```rust
-// BEFORE (line ~110):
-helpers::add_nested_reference(&mut body, "tenant", tenant_id);
+// BEFORE (line ~110) - INCORRECT:
+helpers::add_tenant_for_create(&mut body, core, tenant_id).await;  // Sends full object, causes conflict
 
-// AFTER:
-helpers::add_tenant_for_create(&mut body, core, tenant_id).await?;
+// AFTER - CORRECT:
+helpers::add_nested_reference(&mut body, "tenant", tenant_id.map(|id| id.into()));  // Sends only ID
 ```
+
+**Note**: The initial fix attempt using `add_tenant_for_create` was incorrect. NetBox interprets the full tenant object as an attempt to CREATE a new tenant, causing conflicts. For CREATE operations on resources, only the tenant ID is needed.
 
 **Note**: This requires making `create_site` async-aware of the `core` parameter, which it already has.
 
@@ -403,10 +409,15 @@ The errors are caused by:
 
 #### Critical Fix: NetBoxSite Tenant Reference
 
-- [x] **Fix Applied**: Replace `add_nested_reference` with `add_tenant_for_create` in `create_site`
-  - File: `crates/netbox-client/src/dcim/site.rs`
-  - Line: 112
-  - Change: `helpers::add_nested_reference(&mut body, "tenant", Some(tid.into()));` → `helpers::add_tenant_for_create(&mut body, core, tenant_id).await;`
+- [x] **Fix Applied**: Revert to `add_nested_reference` for tenant in `create_site` (and all other create functions)
+  - Files: 
+    - `crates/netbox-client/src/dcim/site.rs`
+    - `crates/netbox-client/src/ipam/prefix.rs`
+    - `crates/netbox-client/src/dcim/device.rs`
+    - `crates/netbox-client/src/ipam/vlan.rs`
+    - `crates/netbox-client/src/dcim/location.rs`
+  - Change: `helpers::add_tenant_for_create(&mut body, core, tenant_id).await;` → `helpers::add_nested_reference(&mut body, "tenant", tenant_id.map(|id| id.into()));`
+  - **Reason**: `add_tenant_for_create` sends full tenant object, which NetBox interprets as CREATE attempt, causing conflicts. For CREATE operations on resources, only ID is needed.
 
 - [x] **Code Compiles**: Verify `cargo build` or `python3 scripts/host_aware_build.py --release -p netbox-controller` succeeds ✅
 

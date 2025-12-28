@@ -106,8 +106,8 @@ pub async fn create_site(
     helpers::add_optional_number_field(&mut body, "latitude", latitude.map(|l| serde_json::Number::from_f64(l).unwrap()));
     helpers::add_optional_number_field(&mut body, "longitude", longitude.map(|l| serde_json::Number::from_f64(l).unwrap()));
     
-    // For CREATE operations, NetBox 4.0 requires full tenant object (id, name, slug)
-    helpers::add_tenant_for_create(&mut body, core, tenant_id).await;
+    // For CREATE operations, NetBox requires just the tenant ID reference
+    helpers::add_nested_reference(&mut body, "tenant", tenant_id.map(|id| id.into()));
     
     // Region and site_group can use just ID for CREATE
     helpers::add_nested_reference(&mut body, "region", region_id.map(|id| id.into()));

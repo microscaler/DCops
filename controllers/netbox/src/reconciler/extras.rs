@@ -4,7 +4,7 @@ use super::Reconciler;
 use crate::error::ControllerError;
 use crate::reconcile_helpers;
 use tracing::{info, error, debug, warn};
-use crds::{NetBoxRole, NetBoxRoleStatus, NetBoxTag, NetBoxTagStatus, ResourceState};
+use crds::{NetBoxRole, NetBoxTag, ResourceState};
 use netbox_client::NetBoxClientTrait;
 
 impl Reconciler {
@@ -43,7 +43,7 @@ impl Reconciler {
                         Ok(Some(resource)) => Some(resource),
                         Ok(None) => {
                             warn!("NetBoxRole {}/{} was deleted in NetBox (ID: {}), clearing status and will recreate", namespace, name, netbox_id);
-                            let status_patch = Self::create_resource_status_patch(
+                            let status_patch = Self::create_typed_role_status_patch(
                                 0, String::new(), ResourceState::Pending,
                                 Some("Resource was deleted in NetBox, will recreate".to_string()),
                             );
@@ -80,7 +80,7 @@ impl Reconciler {
                 );
                 
                 if needs_status_update {
-                    let status_patch = Self::create_resource_status_patch(
+                    let status_patch = Self::create_typed_role_status_patch(
                         role.id,
                         role.url.clone(),
                         ResourceState::Created,
@@ -145,7 +145,7 @@ impl Reconciler {
             }
         };
         
-        let status_patch = Self::create_resource_status_patch(
+        let status_patch = Self::create_typed_role_status_patch(
             netbox_role.id,
             netbox_role.url.clone(),
             ResourceState::Created,
@@ -203,7 +203,7 @@ impl Reconciler {
                         Ok(Some(resource)) => Some(resource),
                         Ok(None) => {
                             warn!("NetBoxTag {}/{} was deleted in NetBox (ID: {}), clearing status and will recreate", namespace, name, netbox_id);
-                            let status_patch = Self::create_resource_status_patch(
+                            let status_patch = Self::create_typed_tag_status_patch(
                                 0, String::new(), ResourceState::Pending,
                                 Some("Resource was deleted in NetBox, will recreate".to_string()),
                             );
@@ -240,7 +240,7 @@ impl Reconciler {
                 );
                 
                 if needs_status_update {
-                    let status_patch = Self::create_resource_status_patch(
+                    let status_patch = Self::create_typed_tag_status_patch(
                         tag.id,
                         tag.url.clone(),
                         ResourceState::Created,
@@ -305,7 +305,7 @@ impl Reconciler {
             }
         };
         
-        let status_patch = Self::create_resource_status_patch(
+        let status_patch = Self::create_typed_tag_status_patch(
             netbox_tag.id,
             netbox_tag.url.clone(),
             ResourceState::Created,

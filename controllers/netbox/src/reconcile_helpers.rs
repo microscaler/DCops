@@ -692,3 +692,169 @@ macro_rules! update_status_if_changed {
 // Macro removed for now - helper functions are sufficient
 // Can be added later if boilerplate becomes too much
 
+/// Result of drift detection and status validation
+/// 
+/// This enum indicates what action the reconciler should take based on
+/// the current status and drift detection results.
+#[derive(Debug, Clone)]
+pub enum DriftCheckResult<Resource> {
+    /// Resource exists and is valid - use this resource
+    UseExisting(Resource),
+    /// Resource needs to be recreated (status cleared, invalid netbox_id, or resource deleted)
+    Recreate,
+    /// Status was cleared and needs to be updated (caller should update status to Pending)
+    StatusCleared {
+        message: String,
+    },
+}
+
+/// Validate status and handle drift detection for Failed/Created states
+/// 
+/// This helper centralizes the common pattern of:
+/// 1. Checking if status has Failed state with invalid netbox_id (0) - clear and recreate
+/// 2. Checking if status has Failed state with valid netbox_id - verify resource exists
+/// 3. Checking if status has Created state with invalid netbox_id (0) - clear and recreate
+/// 4. Checking if status has Created state with valid netbox_id - verify resource exists
+/// 
+/// # Arguments
+/// - `status`: Current CR status (implements `NetBoxStatusCheck`)
+/// - `resource_name`: Human-readable resource name for logging (e.g., "NetBoxSite")
+/// - `namespace`: Kubernetes namespace
+/// - `name`: Kubernetes resource name
+/// - `get_resource_fn`: Async function that takes netbox_id (u64) and fetches resource from NetBox
+/// 
+/// # Returns
+/// - `Ok(DriftCheckResult::UseExisting(resource))` if resource exists and is valid
+/// - `Ok(DriftCheckResult::Recreate)` if resource should be recreated (status already cleared or resource deleted)
+/// - `Ok(DriftCheckResult::StatusCleared { message })` if status was cleared and needs to be updated
+/// - `Err(e)` if there's an error that should be retried
+/// 
+/// # Example
+/// ```rust
+/// let result = validate_status_and_drift::<netbox_client::Site, _>(
+///     site_crd.status.as_ref(),
+///     "NetBoxSite",
+///     namespace,
+///     name,
+///     |id| async move { netbox_client.get_site(SiteId(id)).await },
+/// ).await?;
+/// 
+/// match result {
+///     DriftCheckResult::UseExisting(site) => {
+///         // Use existing site for updates
+///     }
+///     DriftCheckResult::Recreate => {
+///         // Create new resource
+///     }
+///     DriftCheckResult::StatusCleared { message } => {
+///         // Status was cleared, update it to Pending
+///         let status_patch = Self::create_resource_status_patch(0, String::new(), ResourceState::Pending, Some(message));
+///         // ... patch status ...
+///         // Then proceed to create
+///     }
+/// }
+/// ```
+pub async fn validate_status_and_drift<Resource, FGet, Fut>(
+    status: Option<&impl NetBoxStatusCheck>,
+    resource_name: &str,
+    namespace: &str,
+    name: &str,
+    get_resource_fn: FGet,
+) -> Result<DriftCheckResult<Resource>, ControllerError>
+where
+    FGet: FnOnce(u64) -> Fut,
+    Fut: std::future::Future<Output = Result<Resource, netbox_client::NetBoxError>> + Send,
+    Resource: Clone + Send + Sync,
+{
+    let status = match status {
+        Some(s) => s,
+        None => {
+            // No status - need to create
+            return Ok(DriftCheckResult::Recreate);
+        }
+    };
+
+    let state_str = status.state_str();
+    let netbox_id = status.netbox_id();
+
+    // Handle Failed state
+    if state_str == "Failed" {
+        match netbox_id {
+            Some(id) if id == 0 => {
+                // Failed state with invalid netbox_id (0) - clear status and recreate
+                warn!("{} {}/{} has Failed state with invalid netbox_id (0), clearing status and will recreate", resource_name, namespace, name);
+                return Ok(DriftCheckResult::StatusCleared {
+                    message: format!("Clearing Failed status with invalid netbox_id (0), will recreate"),
+                });
+            }
+            Some(id) => {
+                // Failed state with valid netbox_id - check if resource still exists
+                match get_resource_fn(id).await {
+                    Ok(existing) => {
+                        // Resource exists, update status to Created
+                        info!("{} {}/{} exists in NetBox (ID: {}), updating status from Failed to Created", resource_name, namespace, name, id);
+                        return Ok(DriftCheckResult::UseExisting(existing));
+                    }
+                    Err(netbox_client::NetBoxError::NotFound(_)) => {
+                        // Resource doesn't exist, clear status and recreate
+                        warn!("{} {}/{} has Failed status but resource doesn't exist in NetBox (ID: {}), clearing status and will recreate", resource_name, namespace, name, id);
+                        return Ok(DriftCheckResult::StatusCleared {
+                            message: format!("Resource with Failed status doesn't exist in NetBox, will recreate"),
+                        });
+                    }
+                    Err(e) => {
+                        // Other errors - retry
+                        error!("Failed to verify {} {}/{} (ID: {}) exists: {}, will retry", resource_name, namespace, name, id, e);
+                        return Err(ControllerError::NetBox(e));
+                    }
+                }
+            }
+            None => {
+                // Failed state but no netbox_id - retry creation
+                return Ok(DriftCheckResult::Recreate);
+            }
+        }
+    }
+
+    // Handle Created state
+    if state_str == "Created" {
+        match netbox_id {
+            Some(id) if id == 0 => {
+                // Created state with invalid netbox_id (0) - clear status and recreate
+                warn!("{} {}/{} has invalid netbox_id (0), clearing status and will recreate", resource_name, namespace, name);
+                return Ok(DriftCheckResult::StatusCleared {
+                    message: format!("Invalid netbox_id (0) detected, will recreate"),
+                });
+            }
+            Some(id) => {
+                // Created state with valid netbox_id - verify resource exists
+                match get_resource_fn(id).await {
+                    Ok(existing) => {
+                        // Resource exists and is valid
+                        return Ok(DriftCheckResult::UseExisting(existing));
+                    }
+                    Err(netbox_client::NetBoxError::NotFound(_)) => {
+                        // Drift detected - resource was deleted
+                        warn!("{} {}/{} was deleted in NetBox (ID: {}), clearing status and will recreate", resource_name, namespace, name, id);
+                        return Ok(DriftCheckResult::StatusCleared {
+                            message: format!("Resource was deleted in NetBox, will recreate"),
+                        });
+                    }
+                    Err(e) => {
+                        // Other errors - retry
+                        error!("Failed to verify {} {}/{} (ID: {}) exists: {}, will retry", resource_name, namespace, name, id, e);
+                        return Err(ControllerError::NetBox(e));
+                    }
+                }
+            }
+            None => {
+                // Created state but no netbox_id - need to create
+                return Ok(DriftCheckResult::Recreate);
+            }
+        }
+    }
+
+    // Other states (Pending, Updated) - need to create or retry
+    Ok(DriftCheckResult::Recreate)
+}
+

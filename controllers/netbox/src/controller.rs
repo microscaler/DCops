@@ -21,7 +21,7 @@ use crds::{
 use kube::{Api, Client};
 use std::sync::Arc;
 use tokio::task::JoinHandle;
-use tracing::{info, warn, error};
+use tracing::{info, warn};
 
 /// Main controller for NetBox resource management.
 pub struct Controller {

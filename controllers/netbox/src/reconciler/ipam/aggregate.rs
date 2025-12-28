@@ -3,10 +3,9 @@
 use super::super::Reconciler;
 use crate::error::ControllerError;
 use crate::reconcile_helpers;
-use crate::kube_api_trait::KubeApiTrait;
 use tracing::{info, error, debug, warn};
-use crds::{NetBoxAggregate, NetBoxAggregateStatus, ResourceState};
-use netbox_client::NetBoxClientTrait;
+use crds::{NetBoxAggregate, ResourceState};
+use netbox_client::{NetBoxClientTrait, RirId};
 
 impl Reconciler {
     pub async fn reconcile_netbox_aggregate(&self, aggregate_crd: &NetBoxAggregate) -> Result<(), ControllerError> {
@@ -23,22 +22,24 @@ impl Reconciler {
             .await
             .map_err(|e| ControllerError::TokenResolution(e))?;
         
-        // Resolve RIR ID
+        // Resolve RIR ID (optional - if RIR is specified but doesn't exist, skip it)
         let rir_id = if let Some(rir_name) = &aggregate_crd.spec.rir {
             match netbox_client.get_rir_by_name(rir_name).await {
-                Ok(Some(rir)) => rir.id,
+                Ok(Some(rir)) => {
+                    debug!("Found RIR '{}' with ID {} for aggregate {}", rir_name, rir.id, name);
+                    Some(rir.id)
+                }
                 Ok(None) => {
-                    let error_msg = format!("RIR '{}' not found in NetBox for aggregate {}", rir_name, name);
-                    error!("{}", error_msg);
-                    return Err(ControllerError::InvalidConfig(error_msg));
+                    warn!("RIR '{}' not found in NetBox for aggregate {}, creating aggregate without RIR", rir_name, name);
+                    None
                 }
                 Err(e) => {
-                    error!("Failed to get RIR '{}' for aggregate {}: {}", rir_name, name, e);
-                    return Err(ControllerError::NetBox(e));
+                    warn!("Failed to get RIR '{}' for aggregate {}: {}, creating aggregate without RIR", rir_name, name, e);
+                    None
                 }
             }
         } else {
-            0 // Should not happen if rir is required in CRD, but handle gracefully
+            None // RIR is optional
         };
         
         // Check if already created - use helper for drift detection
@@ -142,7 +143,7 @@ impl Reconciler {
                     info!("Creating NetBoxAggregate {} in NetBox", aggregate_crd.spec.prefix);
                     match netbox_client.create_aggregate(
                         &aggregate_crd.spec.prefix,
-                        if rir_id != 0 { Some(rir_id) } else { None },
+                        rir_id.map(RirId),
                         aggregate_crd.spec.date_allocated.as_deref(),
                         aggregate_crd.spec.description.clone(),
                         aggregate_crd.spec.comments.clone(),
@@ -162,14 +163,6 @@ impl Reconciler {
         };
         
         // Update CRD status
-        let new_status = NetBoxAggregateStatus {
-            netbox_id: Some(netbox_aggregate.id),
-            netbox_url: Some(format!("{}/ipam/aggregates/{}/", self.token_resolver.netbox_url, netbox_aggregate.id)),
-            state: ResourceState::Created,
-            error: None,
-            last_reconciled: Some(chrono::Utc::now()),
-        };
-        
         let patch = Self::create_resource_status_patch(
             netbox_aggregate.id,
             netbox_aggregate.url.clone(),

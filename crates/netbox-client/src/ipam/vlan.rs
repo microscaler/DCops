@@ -6,6 +6,7 @@ use crate::common::PaginatedResponse;
 use crate::core::{NetBoxClientCore, helpers};
 use crate::error::NetBoxError;
 use crate::models::Vlan;
+use crate::types::*;
 use tracing::debug;
 
 /// Query VLANs by filters
@@ -50,9 +51,10 @@ pub async fn query_vlans(
 }
 
 /// Get a VLAN by ID
-pub async fn get_vlan(core: &NetBoxClientCore, id: u64) -> Result<Vlan, NetBoxError> {
-    let url = format!("{}/api/ipam/vlans/{}/", core.base_url, id);
-    debug!("Fetching VLAN {} from NetBox", id);
+pub async fn get_vlan(core: &NetBoxClientCore, id: VlanId) -> Result<Vlan, NetBoxError> {
+    let id_value: u32 = id.into();
+    let url = format!("{}/api/ipam/vlans/{}/", core.base_url, id_value);
+    debug!("Fetching VLAN {} from NetBox", id_value);
     
     let response = core.client
         .get(&url)
@@ -63,7 +65,7 @@ pub async fn get_vlan(core: &NetBoxClientCore, id: u64) -> Result<Vlan, NetBoxEr
         .map_err(|e| NetBoxError::Http(e))?;
     
     if response.status() == 404 {
-        return Err(NetBoxError::NotFound(format!("VLAN {} not found", id)));
+        return Err(NetBoxError::NotFound(format!("VLAN {} not found", id_value)));
     }
     
     if !response.status().is_success() {
@@ -71,7 +73,7 @@ pub async fn get_vlan(core: &NetBoxClientCore, id: u64) -> Result<Vlan, NetBoxEr
         let body = response.text().await.unwrap_or_default();
         return Err(NetBoxError::Api(format!(
             "Failed to get VLAN {}: {} - {}",
-            id, status, body
+            id_value, status, body
         )));
     }
     
@@ -85,10 +87,10 @@ pub async fn create_vlan(
     core: &NetBoxClientCore,
     vid: u16,
     name: &str,
-    site_id: Option<u64>,
-    group_id: Option<u64>,
-    tenant_id: Option<u64>,
-    role_id: Option<u64>,
+    site_id: Option<SiteId>,
+    group_id: Option<VlanGroupId>,
+    tenant_id: Option<TenantId>,
+    role_id: Option<RoleId>,
     status: Option<&str>,
     description: Option<String>,
     comments: Option<String>,
@@ -101,11 +103,14 @@ pub async fn create_vlan(
         "name": name,
     });
     
-    // For CREATE operations, NetBox 4.0 requires full tenant object (id, name, slug)
-    helpers::add_nested_reference(&mut body, "site", site_id);
-    helpers::add_nested_reference(&mut body, "group", group_id);
-    helpers::add_tenant_for_create(&mut body, core, tenant_id).await;
-    helpers::add_nested_reference(&mut body, "role", role_id);
+    // For CREATE operations, use just the tenant ID
+    // NetBox 4.0 accepts either {"id": X} or the full object, but using just ID is simpler and avoids validation issues
+    helpers::add_nested_reference(&mut body, "site", site_id.map(|id| id.into()));
+    helpers::add_nested_reference(&mut body, "group", group_id.map(|id| id.into()));
+    if let Some(tid) = tenant_id {
+        helpers::add_nested_reference(&mut body, "tenant", Some(tid.into()));
+    }
+    helpers::add_nested_reference(&mut body, "role", role_id.map(|id| id.into()));
     helpers::add_optional_string_field(&mut body, "status", status);
     helpers::add_optional_string_field_owned(&mut body, "description", description);
     helpers::add_optional_string_field_owned(&mut body, "comments", comments);
@@ -153,10 +158,10 @@ pub async fn update_vlan(
     
     helpers::add_optional_number_field(&mut body, "vid", vid);
     helpers::add_optional_string_field(&mut body, "name", name);
-    helpers::add_nested_reference(&mut body, "site", site_id);
-    helpers::add_nested_reference(&mut body, "group", group_id);
-    helpers::add_nested_reference(&mut body, "tenant", tenant_id);
-    helpers::add_nested_reference(&mut body, "role", role_id);
+    helpers::add_nested_reference(&mut body, "site", site_id.map(|id| id.into()));
+    helpers::add_nested_reference(&mut body, "group", group_id.map(|id| id.into()));
+    helpers::add_nested_reference(&mut body, "tenant", tenant_id.map(|id| id.into()));
+    helpers::add_nested_reference(&mut body, "role", role_id.map(|id| id.into()));
     helpers::add_optional_string_field(&mut body, "status", status);
     helpers::add_optional_string_field_owned(&mut body, "description", description);
     helpers::add_optional_string_field_owned(&mut body, "comments", comments);

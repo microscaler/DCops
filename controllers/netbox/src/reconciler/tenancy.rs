@@ -7,7 +7,7 @@ use crate::error::ControllerError;
 use crate::reconcile_helpers;
 use crate::kube_api_trait::KubeApiTrait;
 use crds::{NetBoxTenant, ResourceState};
-use netbox_client::NetBoxClientTrait;
+use netbox_client::{NetBoxClientTrait, TenantId, TenantGroupId};
 use tracing::{info, error, debug, warn};
 
 impl Reconciler {
@@ -73,7 +73,7 @@ impl Reconciler {
                         &netbox_client,
                         netbox_id,
                         &format!("NetBoxTenant {}/{}", namespace, name),
-                        netbox_client.get_tenant(netbox_id),
+                        netbox_client.get_tenant(TenantId(netbox_id)),
                     ).await {
                         Ok(Some(resource)) => {
                             // Resource exists and is up-to-date
@@ -237,7 +237,7 @@ impl Reconciler {
                         Some(&slug),
                         tenant_crd.spec.description.clone(),
                         tenant_crd.spec.comments.clone(),
-                        group_id,
+                        group_id.map(TenantGroupId),
                     ).await {
                         Ok(created) => {
                             info!("Created tenant {} in NetBox (ID: {})", created.name, created.id);

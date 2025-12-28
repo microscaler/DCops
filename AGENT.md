@@ -480,11 +480,13 @@ Agents must:
 
 **Before claiming code is complete, verify:**
 
-1. ✅ **Compilation** - `cargo check` passes
+1. ✅ **Compilation** - Use `python3 scripts/host_aware_build.py --release -p netbox-controller` for comprehensive error checking (not just `cargo check`, which may miss errors)
 2. ✅ **Tests pass** - `cargo test` passes
 3. ✅ **Test coverage** - Minimum 65% coverage, target 80%
 4. ✅ **Integration works** - For controllers, CRs actually reconcile
 5. ✅ **Database verification** - For NetBox resources, they exist in the database
+
+**⚠️ Important:** Always use the full build command (`python3 scripts/host_aware_build.py --release -p netbox-controller`) to check for compilation errors. `cargo check` may be incomplete and miss some errors that only appear during a full release build.
 
 ### For NetBox Controllers
 

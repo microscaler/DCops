@@ -6,6 +6,7 @@ use crate::common::PaginatedResponse;
 use crate::core::{NetBoxClientCore, helpers};
 use crate::error::NetBoxError;
 use crate::models::DeviceType;
+use crate::types::*;
 use tracing::debug;
 
 /// Query device types by filters
@@ -52,17 +53,18 @@ pub async fn query_device_types(
 /// Get device type by manufacturer and model
 pub async fn get_device_type_by_model(
     core: &NetBoxClientCore,
-    manufacturer_id: u64,
+    manufacturer_id: ManufacturerId,
     model: &str,
 ) -> Result<Option<DeviceType>, NetBoxError> {
-    let device_types = query_device_types(core, &[("manufacturer_id", &manufacturer_id.to_string()), ("model", model)], false).await?;
+    let manufacturer_id_value: u64 = manufacturer_id.into();
+    let device_types = query_device_types(core, &[("manufacturer_id", &manufacturer_id_value.to_string()), ("model", model)], false).await?;
     Ok(device_types.first().cloned())
 }
 
 /// Create a new device type
 pub async fn create_device_type(
     core: &NetBoxClientCore,
-    manufacturer_id: u64,
+    manufacturer_id: ManufacturerId,
     model: &str,
     slug: Option<&str>,
     part_number: Option<&str>,
@@ -71,6 +73,7 @@ pub async fn create_device_type(
     description: Option<String>,
     comments: Option<String>,
 ) -> Result<DeviceType, NetBoxError> {
+    let manufacturer_id_value: u64 = manufacturer_id.into();
     let url = format!("{}/api/dcim/device-types/", core.base_url);
     debug!("Creating device type {} in NetBox", model);
     
@@ -81,7 +84,7 @@ pub async fn create_device_type(
     };
     
     let mut body = serde_json::json!({
-        "manufacturer": manufacturer_id,
+        "manufacturer": manufacturer_id_value,
         "model": model,
         "slug": slug_value,
     });

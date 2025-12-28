@@ -8,12 +8,14 @@ use crate::error::NetBoxError;
 #[allow(unused_imports)] // Used in allocate_ip via get_available_ips return type
 use crate::models::{AllocateIPRequest, AvailableIP, IPAddress};
 use crate::ipam::prefix::get_available_ips;
+use crate::types::*;
 use tracing::debug;
 
 /// Get an IP address by ID
-pub async fn get_ip_address(core: &NetBoxClientCore, id: u64) -> Result<IPAddress, NetBoxError> {
-    let url = format!("{}/api/ipam/ip-addresses/{}/", core.base_url, id);
-    debug!("Fetching IP address {} from NetBox", id);
+pub async fn get_ip_address(core: &NetBoxClientCore, id: IpAddressId) -> Result<IPAddress, NetBoxError> {
+    let id_value: u64 = id.into();
+    let url = format!("{}/api/ipam/ip-addresses/{}/", core.base_url, id_value);
+    debug!("Fetching IP address {} from NetBox", id_value);
     
     let response = core.client
         .get(&url)
@@ -24,7 +26,7 @@ pub async fn get_ip_address(core: &NetBoxClientCore, id: u64) -> Result<IPAddres
         .map_err(|e| NetBoxError::Http(e))?;
     
     if response.status() == 404 {
-        return Err(NetBoxError::NotFound(format!("IP address {} not found", id)));
+        return Err(NetBoxError::NotFound(format!("IP address {} not found", id_value)));
     }
     
     if !response.status().is_success() {
@@ -32,7 +34,7 @@ pub async fn get_ip_address(core: &NetBoxClientCore, id: u64) -> Result<IPAddres
         let body = response.text().await.unwrap_or_default();
         return Err(NetBoxError::Api(format!(
             "Failed to get IP address {}: {} - {}",
-            id, status, body
+            id_value, status, body
         )));
     }
     
@@ -219,16 +221,17 @@ pub async fn delete_ip_address(core: &NetBoxClientCore, id: u64) -> Result<(), N
 /// 4. Returns the allocated IP
 pub async fn allocate_ip(
     core: &NetBoxClientCore,
-    prefix_id: u64,
+    prefix_id: PrefixId,
     request: Option<AllocateIPRequest>,
 ) -> Result<IPAddress, NetBoxError> {
+    let prefix_id_value: u64 = prefix_id.into();
     // Get available IPs
     let available_ips = get_available_ips(core, prefix_id, Some(1)).await?;
     
     if available_ips.is_empty() {
         return Err(NetBoxError::Api(format!(
             "No available IPs in prefix {}",
-            prefix_id
+            prefix_id_value
         )));
     }
     
@@ -260,8 +263,8 @@ pub async fn allocate_ip(
     }
     
     // Create IP address via POST to available-ips endpoint
-    let url = format!("{}/api/ipam/prefixes/{}/available-ips/", core.base_url, prefix_id);
-    debug!("Allocating IP {} from prefix {}", available_ip.address, prefix_id);
+    let url = format!("{}/api/ipam/prefixes/{}/available-ips/", core.base_url, prefix_id_value);
+    debug!("Allocating IP {} from prefix {}", available_ip.address, prefix_id_value);
     
     let response = core.client
         .post(&url)
@@ -278,7 +281,7 @@ pub async fn allocate_ip(
         let body = response.text().await.unwrap_or_default();
         return Err(NetBoxError::Api(format!(
             "Failed to allocate IP from prefix {}: {} - {}",
-            prefix_id, status, body
+            prefix_id_value, status, body
         )));
     }
     

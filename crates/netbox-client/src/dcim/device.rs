@@ -7,6 +7,7 @@ use crate::core::{NetBoxClientCore, helpers};
 use crate::dcim::interface::query_interfaces;
 use crate::error::NetBoxError;
 use crate::models::Device;
+use crate::types::*;
 use tracing::debug;
 
 /// Query devices by filters
@@ -51,9 +52,10 @@ pub async fn query_devices(
 }
 
 /// Get a device by ID
-pub async fn get_device(core: &NetBoxClientCore, id: u64) -> Result<Device, NetBoxError> {
-    let url = format!("{}/api/dcim/devices/{}/", core.base_url, id);
-    debug!("Fetching device {} from NetBox", id);
+pub async fn get_device(core: &NetBoxClientCore, id: DeviceId) -> Result<Device, NetBoxError> {
+    let id_value: u64 = id.into();
+    let url = format!("{}/api/dcim/devices/{}/", core.base_url, id_value);
+    debug!("Fetching device {} from NetBox", id_value);
     
     let response = core.client
         .get(&url)
@@ -64,7 +66,7 @@ pub async fn get_device(core: &NetBoxClientCore, id: u64) -> Result<Device, NetB
         .map_err(|e| NetBoxError::Http(e))?;
     
     if response.status() == 404 {
-        return Err(NetBoxError::NotFound(format!("Device {} not found", id)));
+        return Err(NetBoxError::NotFound(format!("Device {} not found", id_value)));
     }
     
     if !response.status().is_success() {
@@ -72,7 +74,7 @@ pub async fn get_device(core: &NetBoxClientCore, id: u64) -> Result<Device, NetB
         let body = response.text().await.unwrap_or_default();
         return Err(NetBoxError::Api(format!(
             "Failed to get device {}: {} - {}",
-            id, status, body
+            id_value, status, body
         )));
     }
     
@@ -93,7 +95,7 @@ pub async fn get_device_by_mac(core: &NetBoxClientCore, mac: &str) -> Result<Opt
     
     // Get the device from the first matching interface
     let interface = &interfaces[0];
-    let device_id = interface.device.id;
+    let device_id = DeviceId(interface.device.id);
     
     // Fetch the device
     let device = get_device(core, device_id).await?;
@@ -103,18 +105,18 @@ pub async fn get_device_by_mac(core: &NetBoxClientCore, mac: &str) -> Result<Opt
 /// Create a new device
 pub async fn create_device(
     core: &NetBoxClientCore,
-    device_type_id: u64,
-    device_role_id: u64,
-    site_id: u64,
+    device_type_id: DeviceTypeId,
+    device_role_id: DeviceRoleId,
+    site_id: SiteId,
     name: Option<&str>,
-    tenant_id: Option<u64>,
-    platform_id: Option<u64>,
-    location_id: Option<u64>,
+    tenant_id: Option<TenantId>,
+    platform_id: Option<PlatformId>,
+    location_id: Option<LocationId>,
     serial: Option<&str>,
     asset_tag: Option<&str>,
     status: Option<&str>,
-    primary_ip4_id: Option<u64>,
-    primary_ip6_id: Option<u64>,
+    primary_ip4_id: Option<IpAddressId>,
+    primary_ip6_id: Option<IpAddressId>,
     description: Option<String>,
     comments: Option<String>,
 ) -> Result<Device, NetBoxError> {
@@ -122,20 +124,23 @@ pub async fn create_device(
     debug!("Creating device in NetBox");
     
     let mut body = serde_json::json!({});
-    helpers::add_required_nested_reference(&mut body, "device_type", device_type_id);
-    helpers::add_required_nested_reference(&mut body, "role", device_role_id);
-    helpers::add_required_nested_reference(&mut body, "site", site_id);
+    helpers::add_required_nested_reference(&mut body, "device_type", device_type_id.into());
+    helpers::add_required_nested_reference(&mut body, "role", device_role_id.into());
+    helpers::add_required_nested_reference(&mut body, "site", site_id.into());
     
     helpers::add_optional_string_field(&mut body, "name", name);
-    // For CREATE operations, NetBox 4.0 requires full tenant object (id, name, slug)
-    helpers::add_tenant_for_create(&mut body, core, tenant_id).await;
-    helpers::add_nested_reference(&mut body, "platform", platform_id);
-    helpers::add_nested_reference(&mut body, "location", location_id);
+    // For CREATE operations, use just the tenant ID
+    // NetBox 4.0 accepts either {"id": X} or the full object, but using just ID is simpler and avoids validation issues
+    if let Some(tid) = tenant_id {
+        helpers::add_nested_reference(&mut body, "tenant", Some(tid.into()));
+    }
+    helpers::add_nested_reference(&mut body, "platform", platform_id.map(|id| id.into()));
+    helpers::add_nested_reference(&mut body, "location", location_id.map(|id| id.into()));
     helpers::add_optional_string_field(&mut body, "serial", serial);
     helpers::add_optional_string_field(&mut body, "asset_tag", asset_tag);
     helpers::add_optional_string_field(&mut body, "status", status);
-    helpers::add_nested_reference(&mut body, "primary_ip4", primary_ip4_id);
-    helpers::add_nested_reference(&mut body, "primary_ip6", primary_ip6_id);
+    helpers::add_nested_reference(&mut body, "primary_ip4", primary_ip4_id.map(|id| id.into()));
+    helpers::add_nested_reference(&mut body, "primary_ip6", primary_ip6_id.map(|id| id.into()));
     helpers::add_optional_string_field_owned(&mut body, "description", description);
     helpers::add_optional_string_field_owned(&mut body, "comments", comments);
     
@@ -188,9 +193,9 @@ pub async fn update_device(
     
     // NetBox 4.0 PATCH updates: For nested objects, send only {"id": X}
     // Sending the full object causes NetBox to try to CREATE a new object
-    helpers::add_nested_reference(&mut body, "tenant", tenant_id);
-    helpers::add_nested_reference(&mut body, "platform", platform_id);
-    helpers::add_nested_reference(&mut body, "location", location_id);
+    helpers::add_nested_reference(&mut body, "tenant", tenant_id.map(|id| id.into()));
+    helpers::add_nested_reference(&mut body, "platform", platform_id.map(|id| id.into()));
+    helpers::add_nested_reference(&mut body, "location", location_id.map(|id| id.into()));
     
     if let Some(serial_str) = serial {
         body["serial"] = serde_json::Value::String(serial_str.to_string());
@@ -204,8 +209,8 @@ pub async fn update_device(
         body["status"] = serde_json::Value::String(status_str.to_string());
     }
     
-    helpers::add_nested_reference(&mut body, "primary_ip4", primary_ip4_id);
-    helpers::add_nested_reference(&mut body, "primary_ip6", primary_ip6_id);
+    helpers::add_nested_reference(&mut body, "primary_ip4", primary_ip4_id.map(|id| id.into()));
+    helpers::add_nested_reference(&mut body, "primary_ip6", primary_ip6_id.map(|id| id.into()));
     
     if let Some(desc) = description {
         body["description"] = serde_json::Value::String(desc);

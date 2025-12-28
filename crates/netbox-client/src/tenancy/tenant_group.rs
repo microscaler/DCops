@@ -6,6 +6,7 @@ use crate::common::PaginatedResponse;
 use crate::core::{NetBoxClientCore, helpers};
 use crate::error::NetBoxError;
 use crate::models::TenantGroup;
+use crate::types::*;
 use tracing::debug;
 
 /// Query tenant groups by filters
@@ -72,7 +73,7 @@ pub async fn create_tenant_group(
     slug: Option<&str>,
     description: Option<String>,
     comments: Option<String>,
-    parent_id: Option<u64>,
+    parent_id: Option<TenantGroupId>,
 ) -> Result<TenantGroup, NetBoxError> {
     let url = format!("{}/api/tenancy/tenant-groups/", core.base_url);
     debug!("Creating tenant group {} in NetBox", name);
@@ -85,7 +86,7 @@ pub async fn create_tenant_group(
     
     helpers::add_optional_string_field_owned(&mut body, "description", description);
     helpers::add_optional_string_field_owned(&mut body, "comments", comments);
-    helpers::add_nested_reference(&mut body, "parent", parent_id);
+    helpers::add_nested_reference(&mut body, "parent", parent_id.map(|id| id.into()));
     
     let response = core.client
         .post(&url)

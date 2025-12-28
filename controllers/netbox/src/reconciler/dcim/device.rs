@@ -5,7 +5,7 @@ use crate::error::ControllerError;
 use crate::reconcile_helpers;
 use tracing::{info, error, debug, warn};
 use crds::{NetBoxDevice, ResourceState};
-use netbox_client::NetBoxClientTrait;
+use netbox_client::{NetBoxClientTrait, DeviceId, DeviceTypeId, DeviceRoleId, SiteId, TenantId, PlatformId, LocationId, IpAddressId};
 
 impl Reconciler {
     pub async fn reconcile_netbox_device(&self, device_crd: &NetBoxDevice) -> Result<(), ControllerError> {
@@ -32,7 +32,7 @@ impl Reconciler {
                         &netbox_client,
                         netbox_id,
                         &format!("NetBoxDevice {}/{}", namespace, name),
-                        netbox_client.get_device(netbox_id),
+                        netbox_client.get_device(DeviceId(netbox_id)),
                     ).await {
                         Ok(Some(resource)) => {
                             // Resource exists and is up-to-date
@@ -399,18 +399,18 @@ impl Reconciler {
                         ControllerError::InvalidConfig("Device name is required".to_string())
                     })?;
                     match netbox_client.create_device(
-                        device_type_id,
-                        device_role_id,
-                        site_id,
+                        DeviceTypeId(device_type_id),
+                        DeviceRoleId(device_role_id),
+                        SiteId(site_id),
                         Some(device_name),
-                        Some(tenant_id), // tenant is now required
-                        platform_id,
-                        location_id,
+                        Some(TenantId(tenant_id)), // tenant is now required
+                        platform_id.map(PlatformId),
+                        location_id.map(LocationId),
                         device_crd.spec.serial.as_deref(),
                         device_crd.spec.asset_tag.as_deref(),
                         Some(status_str),
-                        primary_ip4_id,
-                        primary_ip6_id,
+                        primary_ip4_id.map(IpAddressId),
+                        primary_ip6_id.map(IpAddressId),
                         device_crd.spec.description.clone(),
                         device_crd.spec.comments.clone(),
                     ).await {

@@ -2,7 +2,7 @@
 //!
 //! Manages MikroTik RouterOS/SwitchOS devices via REST API.
 //!
-//! **Status:** Phase 2+ (deferred from Phase 1)
+//! **Status:** Phase 2+ (stub implementation - not yet implemented)
 
 use anyhow::Result;
 use tracing::info;
@@ -11,7 +11,7 @@ use tracing::info;
 async fn main() -> Result<()> {
     tracing_subscriber::fmt::init();
     
-    info!("RouterOS Controller - Phase 2+ (not yet implemented)");
+    info!("RouterOS Controller (Phase 2+ Stub - not yet implemented)");
     
     // TODO: Initialize controller
     // TODO: Set up CRD watchers

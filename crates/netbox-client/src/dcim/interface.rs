@@ -6,6 +6,7 @@ use crate::common::PaginatedResponse;
 use crate::core::{NetBoxClientCore, helpers};
 use crate::error::NetBoxError;
 use crate::models::Interface;
+use crate::types::*;
 use tracing::debug;
 
 /// Query interfaces by filters
@@ -50,9 +51,10 @@ pub async fn query_interfaces(
 }
 
 /// Get interface by ID
-pub async fn get_interface(core: &NetBoxClientCore, id: u64) -> Result<Interface, NetBoxError> {
-    let url = format!("{}/api/dcim/interfaces/{}/", core.base_url, id);
-    debug!("Fetching interface {} from NetBox", id);
+pub async fn get_interface(core: &NetBoxClientCore, id: InterfaceId) -> Result<Interface, NetBoxError> {
+    let id_value: u64 = id.into();
+    let url = format!("{}/api/dcim/interfaces/{}/", core.base_url, id_value);
+    debug!("Fetching interface {} from NetBox", id_value);
     
     let response = core.client
         .get(&url)
@@ -63,7 +65,7 @@ pub async fn get_interface(core: &NetBoxClientCore, id: u64) -> Result<Interface
         .map_err(|e| NetBoxError::Http(e))?;
     
     if response.status() == 404 {
-        return Err(NetBoxError::NotFound(format!("Interface {} not found", id)));
+        return Err(NetBoxError::NotFound(format!("Interface {} not found", id_value)));
     }
     
     if !response.status().is_success() {
@@ -71,7 +73,7 @@ pub async fn get_interface(core: &NetBoxClientCore, id: u64) -> Result<Interface
         let body = response.text().await.unwrap_or_default();
         return Err(NetBoxError::Api(format!(
             "Failed to get interface {}: {} - {}",
-            id, status, body
+            id_value, status, body
         )));
     }
     
@@ -81,7 +83,7 @@ pub async fn get_interface(core: &NetBoxClientCore, id: u64) -> Result<Interface
 /// Create a new interface
 pub async fn create_interface(
     core: &NetBoxClientCore,
-    device_id: u64,
+    device_id: DeviceId,
     name: &str,
     interface_type: &str,
     enabled: Option<bool>,
@@ -89,11 +91,12 @@ pub async fn create_interface(
     mtu: Option<u16>,
     description: Option<String>,
 ) -> Result<Interface, NetBoxError> {
+    let device_id_value: u64 = device_id.into();
     let url = format!("{}/api/dcim/interfaces/", core.base_url);
-    debug!("Creating interface {} on device {} in NetBox", name, device_id);
+    debug!("Creating interface {} on device {} in NetBox", name, device_id_value);
     
     let mut body = serde_json::json!({
-        "device": device_id,
+        "device": device_id_value,
         "name": name,
         "type": interface_type,
     });
@@ -137,7 +140,7 @@ pub async fn create_interface(
 /// Update an interface
 pub async fn update_interface(
     core: &NetBoxClientCore,
-    id: u64,
+    id: InterfaceId,
     name: Option<&str>,
     interface_type: Option<&str>,
     enabled: Option<bool>,
@@ -145,8 +148,9 @@ pub async fn update_interface(
     mtu: Option<u16>,
     description: Option<String>,
 ) -> Result<Interface, NetBoxError> {
-    let url = format!("{}/api/dcim/interfaces/{}/", core.base_url, id);
-    debug!("Updating interface {} in NetBox", id);
+    let id_value: u64 = id.into();
+    let url = format!("{}/api/dcim/interfaces/{}/", core.base_url, id_value);
+    debug!("Updating interface {} in NetBox", id_value);
     
     let mut body = serde_json::json!({});
     
@@ -178,7 +182,7 @@ pub async fn update_interface(
         let body = response.text().await.unwrap_or_default();
         return Err(NetBoxError::Api(format!(
             "Failed to update interface {}: {} - {}",
-            id, status, body
+            id_value, status, body
         )));
     }
     

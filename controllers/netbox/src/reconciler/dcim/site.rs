@@ -5,7 +5,7 @@ use crate::error::ControllerError;
 use crate::kube_api_trait::KubeApiTrait;
 use tracing::{info, error, debug, warn};
 use crds::{NetBoxSite, NetBoxSiteStatus, ResourceState};
-use netbox_client::{NetBoxClient, NetBoxClientTrait};
+use netbox_client::{NetBoxClientTrait, SiteId, TenantId, RegionId, SiteGroupId};
 
 impl Reconciler {
     fn site_needs_update(
@@ -235,107 +235,104 @@ impl Reconciler {
             crds::SiteStatus::Staging => "staging",
         };
         
-        // Check if already created - use helper for drift detection and diffing
-        let netbox_site = if let Some(status) = &site_crd.status {
-            if status.state == ResourceState::Created && status.netbox_id.is_some() {
-                if let Some(netbox_id) = status.netbox_id {
-                    // Use helper function for drift detection, diffing, and updating
-                    // Only pass tenant_id/region_id/site_group_id if they're different from existing
-                    // This prevents NetBox validation errors when sending unchanged nested objects
-                    match netbox_client.get_site(netbox_id).await {
-                        Ok(existing_site) => {
-                            // Check which nested fields actually changed (independent of other field changes)
-                            // This is critical: NetBox 4.0 validates nested objects strictly, so we only
-                            // include them in the update if they've actually changed
-                            let existing_tenant_id = existing_site.tenant.as_ref().map(|t| t.id);
-                            let _existing_region_id = existing_site.region.as_ref().map(|r| r.id);
-                            let _existing_site_group_id = existing_site.site_group.as_ref().map(|sg| sg.id);
-                            
-                            // ALWAYS include tenant/region/site_group in PATCH requests
-                            // NetBox 4.0 seems to require these fields to be present even if unchanged
-                            // If we don't include them, NetBox may try to validate them as empty/blank
-                            let update_tenant_id = tenant_id; // Always include if we have a tenant_id
-                            let update_region_id = region_id; // Always include if we have a region_id
-                            let update_site_group_id = site_group_id; // Always include if we have a site_group_id
-                            
-                            if Some(tenant_id) != existing_tenant_id {
-                                warn!("Site tenant changed: existing={:?}, desired={}", existing_tenant_id, tenant_id);
-                            } else {
-                                debug!("Site tenant unchanged: {}, but will include in update", tenant_id);
-                            }
-                            
-                            // Note: update_region_id and update_site_group_id are now set above
-                            
-                            // Check if any field (including nested) changed
-                            if Self::site_needs_update(
-                                &site_crd.spec,
-                                &existing_site,
-                                tenant_id,
-                                region_id,
-                                site_group_id,
-                                &status_str,
-                            ) {
-                                // Update the site with only changed fields
-                                match netbox_client.update_site(
-                                    netbox_id,
-                                    Some(&site_crd.spec.name),
-                                    site_crd.spec.slug.as_deref(),
-                                    site_crd.spec.description.clone(),
-                                    site_crd.spec.physical_address.clone(),
-                                    site_crd.spec.shipping_address.clone(),
-                                    site_crd.spec.latitude,
-                                    site_crd.spec.longitude,
-                                    Some(update_tenant_id), // tenant is now required
-                                    update_region_id,
-                                    update_site_group_id,
-                                    Some(status_str),
-                                    site_crd.spec.facility.clone(),
-                                    site_crd.spec.time_zone.clone(),
-                                    site_crd.spec.comments.clone(),
-                                ).await {
-                                    Ok(updated_site) => {
-                                        // Update successful
-                                        Some(updated_site)
-                                    }
-                                    Err(e) => {
-                                        error!("Failed to update NetBoxSite {}/{} in NetBox: {}", namespace, name, e);
-                                        return Err(ControllerError::NetBox(e));
-                                    }
-                                }
-                            } else {
-                                // No changes needed
-                                Some(existing_site)
-                            }
+        // Check if already created - use shared helper for drift detection and status validation
+        use crate::reconcile_helpers::{validate_status_and_drift, DriftCheckResult};
+        
+        let drift_result = {
+            let netbox_client_ref = &netbox_client;
+            validate_status_and_drift(
+                site_crd.status.as_ref(),
+                "NetBoxSite",
+                namespace,
+                name,
+                |netbox_id| async move {
+                    netbox_client_ref.get_site(SiteId(netbox_id)).await
+                },
+            ).await?
+        };
+        
+        let netbox_site = match drift_result {
+            DriftCheckResult::UseExisting(existing_site) => {
+                // Resource exists - check if it needs updating
+                let existing_tenant_id = existing_site.tenant.as_ref().map(|t| t.id);
+                let _existing_region_id = existing_site.region.as_ref().map(|r| r.id);
+                let _existing_site_group_id = existing_site.site_group.as_ref().map(|sg| sg.id);
+                
+                // ALWAYS include tenant/region/site_group in PATCH requests
+                // NetBox 4.0 seems to require these fields to be present even if unchanged
+                let update_tenant_id = tenant_id; // Always include if we have a tenant_id
+                let update_region_id = region_id; // Always include if we have a region_id
+                let update_site_group_id = site_group_id; // Always include if we have a site_group_id
+                
+                if Some(tenant_id) != existing_tenant_id {
+                    warn!("Site tenant changed: existing={:?}, desired={}", existing_tenant_id, tenant_id);
+                } else {
+                    debug!("Site tenant unchanged: {}, but will include in update", tenant_id);
+                }
+                
+                // Check if any field (including nested) changed
+                if Self::site_needs_update(
+                    &site_crd.spec,
+                    &existing_site,
+                    tenant_id,
+                    region_id,
+                    site_group_id,
+                    &status_str,
+                ) {
+                    // Update the site with only changed fields
+                    match netbox_client.update_site(
+                        SiteId(existing_site.id),
+                        Some(&site_crd.spec.name),
+                        site_crd.spec.slug.as_deref(),
+                        site_crd.spec.description.clone(),
+                        site_crd.spec.physical_address.clone(),
+                        site_crd.spec.shipping_address.clone(),
+                        site_crd.spec.latitude,
+                        site_crd.spec.longitude,
+                        Some(TenantId(update_tenant_id)), // tenant is now required
+                        update_region_id.map(RegionId),
+                        update_site_group_id.map(SiteGroupId),
+                        Some(status_str),
+                        site_crd.spec.facility.clone(),
+                        site_crd.spec.time_zone.clone(),
+                        site_crd.spec.comments.clone(),
+                    ).await {
+                        Ok(updated_site) => {
+                            // Update successful
+                            Some(updated_site)
                         }
                         Err(e) => {
-                            // Error getting existing site - treat as drift
-                            warn!("Failed to get existing site {} from NetBox: {}, treating as deleted", netbox_id, e);
-                            // Clear status and recreate
-                            let status_patch = Self::create_resource_status_patch(
-                                0, // Clear netbox_id
-                                String::new(), // Clear URL
-                                ResourceState::Pending,
-                                Some(format!("Resource was deleted in NetBox, will recreate: {}", e)),
-                            );
-                            let pp = kube::api::PatchParams::default();
-                            if let Err(update_err) = self.netbox_site_api
-                                .patch_status(name, &pp, &kube::api::Patch::Merge(status_patch.clone()))
-                                .await
-                            {
-                                warn!("Failed to clear NetBoxSite status after drift detection: {}", update_err);
-                            }
-                            // Fall through to creation
-                            None
+                            error!("Failed to update NetBoxSite {}/{} in NetBox: {}", namespace, name, e);
+                            return Err(ControllerError::NetBox(e));
                         }
                     }
                 } else {
-                    None // No netbox_id, need to create
+                    // No changes needed
+                    Some(existing_site)
                 }
-            } else {
-                None // Not in Created state, need to create
             }
-        } else {
-            None // No status, need to create
+            DriftCheckResult::StatusCleared { message } => {
+                // Status was cleared - update it to Pending
+                let status_patch = Self::create_resource_status_patch(
+                    0, // Clear netbox_id
+                    String::new(), // Clear URL
+                    ResourceState::Pending,
+                    Some(message),
+                );
+                let pp = kube::api::PatchParams::default();
+                if let Err(update_err) = self.netbox_site_api
+                    .patch_status(name, &pp, &kube::api::Patch::Merge(status_patch.clone()))
+                    .await
+                {
+                    warn!("Failed to clear NetBoxSite status: {}", update_err);
+                }
+                // Fall through to creation
+                None
+            }
+            DriftCheckResult::Recreate => {
+                // Need to create - fall through
+                None
+            }
         };
         
         // Handle existing site (from helper) or create new
@@ -403,9 +400,9 @@ impl Reconciler {
                         site_crd.spec.shipping_address.clone(),
                         site_crd.spec.latitude,
                         site_crd.spec.longitude,
-                        Some(tenant_id), // tenant is now required
-                        region_id,
-                        site_group_id,
+                        Some(TenantId(tenant_id)), // tenant is now required
+                        region_id.map(RegionId),
+                        site_group_id.map(SiteGroupId),
                         Some(status_str),
                         site_crd.spec.facility.clone(),
                         site_crd.spec.time_zone.clone(),

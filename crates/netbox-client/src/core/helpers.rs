@@ -107,7 +107,7 @@ pub fn add_optional_enum_field<T: serde::Serialize>(body: &mut serde_json::Value
 pub async fn add_tenant_for_create(
     body: &mut serde_json::Value,
     core: &NetBoxClientCore,
-    tenant_id: Option<u64>,
+    tenant_id: Option<u64>,  // Keep as u64 for now - will be updated when tenancy module uses TenantId
 ) {
     if let Some(tid) = tenant_id {
         // Fetch the full tenant object to get name and slug

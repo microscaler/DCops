@@ -4,8 +4,8 @@ use super::super::Reconciler;
 use crate::error::ControllerError;
 use crate::reconcile_helpers;
 use tracing::{info, error, debug, warn};
-use crds::{NetBoxInterface, NetBoxInterfaceStatus, ResourceState};
-use netbox_client::NetBoxClientTrait;
+use crds::{NetBoxInterface, ResourceState};
+use netbox_client::{NetBoxClientTrait, InterfaceId, DeviceId};
 
 impl Reconciler {
     pub async fn reconcile_netbox_interface(&self, interface_crd: &NetBoxInterface) -> Result<(), ControllerError> {
@@ -49,12 +49,12 @@ impl Reconciler {
                         &netbox_client,
                         netbox_id,
                         &format!("NetBoxInterface {}/{}", namespace, name),
-                        netbox_client.get_interface(netbox_id),
+                        netbox_client.get_interface(InterfaceId(netbox_id)),
                     ).await {
                         Ok(Some(resource)) => Some(resource),
                         Ok(None) => {
                             warn!("NetBoxInterface {}/{} was deleted in NetBox (ID: {}), clearing status and will recreate", namespace, name, netbox_id);
-                            let status_patch = Self::create_resource_status_patch(
+                            let status_patch = Self::create_typed_interface_status_patch(
                                 0, String::new(), ResourceState::Pending,
                                 Some("Resource was deleted in NetBox, will recreate".to_string()),
                             );
@@ -91,7 +91,7 @@ impl Reconciler {
                 );
                 
                 if needs_status_update {
-                    let status_patch = Self::create_resource_status_patch(
+                    let status_patch = Self::create_typed_interface_status_patch(
                         interface.id,
                         interface.url.clone(),
                         ResourceState::Created,
@@ -134,7 +134,7 @@ impl Reconciler {
                 } else {
                     info!("Creating interface {} on device {} in NetBox", interface_crd.spec.name, device_name);
                     match netbox_client.create_interface(
-                        device_id,
+                        DeviceId(device_id),
                         &interface_crd.spec.name,
                         &interface_crd.spec.r#type,
                         Some(interface_crd.spec.enabled),
@@ -156,7 +156,7 @@ impl Reconciler {
             }
         };
         
-        let status_patch = Self::create_resource_status_patch(
+        let status_patch = Self::create_typed_interface_status_patch(
             netbox_interface.id,
             netbox_interface.url.clone(),
             ResourceState::Created,

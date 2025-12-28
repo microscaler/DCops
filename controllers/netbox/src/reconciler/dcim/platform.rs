@@ -4,8 +4,8 @@ use super::super::Reconciler;
 use crate::error::ControllerError;
 use crate::reconcile_helpers;
 use tracing::{info, error, debug, warn};
-use crds::{NetBoxPlatform, NetBoxPlatformStatus, ResourceState};
-use netbox_client::NetBoxClientTrait;
+use crds::{NetBoxPlatform, ResourceState};
+use netbox_client::{NetBoxClientTrait, ManufacturerId};
 
 impl Reconciler {
     pub async fn reconcile_netbox_platform(&self, platform_crd: &NetBoxPlatform) -> Result<(), ControllerError> {
@@ -64,7 +64,7 @@ impl Reconciler {
                         Ok(Some(resource)) => Some(resource),
                         Ok(None) => {
                             warn!("NetBoxPlatform {}/{} was deleted in NetBox (ID: {}), clearing status and will recreate", namespace, name, netbox_id);
-                            let status_patch = Self::create_resource_status_patch(
+                            let status_patch = Self::create_typed_platform_status_patch(
                                 0, String::new(), ResourceState::Pending,
                                 Some("Resource was deleted in NetBox, will recreate".to_string()),
                             );
@@ -101,7 +101,7 @@ impl Reconciler {
                 );
                 
                 if needs_status_update {
-                    let status_patch = Self::create_resource_status_patch(
+                    let status_patch = Self::create_typed_platform_status_patch(
                         platform.id,
                         platform.url.clone(),
                         ResourceState::Created,
@@ -146,7 +146,7 @@ impl Reconciler {
                     match netbox_client.create_platform(
                         &platform_crd.spec.name,
                         platform_crd.spec.slug.as_deref(),
-                        manufacturer_id,
+                        manufacturer_id.map(ManufacturerId),
                         platform_crd.spec.napalm_driver.as_deref(),
                         platform_crd.spec.napalm_args.as_deref(),
                         platform_crd.spec.description.clone(),
@@ -166,7 +166,7 @@ impl Reconciler {
             }
         };
         
-        let status_patch = Self::create_resource_status_patch(
+        let status_patch = Self::create_typed_platform_status_patch(
             netbox_platform.id,
             netbox_platform.url.clone(),
             ResourceState::Created,

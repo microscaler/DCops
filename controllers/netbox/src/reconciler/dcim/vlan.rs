@@ -5,7 +5,7 @@ use crate::error::ControllerError;
 use crate::reconcile_helpers;
 use tracing::{info, error, debug, warn};
 use crds::{NetBoxVLAN, ResourceState};
-use netbox_client::NetBoxClientTrait;
+use netbox_client::{NetBoxClientTrait, VlanId, SiteId, TenantId};
 
 impl Reconciler {
     pub async fn reconcile_netbox_vlan(&self, vlan_crd: &NetBoxVLAN) -> Result<(), ControllerError> {
@@ -32,7 +32,7 @@ impl Reconciler {
                         &netbox_client,
                         netbox_id,
                         &format!("NetBoxVLAN {}/{}", namespace, name),
-                        netbox_client.get_vlan(netbox_id),
+                        netbox_client.get_vlan(VlanId(netbox_id as u32)),
                     ).await {
                         Ok(Some(resource)) => {
                             // Resource exists and is up-to-date
@@ -200,9 +200,9 @@ impl Reconciler {
                     match netbox_client.create_vlan(
                         vlan_crd.spec.vid,
                         &vlan_crd.spec.name,
-                        Some(site_id_value),
+                        Some(SiteId(site_id_value)),
                         None, // group_id
-                        Some(tenant_id),
+                        Some(TenantId(tenant_id)),
                         None, // role_id
                         status_str, // status_str is already Option<&str>
                         vlan_crd.spec.description.clone(),

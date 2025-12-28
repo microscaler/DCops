@@ -3,15 +3,20 @@
 //! This module handles the reconciliation of `BootIntent` and `BootProfile`
 //! resources, ensuring the desired state matches the actual state in the
 //! PXE boot service.
+//!
+//! **Status:** Phase 2+ (stub implementation - not yet implemented)
 
 use anyhow::Result;
 
 /// Reconciles PXE boot intent resources.
-pub struct Reconciler {
+/// 
+/// **Phase 2+ Stub:** This is a placeholder for future implementation.
+#[allow(dead_code)] // Stub implementation - will be used when controller is implemented
+pub struct Phase2StubReconciler {
     // TODO: Add fields
 }
 
-impl Reconciler {
+impl Phase2StubReconciler {
     /// Creates a new reconciler instance.
     pub fn new() -> Self {
         // TODO: Initialize reconciler

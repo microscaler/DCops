@@ -4,8 +4,8 @@ use super::super::Reconciler;
 use crate::error::ControllerError;
 use crate::reconcile_helpers;
 use tracing::{info, error, debug, warn};
-use crds::{NetBoxDeviceType, NetBoxDeviceTypeStatus, ResourceState};
-use netbox_client::NetBoxClientTrait;
+use crds::{NetBoxDeviceType, ResourceState};
+use netbox_client::{NetBoxClientTrait, ManufacturerId};
 
 impl Reconciler {
     pub async fn reconcile_netbox_device_type(&self, device_type_crd: &NetBoxDeviceType) -> Result<(), ControllerError> {
@@ -65,7 +65,7 @@ impl Reconciler {
                         Ok(Some(resource)) => Some(resource),
                         Ok(None) => {
                             warn!("NetBoxDeviceType {}/{} was deleted in NetBox (ID: {}), clearing status and will recreate", namespace, name, netbox_id);
-                            let status_patch = Self::create_resource_status_patch(
+                            let status_patch = Self::create_typed_device_type_status_patch(
                                 0, String::new(), ResourceState::Pending,
                                 Some("Resource was deleted in NetBox, will recreate".to_string()),
                             );
@@ -102,7 +102,7 @@ impl Reconciler {
                 );
                 
                 if needs_status_update {
-                    let status_patch = Self::create_resource_status_patch(
+                    let status_patch = Self::create_typed_device_type_status_patch(
                         device_type.id,
                         device_type.url.clone(),
                         ResourceState::Created,
@@ -129,7 +129,7 @@ impl Reconciler {
             }
             None => {
                 // Try to find existing by model and manufacturer
-                let existing_device_type = match netbox_client.get_device_type_by_model(manufacturer_id, &device_type_crd.spec.model).await {
+                let existing_device_type = match netbox_client.get_device_type_by_model(ManufacturerId(manufacturer_id), &device_type_crd.spec.model).await {
                     Ok(Some(dt)) => {
                         info!("DeviceType {} (manufacturer ID: {}) already exists in NetBox (ID: {}), acknowledging existence (idempotency)", device_type_crd.spec.model, manufacturer_id, dt.id);
                         Some(dt)
@@ -146,7 +146,7 @@ impl Reconciler {
                 } else {
                     info!("Creating device type {} in NetBox", device_type_crd.spec.model);
                     match netbox_client.create_device_type(
-                        manufacturer_id,
+                        ManufacturerId(manufacturer_id),
                         &device_type_crd.spec.model,
                         device_type_crd.spec.slug.as_deref(),
                         device_type_crd.spec.part_number.as_deref(),
@@ -169,7 +169,7 @@ impl Reconciler {
             }
         };
         
-        let status_patch = Self::create_resource_status_patch(
+        let status_patch = Self::create_typed_device_type_status_patch(
             netbox_device_type.id,
             netbox_device_type.url.clone(),
             ResourceState::Created,

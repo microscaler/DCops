@@ -5,7 +5,7 @@ use crate::error::ControllerError;
 use crate::reconcile_helpers;
 use tracing::{info, error, debug, warn};
 use crds::{NetBoxLocation, ResourceState};
-use netbox_client::NetBoxClientTrait;
+use netbox_client::{NetBoxClientTrait, LocationId, SiteId, TenantId};
 
 impl Reconciler {
     pub async fn reconcile_netbox_location(&self, location_crd: &NetBoxLocation) -> Result<(), ControllerError> {
@@ -32,7 +32,7 @@ impl Reconciler {
                         &netbox_client,
                         netbox_id,
                         &format!("NetBoxLocation {}/{}", namespace, name),
-                        netbox_client.get_location(netbox_id),
+                        netbox_client.get_location(LocationId(netbox_id)),
                     ).await {
                         Ok(Some(resource)) => {
                             // Resource exists and is up-to-date
@@ -194,11 +194,11 @@ impl Reconciler {
                     existing
                 } else {
                     match netbox_client.create_location(
-                        site_id,
+                        SiteId(site_id),
                         &location_crd.spec.name,
                         location_crd.spec.slug.as_deref(),
-                        parent_id,
-                        Some(tenant_id),
+                        parent_id.map(LocationId),
+                        Some(TenantId(tenant_id)),
                         location_crd.spec.facility.as_deref(),
                         location_crd.spec.description.clone(),
                         None, // comments not in spec

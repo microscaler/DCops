@@ -91,7 +91,11 @@ pub async fn create_tenant(
     
     helpers::add_optional_string_field_owned(&mut body, "description", description);
     helpers::add_optional_string_field_owned(&mut body, "comments", comments);
-    helpers::add_nullable_nested_reference(&mut body, "group", group);
+    if let Some(group_id) = group {
+        helpers::add_nested_reference(&mut body, "group", Some(group_id.into()));
+    } else {
+        body["group"] = serde_json::Value::Null;
+    }
     
     let response = core.client
         .post(&url)

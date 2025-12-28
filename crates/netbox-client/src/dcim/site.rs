@@ -6,6 +6,7 @@ use crate::common::PaginatedResponse;
 use crate::core::{NetBoxClientCore, helpers};
 use crate::error::NetBoxError;
 use crate::models::Site;
+use crate::types::*;
 use tracing::debug;
 
 /// Query sites by filters
@@ -50,8 +51,9 @@ pub async fn query_sites(
 }
 
 /// Get site by ID
-pub async fn get_site(core: &NetBoxClientCore, id: u64) -> Result<Site, NetBoxError> {
-    let url = format!("{}/api/dcim/sites/{}/", core.base_url, id);
+pub async fn get_site(core: &NetBoxClientCore, id: SiteId) -> Result<Site, NetBoxError> {
+    let id_value: u64 = id.into();
+    let url = format!("{}/api/dcim/sites/{}/", core.base_url, id_value);
     let response = core.client
         .get(&url)
         .header("Authorization", format!("Token {}", core.token))
@@ -64,7 +66,7 @@ pub async fn get_site(core: &NetBoxClientCore, id: u64) -> Result<Site, NetBoxEr
         let body = response.text().await.unwrap_or_default();
         return Err(NetBoxError::Api(format!(
             "Failed to get site {}: {} - {}",
-            id, status, body
+            id_value, status, body
         )));
     }
     
@@ -104,13 +106,15 @@ pub async fn create_site(
     helpers::add_optional_number_field(&mut body, "latitude", latitude.map(|l| serde_json::Number::from_f64(l).unwrap()));
     helpers::add_optional_number_field(&mut body, "longitude", longitude.map(|l| serde_json::Number::from_f64(l).unwrap()));
     
-    // For CREATE operations, NetBox 4.0 requires full tenant object (id, name, slug)
-    // For PATCH, we can use just {"id": X}, but for POST we need the full object
-    helpers::add_tenant_for_create(&mut body, core, tenant_id).await;
+    // For CREATE operations, use just the tenant ID
+    // NetBox 4.0 accepts either {"id": X} or the full object, but using just ID is simpler and avoids validation issues
+    if let Some(tid) = tenant_id {
+        helpers::add_nested_reference(&mut body, "tenant", Some(tid.into()));
+    }
     
     // Region and site_group can use just ID for CREATE
-    helpers::add_nested_reference(&mut body, "region", region_id);
-    helpers::add_nested_reference(&mut body, "site_group", site_group_id);
+    helpers::add_nested_reference(&mut body, "region", region_id.map(|id| id.into()));
+    helpers::add_nested_reference(&mut body, "site_group", site_group_id.map(|id| id.into()));
     
     helpers::add_optional_string_field(&mut body, "status", status);
     helpers::add_optional_string_field_owned(&mut body, "facility", facility);
@@ -146,7 +150,7 @@ pub async fn create_site(
 /// When using PATCH, NetBox 4.0 requires nested objects as simple integer IDs.
 pub async fn update_site(
     core: &NetBoxClientCore,
-    id: u64,
+    id: SiteId,
     name: Option<&str>,
     slug: Option<&str>,
     description: Option<String>,
@@ -154,16 +158,17 @@ pub async fn update_site(
     shipping_address: Option<String>,
     latitude: Option<f64>,
     longitude: Option<f64>,
-    tenant_id: Option<u64>,
-    region_id: Option<u64>,
-    site_group_id: Option<u64>,
+    tenant_id: Option<TenantId>,
+    region_id: Option<RegionId>,
+    site_group_id: Option<SiteGroupId>,
     status: Option<&str>, // "active", "planned", "retired", "staging"
     facility: Option<String>,
     time_zone: Option<String>,
     comments: Option<String>,
 ) -> Result<Site, NetBoxError> {
-    let url = format!("{}/api/dcim/sites/{}/", core.base_url, id);
-    debug!("Updating site {} in NetBox", id);
+    let id_value: u64 = id.into();
+    let url = format!("{}/api/dcim/sites/{}/", core.base_url, id_value);
+    debug!("Updating site {} in NetBox", id_value);
     
     let mut body = serde_json::json!({});
     
@@ -183,9 +188,9 @@ pub async fn update_site(
     // NetBox 4.0 PATCH updates: For nested objects, send only {"id": X}
     // Sending the full object causes NetBox to try to CREATE a new object
     // If id is None, we don't include the field in the body (PATCH semantics - only send changed fields)
-    helpers::add_nested_reference(&mut body, "tenant", tenant_id);
-    helpers::add_nested_reference(&mut body, "region", region_id);
-    helpers::add_nested_reference(&mut body, "site_group", site_group_id);
+    helpers::add_nested_reference(&mut body, "tenant", tenant_id.map(|id| id.into()));
+    helpers::add_nested_reference(&mut body, "region", region_id.map(|id| id.into()));
+    helpers::add_nested_reference(&mut body, "site_group", site_group_id.map(|id| id.into()));
     
     helpers::add_optional_string_field(&mut body, "status", status);
     helpers::add_optional_string_field_owned(&mut body, "facility", facility);

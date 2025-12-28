@@ -156,11 +156,13 @@ We follow the [Pragmatic Rust Guidelines](./rust-guidelines.txt). Key points:
 
 **Verification Requirements:**
 
-1. ✅ **Code compiles** - `cargo check` passes
+1. ✅ **Code compiles** - Use `python3 scripts/host_aware_build.py --release -p netbox-controller` for comprehensive error checking (not just `cargo check` or `cargo build`, which may miss errors)
 2. ✅ **Tests pass** - `cargo test` passes with adequate coverage
 3. ✅ **Integration verification** - For controllers, verify CRs reconcile correctly
 4. ✅ **Database verification** - For NetBox resources, verify they exist in the database
 5. ✅ **End-to-end verification** - Use `scripts/verify_netbox_crs.py` to verify reconciliation
+
+**⚠️ Important:** Always use the full build command (`python3 scripts/host_aware_build.py --release -p netbox-controller`) to check for compilation errors. `cargo check` and `cargo build` may be incomplete and miss some errors that only appear during a full release build.
 
 **Never claim code is working just because it compiles.**
 
@@ -677,7 +679,7 @@ When adding a new NetBox CRD, you **MUST** implement all of the following compon
 
 ### 12. Testing Checklist
 
-- [ ] **Compilation:** `cargo check --workspace` passes
+- [ ] **Compilation:** Use `python3 scripts/host_aware_build.py --release -p netbox-controller` for comprehensive error checking (not just `cargo check`, which may miss errors)
 - [ ] **CRD Generation:** `cargo run -p crds --bin crdgen` generates valid YAML
 - [ ] **CRD Applied:** `kubectl apply -f config/crd/all-crds.yaml` succeeds
 - [ ] **RBAC:** Controller can list/watch CRs (check logs for 403 errors)
@@ -712,8 +714,8 @@ When adding a new NetBox CRD, you **MUST** implement all of the following compon
 After implementing all components, run:
 
 ```bash
-# 1. Check compilation
-cargo check --workspace
+# 1. Check compilation (use host-aware build for comprehensive error checking)
+python3 scripts/host_aware_build.py --release -p netbox-controller
 
 # 2. Generate CRDs
 cargo run -p crds --bin crdgen > config/crd/all-crds.yaml

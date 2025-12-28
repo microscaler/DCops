@@ -6,7 +6,7 @@ use crate::reconcile_helpers;
 use crate::kube_api_trait::KubeApiTrait;
 use tracing::{info, error, debug, warn};
 use crds::{NetBoxPrefix, NetBoxPrefixStatus, PrefixState};
-use netbox_client::{NetBoxClient, NetBoxClientTrait};
+use netbox_client::{NetBoxClientTrait, PrefixId, TenantId, SiteId, VlanId, RoleId};
 
 impl Reconciler {
     /// Check if prefix needs updating by comparing spec with existing NetBox resource
@@ -233,7 +233,7 @@ impl Reconciler {
                         &netbox_client,
                         netbox_id,
                         &format!("NetBoxPrefix {}/{}", namespace, name),
-                        netbox_client.get_prefix(netbox_id),
+                        netbox_client.get_prefix(PrefixId(netbox_id)),
                         |existing| Self::prefix_needs_update(
                             &prefix_crd.spec,
                             existing,
@@ -244,14 +244,14 @@ impl Reconciler {
                             &status_str,
                         ),
                         netbox_client.update_prefix(
-                            netbox_id,
+                            PrefixId(netbox_id),
                             None, // prefix - don't update prefix CIDR
                             prefix_crd.spec.description.clone(),
                             Some(status_str),
                             None, // role - role_id not easily convertible to role name, omit for now
-                            Some(tenant_id), // tenant is now required
-                            site_id, // Include site if resolved
-                            vlan_id, // Include vlan if resolved
+                            Some(TenantId(tenant_id)), // tenant is now required
+                            site_id.map(SiteId), // Include site if resolved
+                            vlan_id.map(VlanId), // Include vlan if resolved
                             None, // tags - omit for now
                         ),
                     ).await {
@@ -292,7 +292,7 @@ impl Reconciler {
                     if let Some(netbox_id) = status.netbox_id {
                         info!("NetBoxPrefix {}/{} has Failed status, checking if resource exists in NetBox for idempotency", namespace, name);
                         // Try to get the resource - if it exists, we'll update status to Created
-                        match netbox_client.get_prefix(netbox_id).await {
+                        match netbox_client.get_prefix(PrefixId(netbox_id)).await {
                             Ok(existing) => {
                                 info!("NetBoxPrefix {}/{} exists in NetBox (ID: {}), updating status from Failed to Created", namespace, name, netbox_id);
                                 Some(existing)
@@ -489,14 +489,14 @@ impl Reconciler {
                     // Update prefix if needed (tenant, site, vlan, description, status)
                     // Note: Omitting role and tags for now (requires numeric IDs or string slugs)
                     match netbox_client.update_prefix(
-                        existing.id,
+                        PrefixId(existing.id),
                         None, // prefix - don't update prefix CIDR
                         prefix_crd.spec.description.clone(),
                         Some(status_str),
                         None, // role - role_id not easily convertible to role name, omit for now
-                        Some(tenant_id), // tenant is now required
-                        site_id, // Include site if resolved
-                        vlan_id, // Include vlan if resolved
+                        Some(TenantId(tenant_id)), // tenant is now required
+                        site_id.map(SiteId), // Include site if resolved
+                        vlan_id.map(VlanId), // Include vlan if resolved
                         None, // tags - omit for now (requires numeric IDs or tag slugs)
                     ).await {
                         Ok(updated) => {
@@ -520,11 +520,11 @@ impl Reconciler {
                     match netbox_client.create_prefix(
                         &prefix_crd.spec.prefix,
                         prefix_crd.spec.description.clone(),
-                        site_id,
-                        vlan_id,
+                        site_id.map(SiteId),
+                        vlan_id.map(VlanId),
                         Some(status_str),
-                        role_id,
-                        Some(tenant_id), // tenant is now required
+                        role_id.map(RoleId),
+                        Some(TenantId(tenant_id)), // tenant is now required
                         None, // tags - omit for now (requires numeric IDs or tag slugs)
                     ).await {
                         Ok(created) => {

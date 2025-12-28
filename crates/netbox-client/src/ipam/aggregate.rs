@@ -6,6 +6,7 @@ use crate::common::PaginatedResponse;
 use crate::core::{NetBoxClientCore, helpers};
 use crate::error::NetBoxError;
 use crate::models::Aggregate;
+use crate::types::*;
 use tracing::debug;
 
 /// Query aggregates by filters
@@ -50,8 +51,9 @@ pub async fn query_aggregates(
 }
 
 /// Get aggregate by ID
-pub async fn get_aggregate(core: &NetBoxClientCore, id: u64) -> Result<Aggregate, NetBoxError> {
-    let url = format!("{}/api/ipam/aggregates/{}/", core.base_url, id);
+pub async fn get_aggregate(core: &NetBoxClientCore, id: AggregateId) -> Result<Aggregate, NetBoxError> {
+    let id_value: u64 = id.into();
+    let url = format!("{}/api/ipam/aggregates/{}/", core.base_url, id_value);
     let response = core.client
         .get(&url)
         .header("Authorization", format!("Token {}", core.token))
@@ -64,7 +66,7 @@ pub async fn get_aggregate(core: &NetBoxClientCore, id: u64) -> Result<Aggregate
         let body = response.text().await.unwrap_or_default();
         return Err(NetBoxError::Api(format!(
             "Failed to get aggregate {}: {} - {}",
-            id, status, body
+            id_value, status, body
         )));
     }
     
@@ -75,7 +77,7 @@ pub async fn get_aggregate(core: &NetBoxClientCore, id: u64) -> Result<Aggregate
 pub async fn create_aggregate(
     core: &NetBoxClientCore,
     prefix: &str,
-    rir_id: Option<u64>, // RIR ID (not name)
+    rir_id: Option<RirId>,
     date_allocated: Option<&str>, // ISO 8601 date
     description: Option<String>,
     comments: Option<String>,
@@ -88,7 +90,7 @@ pub async fn create_aggregate(
     });
     
     // RIR is required for aggregates - must be provided
-    let rir_id_value = rir_id.ok_or_else(|| NetBoxError::Api(
+    let rir_id_value: u64 = rir_id.map(|id| id.into()).ok_or_else(|| NetBoxError::Api(
         "RIR is required for aggregates but was not provided".to_string()
     ))?;
     helpers::add_required_nested_reference(&mut body, "rir", rir_id_value);

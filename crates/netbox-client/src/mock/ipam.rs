@@ -5,26 +5,29 @@
 use super::MockNetBoxClient;
 use crate::error::NetBoxError;
 use crate::models::*;
+use crate::types::*;
 
-pub async fn get_prefix(client: &MockNetBoxClient, id: u64) -> Result<Prefix, NetBoxError> {
+pub async fn get_prefix(client: &MockNetBoxClient, id: PrefixId) -> Result<Prefix, NetBoxError> {
+        let id_value: u64 = id.into();
         client.prefixes
             .lock()
             .unwrap()
-            .get(&id)
+            .get(&id_value)
             .cloned()
-            .ok_or_else(|| NetBoxError::NotFound(format!("Prefix {} not found", id)))
+            .ok_or_else(|| NetBoxError::NotFound(format!("Prefix {} not found", id_value)))
 }
 
-pub async fn get_available_ips(client: &MockNetBoxClient, prefix_id: u64, _limit: Option<u32>) -> Result<Vec<AvailableIP>, NetBoxError> {
+pub async fn get_available_ips(client: &MockNetBoxClient, prefix_id: PrefixId, _limit: Option<u32>) -> Result<Vec<AvailableIP>, NetBoxError> {
+        let prefix_id_value: u64 = prefix_id.into();
         Ok(client.available_ips
             .lock()
             .unwrap()
-            .get(&prefix_id)
+            .get(&prefix_id_value)
             .cloned()
             .unwrap_or_default())
 }
 
-pub async fn allocate_ip(client: &MockNetBoxClient, prefix_id: u64, request: Option<AllocateIPRequest>) -> Result<IPAddress, NetBoxError> {
+pub async fn allocate_ip(client: &MockNetBoxClient, prefix_id: PrefixId, request: Option<AllocateIPRequest>) -> Result<IPAddress, NetBoxError> {
         // Verify prefix exists
         get_prefix(client, prefix_id).await?;
 
@@ -71,13 +74,14 @@ pub async fn allocate_ip(client: &MockNetBoxClient, prefix_id: u64, request: Opt
         Ok(ip)
 }
 
-pub async fn get_ip_address(client: &MockNetBoxClient, id: u64) -> Result<IPAddress, NetBoxError> {
+pub async fn get_ip_address(client: &MockNetBoxClient, id: IpAddressId) -> Result<IPAddress, NetBoxError> {
+        let id_value: u64 = id.into();
         client.ip_addresses
             .lock()
             .unwrap()
-            .get(&id)
+            .get(&id_value)
             .cloned()
-            .ok_or_else(|| NetBoxError::NotFound(format!("IP address {} not found", id)))
+            .ok_or_else(|| NetBoxError::NotFound(format!("IP address {} not found", id_value)))
 }
 
 pub async fn query_ip_addresses(client: &MockNetBoxClient, filters: &[(&str, &str)], _fetch_all: bool) -> Result<Vec<IPAddress>, NetBoxError> {
@@ -138,11 +142,12 @@ pub async fn create_ip_address(client: &MockNetBoxClient, address: &str, request
         Ok(ip)
 }
 
-pub async fn update_ip_address(client: &MockNetBoxClient, id: u64, request: AllocateIPRequest) -> Result<IPAddress, NetBoxError> {
+pub async fn update_ip_address(client: &MockNetBoxClient, id: IpAddressId, request: AllocateIPRequest) -> Result<IPAddress, NetBoxError> {
+        let id_value: u64 = id.into();
         let mut ips = client.ip_addresses.lock().unwrap();
         let ip = ips
-            .get_mut(&id)
-            .ok_or_else(|| NetBoxError::NotFound(format!("IP address {} not found", id)))?;
+            .get_mut(&id_value)
+            .ok_or_else(|| NetBoxError::NotFound(format!("IP address {} not found", id_value)))?;
 
         if let Some(description) = request.description {
             ip.description = description;
@@ -180,7 +185,7 @@ pub async fn delete_ip_address(client: &MockNetBoxClient, id: u64) -> Result<(),
             .map(|_| ())
 }
 
-pub async fn create_prefix(client: &MockNetBoxClient, prefix: &str, description: Option<String>, site_id: Option<u64>, vlan_id: Option<u32>, status: Option<&str>, role_id: Option<u64>, tenant_id: Option<u64>, tags: Option<Vec<String>>) -> Result<Prefix, NetBoxError> {
+pub async fn create_prefix(client: &MockNetBoxClient, prefix: &str, description: Option<String>, _site_id: Option<SiteId>, vlan_id: Option<VlanId>, status: Option<&str>, role_id: Option<RoleId>, tenant_id: Option<TenantId>, tags: Option<Vec<String>>) -> Result<Prefix, NetBoxError> {
         let id = client.next_id();
         let status_str = status.unwrap_or("active");
         let prefix_status = match status_str {
@@ -208,10 +213,13 @@ pub async fn create_prefix(client: &MockNetBoxClient, prefix: &str, description:
             family: if prefix.contains(':') { 6 } else { 4 },
             prefix: prefix.to_string(),
             vrf: None,
-            tenant: tenant_id.map(|id| client.helpers().create_nested_tenant(id, None)),
-            vlan: vlan_id.map(|id| client.helpers().create_nested_vlan(id as u64, id as u16, None)),
+            tenant: tenant_id.map(|id| client.helpers().create_nested_tenant(id.into(), None)),
+            vlan: vlan_id.map(|id| {
+                let vlan_id_value: u32 = id.into();
+                client.helpers().create_nested_vlan(vlan_id_value as u64, vlan_id_value as u16, None)
+            }),
             status: prefix_status,
-            role: role_id.map(|id| client.helpers().create_nested_role(id, None)),
+            role: role_id.map(|id| client.helpers().create_nested_role(id.into(), None)),
             is_pool: false,
             mark_utilized: false,
             description: description.unwrap_or_default(),
@@ -228,10 +236,11 @@ pub async fn create_prefix(client: &MockNetBoxClient, prefix: &str, description:
         Ok(prefix_obj)
     }
 
-pub async fn update_prefix(client: &MockNetBoxClient, id: u64, prefix: Option<&str>, description: Option<String>, status: Option<&str>, role: Option<String>, tenant_id: Option<u64>, site_id: Option<u64>, vlan_id: Option<u32>, tags: Option<Vec<String>>) -> Result<Prefix, NetBoxError> {
+pub async fn update_prefix(client: &MockNetBoxClient, id: PrefixId, prefix: Option<&str>, description: Option<String>, status: Option<&str>, role: Option<String>, tenant_id: Option<TenantId>, _site_id: Option<SiteId>, vlan_id: Option<VlanId>, tags: Option<Vec<String>>) -> Result<Prefix, NetBoxError> {
+        let id_value: u64 = id.into();
         let mut prefixes = client.prefixes.lock().unwrap();
         let prefix_obj = prefixes
-            .get_mut(&id)
+            .get_mut(&id_value)
             .ok_or_else(|| NetBoxError::NotFound(format!("Prefix {} not found", id)))?;
 
         if let Some(prefix_str) = prefix {
@@ -239,10 +248,11 @@ pub async fn update_prefix(client: &MockNetBoxClient, id: u64, prefix: Option<&s
             prefix_obj.display = prefix_str.to_string();
         }
         if let Some(tenant) = tenant_id {
-            prefix_obj.tenant = Some(client.helpers().create_nested_tenant(tenant, None));
+            prefix_obj.tenant = Some(client.helpers().create_nested_tenant(tenant.into(), None));
         }
         if let Some(vlan) = vlan_id {
-            prefix_obj.vlan = Some(client.helpers().create_nested_vlan(vlan as u64, vlan as u16, None));
+            let vlan_id_value: u32 = vlan.into();
+            prefix_obj.vlan = Some(client.helpers().create_nested_vlan(vlan_id_value as u64, vlan_id_value as u16, None));
         }
         if let Some(role_str) = role {
             // Parse role string to ID (simplified - in real mock would look up)
@@ -282,28 +292,32 @@ pub async fn query_aggregates(client: &MockNetBoxClient, _filters: &[(&str, &str
         Ok(aggregates.values().cloned().collect())
 }
 
-pub async fn get_aggregate(client: &MockNetBoxClient, id: u64) -> Result<Aggregate, NetBoxError> {
+pub async fn get_aggregate(client: &MockNetBoxClient, id: AggregateId) -> Result<Aggregate, NetBoxError> {
+        let id_value: u64 = id.into();
         client.aggregates
             .lock()
             .unwrap()
-            .get(&id)
+            .get(&id_value)
             .cloned()
-            .ok_or_else(|| NetBoxError::NotFound(format!("Aggregate {} not found", id)))
+            .ok_or_else(|| NetBoxError::NotFound(format!("Aggregate {} not found", id_value)))
 }
 
-pub async fn create_aggregate(client: &MockNetBoxClient, prefix: &str, rir_id: Option<u64>, date_allocated: Option<&str>, description: Option<String>, comments: Option<String>) -> Result<Aggregate, NetBoxError> {
+pub async fn create_aggregate(client: &MockNetBoxClient, prefix: &str, rir_id: Option<RirId>, date_allocated: Option<&str>, description: Option<String>, comments: Option<String>) -> Result<Aggregate, NetBoxError> {
         let id = client.next_id();
         let aggregate = Aggregate {
             id,
             url: format!("{}/api/ipam/aggregates/{}/", client.base_url, id),
             display: prefix.to_string(),
             prefix: prefix.to_string(),
-            rir: rir_id.map(|id| NestedRir {
-                id,
-                url: format!("{}/api/ipam/rirs/{}/", client.base_url, id),
-                display: format!("RIR {}", id),
-                name: format!("RIR {}", id),
-                slug: format!("rir-{}", id),
+            rir: rir_id.map(|id| {
+                let rir_id_value: u64 = id.into();
+                NestedRir {
+                    id: rir_id_value,
+                    url: format!("{}/api/ipam/rirs/{}/", client.base_url, rir_id_value),
+                    display: format!("RIR {}", rir_id_value),
+                    name: format!("RIR {}", rir_id_value),
+                    slug: format!("rir-{}", rir_id_value),
+                }
             }),
             date_allocated: date_allocated.map(|s| s.to_string()),
             description,
@@ -345,7 +359,7 @@ pub async fn create_rir(client: &MockNetBoxClient, name: &str, slug: Option<&str
         Ok(rir)
     }
 
-pub async fn create_vlan(client: &MockNetBoxClient, vid: u16, name: &str, site_id: Option<u64>, group_id: Option<u64>, tenant_id: Option<u64>, role_id: Option<u64>, status: Option<&str>, description: Option<String>, comments: Option<String>) -> Result<Vlan, NetBoxError> {
+pub async fn create_vlan(client: &MockNetBoxClient, vid: u16, name: &str, site_id: Option<SiteId>, _group_id: Option<VlanGroupId>, tenant_id: Option<TenantId>, role_id: Option<RoleId>, status: Option<&str>, description: Option<String>, comments: Option<String>) -> Result<Vlan, NetBoxError> {
         let id = client.next_id();
         let status_str = status.unwrap_or("active");
         let vlan_status = match status_str {
@@ -359,13 +373,13 @@ pub async fn create_vlan(client: &MockNetBoxClient, vid: u16, name: &str, site_i
             id,
             url: format!("{}/api/ipam/vlans/{}/", client.base_url, id),
             display: name.to_string(),
-            site: site_id.map(|id| client.helpers().create_nested_site(id, None)),
+            site: site_id.map(|id| client.helpers().create_nested_site(id.into(), None)),
             group: None, // VLAN group not yet implemented in mock helpers
             vid: vid as u16,
             name: name.to_string(),
-            tenant: tenant_id.map(|id| client.helpers().create_nested_tenant(id, None)),
+            tenant: tenant_id.map(|id| client.helpers().create_nested_tenant(id.into(), None)),
             status: vlan_status,
-            role: role_id.map(|id| client.helpers().create_nested_role(id, None)),
+            role: role_id.map(|id| client.helpers().create_nested_role(id.into(), None)),
             description: description.unwrap_or_default(),
             comments: comments.unwrap_or_default(),
             tags: vec![],
@@ -378,11 +392,13 @@ pub async fn create_vlan(client: &MockNetBoxClient, vid: u16, name: &str, site_i
         Ok(vlan)
 }
 
-pub async fn update_vlan(client: &MockNetBoxClient, id: u64, vid: Option<u16>, name: Option<&str>, site_id: Option<u64>, group_id: Option<u64>, tenant_id: Option<u64>, role_id: Option<u64>, status: Option<&str>, description: Option<String>, comments: Option<String>) -> Result<Vlan, NetBoxError> {
+pub async fn update_vlan(client: &MockNetBoxClient, id: VlanId, vid: Option<u16>, name: Option<&str>, site_id: Option<SiteId>, _group_id: Option<VlanGroupId>, tenant_id: Option<TenantId>, role_id: Option<RoleId>, status: Option<&str>, description: Option<String>, comments: Option<String>) -> Result<Vlan, NetBoxError> {
+        let id_value: u32 = id.into();
+        let id_value_u64 = id_value as u64;
         let mut vlans = client.vlans.lock().unwrap();
         let vlan = vlans
-            .get_mut(&id)
-            .ok_or_else(|| NetBoxError::NotFound(format!("VLAN {} not found", id)))?;
+            .get_mut(&id_value_u64)
+            .ok_or_else(|| NetBoxError::NotFound(format!("VLAN {} not found", id_value_u64)))?;
 
         if let Some(vid_val) = vid {
             vlan.vid = vid_val;
@@ -391,13 +407,13 @@ pub async fn update_vlan(client: &MockNetBoxClient, id: u64, vid: Option<u16>, n
             vlan.name = name_str.to_string();
         }
         if let Some(site_id_val) = site_id {
-            vlan.site = Some(client.helpers().create_nested_site(site_id_val, None));
+            vlan.site = Some(client.helpers().create_nested_site(site_id_val.into(), None));
         }
         if let Some(tenant) = tenant_id {
-            vlan.tenant = Some(client.helpers().create_nested_tenant(tenant, None));
+            vlan.tenant = Some(client.helpers().create_nested_tenant(tenant.into(), None));
         }
         if let Some(role) = role_id {
-            vlan.role = Some(client.helpers().create_nested_role(role, None));
+            vlan.role = Some(client.helpers().create_nested_role(role.into(), None));
         }
         if let Some(status_str) = status {
             vlan.status = match status_str {
@@ -422,11 +438,13 @@ pub async fn query_vlans(client: &MockNetBoxClient, _filters: &[(&str, &str)], _
         Ok(vlans.values().cloned().collect())
 }
 
-pub async fn get_vlan(client: &MockNetBoxClient, id: u64) -> Result<Vlan, NetBoxError> {
+pub async fn get_vlan(client: &MockNetBoxClient, id: VlanId) -> Result<Vlan, NetBoxError> {
+        let id_value: u32 = id.into();
+        let id_value_u64 = id_value as u64;
         client.vlans
             .lock()
             .unwrap()
-            .get(&id)
+            .get(&id_value_u64)
             .cloned()
-            .ok_or_else(|| NetBoxError::NotFound(format!("VLAN {} not found", id)))
+            .ok_or_else(|| NetBoxError::NotFound(format!("VLAN {} not found", id_value_u64)))
 }

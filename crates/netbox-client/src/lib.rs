@@ -52,6 +52,7 @@ pub mod extras;
 pub mod ipam;
 pub mod models;
 pub mod tenancy;
+pub mod types;
 #[path = "trait.rs"]
 pub mod netbox_trait;
 #[cfg(feature = "test-util")]
@@ -62,5 +63,6 @@ pub use common::{HttpClient, PaginatedResponse};
 pub use error::NetBoxError;
 pub use models::*;
 pub use netbox_trait::NetBoxClientTrait;
+pub use types::*;
 #[cfg(feature = "test-util")]
 pub use mock::MockNetBoxClient;

@@ -17,7 +17,7 @@ use crate::error::ControllerError;
 use crate::backoff::FibonacciBackoff;
 use crate::kube_api_trait::KubeApiTrait;
 use crate::token_resolver::TokenResolver;
-use netbox_client::NetBoxClientTrait;
+use netbox_client::{NetBoxClientTrait, PrefixId};
 use crds::{
     IPClaim, IPPool, NetBoxPrefix, NetBoxTenant, NetBoxSite, NetBoxRole, NetBoxTag, NetBoxAggregate,
     NetBoxDeviceRole, NetBoxManufacturer, NetBoxPlatform, NetBoxDeviceType, NetBoxDevice,
@@ -169,6 +169,183 @@ impl Reconciler {
         })
     }
     
+    // ============================================================================
+    // Typed Status Update Helpers
+    // ============================================================================
+    // These helpers create typed status structs and serialize them to JSON
+    // for use with kube-rs patch_status. This provides compile-time type safety
+    // while maintaining compatibility with the existing patch mechanism.
+    
+    /// Create typed NetBoxRegionStatus and serialize to JSON patch
+    pub(crate) fn create_typed_region_status_patch(
+        netbox_id: u64,
+        netbox_url: String,
+        state: ResourceState,
+        error: Option<String>,
+    ) -> serde_json::Value {
+        let status = crds::NetBoxRegionStatus {
+            netbox_id: Some(netbox_id),
+            netbox_url: Some(netbox_url),
+            state,
+            error,
+            last_reconciled: None, // Removed to prevent reconciliation loops
+        };
+        serde_json::json!({ "status": status })
+    }
+    
+    /// Create typed NetBoxSiteGroupStatus and serialize to JSON patch
+    pub(crate) fn create_typed_site_group_status_patch(
+        netbox_id: u64,
+        netbox_url: String,
+        state: ResourceState,
+        error: Option<String>,
+    ) -> serde_json::Value {
+        let status = crds::NetBoxSiteGroupStatus {
+            netbox_id: Some(netbox_id),
+            netbox_url: Some(netbox_url),
+            state,
+            error,
+            last_reconciled: None, // Removed to prevent reconciliation loops
+        };
+        serde_json::json!({ "status": status })
+    }
+    
+    /// Create typed NetBoxDeviceRoleStatus and serialize to JSON patch
+    pub(crate) fn create_typed_device_role_status_patch(
+        netbox_id: u64,
+        netbox_url: String,
+        state: ResourceState,
+        error: Option<String>,
+    ) -> serde_json::Value {
+        let status = crds::NetBoxDeviceRoleStatus {
+            netbox_id: Some(netbox_id),
+            netbox_url: Some(netbox_url),
+            state,
+            error,
+            last_reconciled: None, // Removed to prevent reconciliation loops
+        };
+        serde_json::json!({ "status": status })
+    }
+    
+    /// Create typed NetBoxManufacturerStatus and serialize to JSON patch
+    pub(crate) fn create_typed_manufacturer_status_patch(
+        netbox_id: u64,
+        netbox_url: String,
+        state: ResourceState,
+        error: Option<String>,
+    ) -> serde_json::Value {
+        let status = crds::NetBoxManufacturerStatus {
+            netbox_id: Some(netbox_id),
+            netbox_url: Some(netbox_url),
+            state,
+            error,
+            last_reconciled: None, // Removed to prevent reconciliation loops
+        };
+        serde_json::json!({ "status": status })
+    }
+    
+    /// Create typed NetBoxPlatformStatus and serialize to JSON patch
+    pub(crate) fn create_typed_platform_status_patch(
+        netbox_id: u64,
+        netbox_url: String,
+        state: ResourceState,
+        error: Option<String>,
+    ) -> serde_json::Value {
+        let status = crds::NetBoxPlatformStatus {
+            netbox_id: Some(netbox_id),
+            netbox_url: Some(netbox_url),
+            state,
+            error,
+            last_reconciled: None, // Removed to prevent reconciliation loops
+        };
+        serde_json::json!({ "status": status })
+    }
+    
+    /// Create typed NetBoxDeviceTypeStatus and serialize to JSON patch
+    pub(crate) fn create_typed_device_type_status_patch(
+        netbox_id: u64,
+        netbox_url: String,
+        state: ResourceState,
+        error: Option<String>,
+    ) -> serde_json::Value {
+        let status = crds::NetBoxDeviceTypeStatus {
+            netbox_id: Some(netbox_id),
+            netbox_url: Some(netbox_url),
+            state,
+            error,
+            last_reconciled: None, // Removed to prevent reconciliation loops
+        };
+        serde_json::json!({ "status": status })
+    }
+    
+    /// Create typed NetBoxInterfaceStatus and serialize to JSON patch
+    pub(crate) fn create_typed_interface_status_patch(
+        netbox_id: u64,
+        netbox_url: String,
+        state: ResourceState,
+        error: Option<String>,
+    ) -> serde_json::Value {
+        let status = crds::NetBoxInterfaceStatus {
+            netbox_id: Some(netbox_id),
+            netbox_url: Some(netbox_url),
+            state,
+            error,
+            last_reconciled: None, // Removed to prevent reconciliation loops
+        };
+        serde_json::json!({ "status": status })
+    }
+    
+    /// Create typed NetBoxMACAddressStatus and serialize to JSON patch
+    pub(crate) fn create_typed_mac_address_status_patch(
+        netbox_id: u64,
+        netbox_url: String,
+        state: ResourceState,
+        error: Option<String>,
+    ) -> serde_json::Value {
+        let status = crds::NetBoxMACAddressStatus {
+            netbox_id: Some(netbox_id),
+            netbox_url: Some(netbox_url),
+            state,
+            error,
+            last_reconciled: None, // Removed to prevent reconciliation loops
+        };
+        serde_json::json!({ "status": status })
+    }
+    
+    /// Create typed NetBoxRoleStatus and serialize to JSON patch
+    pub(crate) fn create_typed_role_status_patch(
+        netbox_id: u64,
+        netbox_url: String,
+        state: ResourceState,
+        error: Option<String>,
+    ) -> serde_json::Value {
+        let status = crds::NetBoxRoleStatus {
+            netbox_id: Some(netbox_id),
+            netbox_url: Some(netbox_url),
+            state,
+            error,
+            last_reconciled: None, // Removed to prevent reconciliation loops
+        };
+        serde_json::json!({ "status": status })
+    }
+    
+    /// Create typed NetBoxTagStatus and serialize to JSON patch
+    pub(crate) fn create_typed_tag_status_patch(
+        netbox_id: u64,
+        netbox_url: String,
+        state: ResourceState,
+        error: Option<String>,
+    ) -> serde_json::Value {
+        let status = crds::NetBoxTagStatus {
+            netbox_id: Some(netbox_id),
+            netbox_url: Some(netbox_url),
+            state,
+            error,
+            last_reconciled: None, // Removed to prevent reconciliation loops
+        };
+        serde_json::json!({ "status": status })
+    }
+    
     /// Creates a new reconciler instance.
     pub fn new(
         token_resolver: Arc<TokenResolver>,
@@ -302,7 +479,7 @@ impl Reconciler {
             } else {
                 // Query failed (deserialization issue), try fallback: get by ID 1 and check
                 warn!("Query failed for prefix {}, trying fallback method", prefix_cidr);
-                match netbox_client.get_prefix(1).await {
+                match netbox_client.get_prefix(PrefixId(1)).await {
                     Ok(prefix) if prefix.prefix == *prefix_cidr => {
                         info!("Found prefix {} via fallback method (ID: 1)", prefix_cidr);
                         Some(prefix)

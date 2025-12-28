@@ -6,6 +6,7 @@ use crate::common::PaginatedResponse;
 use crate::core::{NetBoxClientCore, helpers};
 use crate::error::NetBoxError;
 use crate::models::SiteGroup;
+use crate::types::*;
 use tracing::debug;
 
 /// Query site groups
@@ -55,8 +56,9 @@ pub async fn get_site_group_by_name(core: &NetBoxClientCore, name: &str) -> Resu
 }
 
 /// Get site group by ID
-pub async fn get_site_group(core: &NetBoxClientCore, id: u64) -> Result<SiteGroup, NetBoxError> {
-    let url = format!("{}/api/dcim/site-groups/{}/", core.base_url, id);
+pub async fn get_site_group(core: &NetBoxClientCore, id: SiteGroupId) -> Result<SiteGroup, NetBoxError> {
+    let id_value: u64 = id.into();
+    let url = format!("{}/api/dcim/site-groups/{}/", core.base_url, id_value);
     let response = core.client
         .get(&url)
         .header("Authorization", format!("Token {}", core.token))
@@ -69,7 +71,7 @@ pub async fn get_site_group(core: &NetBoxClientCore, id: u64) -> Result<SiteGrou
         let body = response.text().await.unwrap_or_default();
         return Err(NetBoxError::Api(format!(
             "Failed to get site group {}: {} - {}",
-            id, status, body
+            id_value, status, body
         )));
     }
     
@@ -81,7 +83,7 @@ pub async fn create_site_group(
     core: &NetBoxClientCore,
     name: &str,
     slug: Option<&str>,
-    parent_id: Option<u64>,
+    parent_id: Option<SiteGroupId>,
     description: Option<String>,
     comments: Option<String>,
 ) -> Result<SiteGroup, NetBoxError> {
@@ -94,7 +96,7 @@ pub async fn create_site_group(
         "slug": slug_value,
     });
     
-    helpers::add_nested_reference(&mut body, "parent", parent_id);
+    helpers::add_nested_reference(&mut body, "parent", parent_id.map(|id| id.into()));
     helpers::add_optional_string_field_owned(&mut body, "description", description);
     helpers::add_optional_string_field_owned(&mut body, "comments", comments);
     

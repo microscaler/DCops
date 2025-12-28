@@ -2,15 +2,20 @@
 //!
 //! This module handles watching Kubernetes resources for changes
 //! and triggering reconciliation.
+//!
+//! **Status:** Phase 2+ (stub implementation - not yet implemented)
 
 use anyhow::Result;
 
 /// Watches Kubernetes resources for changes.
-pub struct Watcher {
+/// 
+/// **Phase 2+ Stub:** This is a placeholder for future implementation.
+#[allow(dead_code)] // Stub implementation - will be used when controller is implemented
+pub struct Phase2StubWatcher {
     // TODO: Add fields
 }
 
-impl Watcher {
+impl Phase2StubWatcher {
     /// Creates a new watcher instance.
     pub fn new() -> Self {
         // TODO: Initialize watcher

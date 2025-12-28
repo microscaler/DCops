@@ -1,19 +1,24 @@
 //! Main controller implementation.
 //!
-//! This module contains the `Controller` struct that orchestrates
+//! This module contains the `Phase2StubController` struct that orchestrates
 //! reconciliation and resource watching for the PXE Intent Controller.
+//!
+//! **Status:** Phase 2+ (stub implementation - not yet implemented)
 
-use crate::reconciler::Reconciler;
-use crate::watcher::Watcher;
+use crate::reconciler::Phase2StubReconciler;
+use crate::watcher::Phase2StubWatcher;
 use anyhow::Result;
 
 /// Main controller for PXE Intent management.
-pub struct Controller {
-    reconciler: Reconciler,
-    watcher: Watcher,
+/// 
+/// **Phase 2+ Stub:** This is a placeholder for future implementation.
+#[allow(dead_code)] // Stub implementation - will be used when controller is implemented
+pub struct Phase2StubController {
+    reconciler: Phase2StubReconciler,
+    watcher: Phase2StubWatcher,
 }
 
-impl Controller {
+impl Phase2StubController {
     /// Creates a new controller instance.
     pub async fn new() -> Result<Self> {
         // TODO: Initialize reconciler and watcher

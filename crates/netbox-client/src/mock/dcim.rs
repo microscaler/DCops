@@ -284,7 +284,7 @@ pub async fn get_location_by_name(client: &MockNetBoxClient, site_id: u64, name:
         Ok(locations.values().find(|l| l.site.id == site_id && l.name == name).cloned())
 }
 
-pub async fn create_location(client: &MockNetBoxClient, site_id: u64, name: &str, slug: Option<&str>, parent_id: Option<u64>, tenant_id: Option<u64>, facility: Option<&str>, description: Option<String>, comments: Option<String>) -> Result<Location, NetBoxError> {
+pub async fn create_location(client: &MockNetBoxClient, site_id: u64, name: &str, slug: Option<&str>, parent_id: Option<u64>, _tenant_id: Option<u64>, _facility: Option<&str>, description: Option<String>, comments: Option<String>) -> Result<Location, NetBoxError> {
         let id = client.next_id();
         let slug_value = slug.map(|s| s.to_string()).unwrap_or_else(|| name.to_lowercase().replace(' ', "-"));
         let location = Location {

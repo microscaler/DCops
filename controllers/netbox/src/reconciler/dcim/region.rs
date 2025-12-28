@@ -3,10 +3,9 @@
 use super::super::Reconciler;
 use crate::error::ControllerError;
 use crate::reconcile_helpers;
-use crate::kube_api_trait::KubeApiTrait;
 use tracing::{info, error, debug, warn};
-use crds::{NetBoxRegion, NetBoxRegionStatus, ResourceState};
-use netbox_client::NetBoxClientTrait;
+use crds::{NetBoxRegion, ResourceState};
+use netbox_client::{NetBoxClientTrait, RegionId};
 
 impl Reconciler {
     pub async fn reconcile_netbox_region(&self, region_crd: &NetBoxRegion) -> Result<(), ControllerError> {
@@ -54,7 +53,7 @@ impl Reconciler {
                         &netbox_client,
                         netbox_id,
                         &format!("NetBoxRegion {}/{}", namespace, name),
-                        netbox_client.get_region(netbox_id),
+                        netbox_client.get_region(RegionId(netbox_id)),
                     ).await {
                         Ok(Some(resource)) => {
                             // Resource exists and is up-to-date
@@ -63,7 +62,7 @@ impl Reconciler {
                         Ok(None) => {
                             // Drift detected - resource was deleted, clear status and recreate
                             warn!("NetBoxRegion {}/{} was deleted in NetBox (ID: {}), clearing status and will recreate", namespace, name, netbox_id);
-                            let status_patch = Self::create_resource_status_patch(
+                            let status_patch = Self::create_typed_region_status_patch(
                                 0, // Clear netbox_id
                                 String::new(), // Clear URL
                                 ResourceState::Pending,
@@ -108,7 +107,7 @@ impl Reconciler {
                 );
                 
                 if needs_status_update {
-                    let status_patch = Self::create_resource_status_patch(
+                    let status_patch = Self::create_typed_region_status_patch(
                         region.id,
                         region.url.clone(),
                         ResourceState::Created,
@@ -156,7 +155,7 @@ impl Reconciler {
                     match netbox_client.create_region(
                         &region_crd.spec.name,
                         region_crd.spec.slug.as_deref(),
-                        parent_id,
+                        parent_id.map(RegionId),
                         region_crd.spec.description.clone(),
                         None, // comments - not in CRD spec yet
                     ).await {
@@ -175,7 +174,7 @@ impl Reconciler {
         };
         
         // Update status
-        let status_patch = Self::create_resource_status_patch(
+        let status_patch = Self::create_typed_region_status_patch(
             netbox_region.id,
             netbox_region.url.clone(),
             ResourceState::Created,

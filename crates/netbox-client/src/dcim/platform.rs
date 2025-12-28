@@ -6,6 +6,7 @@ use crate::common::PaginatedResponse;
 use crate::core::{NetBoxClientCore, helpers};
 use crate::error::NetBoxError;
 use crate::models::Platform;
+use crate::types::*;
 use tracing::debug;
 
 /// Query platforms by filters
@@ -68,7 +69,7 @@ pub async fn create_platform(
     core: &NetBoxClientCore,
     name: &str,
     slug: Option<&str>,
-    manufacturer_id: Option<u64>,
+    manufacturer_id: Option<ManufacturerId>,
     napalm_driver: Option<&str>,
     napalm_args: Option<&str>,
     description: Option<String>,
@@ -83,7 +84,7 @@ pub async fn create_platform(
         "slug": slug_value,
     });
     
-    helpers::add_nested_reference(&mut body, "manufacturer", manufacturer_id);
+    helpers::add_nested_reference(&mut body, "manufacturer", manufacturer_id.map(|id| id.into()));
     helpers::add_optional_string_field(&mut body, "napalm_driver", napalm_driver);
     helpers::add_optional_string_field(&mut body, "napalm_args", napalm_args);
     helpers::add_optional_string_field_owned(&mut body, "description", description);

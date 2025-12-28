@@ -6,12 +6,14 @@ use crate::common::PaginatedResponse;
 use crate::core::{NetBoxClientCore, helpers};
 use crate::error::NetBoxError;
 use crate::models::{AvailableIP, Prefix};
+use crate::types::*;
 use tracing::debug;
 
 /// Get a prefix by ID
-pub async fn get_prefix(core: &NetBoxClientCore, id: u64) -> Result<Prefix, NetBoxError> {
-    let url = format!("{}/api/ipam/prefixes/{}/", core.base_url, id);
-    debug!("Fetching prefix {} from NetBox", id);
+pub async fn get_prefix(core: &NetBoxClientCore, id: PrefixId) -> Result<Prefix, NetBoxError> {
+    let id_value: u64 = id.into();
+    let url = format!("{}/api/ipam/prefixes/{}/", core.base_url, id_value);
+    debug!("Fetching prefix {} from NetBox", id_value);
     
     let response = core.client
         .get(&url)
@@ -22,7 +24,7 @@ pub async fn get_prefix(core: &NetBoxClientCore, id: u64) -> Result<Prefix, NetB
         .map_err(|e| NetBoxError::Http(e))?;
     
     if response.status() == 404 {
-        return Err(NetBoxError::NotFound(format!("Prefix {} not found", id)));
+        return Err(NetBoxError::NotFound(format!("Prefix {} not found", id_value)));
     }
     
     if !response.status().is_success() {
@@ -30,7 +32,7 @@ pub async fn get_prefix(core: &NetBoxClientCore, id: u64) -> Result<Prefix, NetB
         let body = response.text().await.unwrap_or_default();
         return Err(NetBoxError::Api(format!(
             "Failed to get prefix {}: {} - {}",
-            id, status, body
+            id_value, status, body
         )));
     }
     
@@ -82,10 +84,11 @@ pub async fn query_prefixes(
 /// Get available IP addresses from a prefix
 pub async fn get_available_ips(
     core: &NetBoxClientCore,
-    prefix_id: u64,
+    prefix_id: PrefixId,
     limit: Option<u32>,
 ) -> Result<Vec<AvailableIP>, NetBoxError> {
-    let mut url = format!("{}/api/ipam/prefixes/{}/available-ips/", core.base_url, prefix_id);
+    let prefix_id_value: u64 = prefix_id.into();
+    let mut url = format!("{}/api/ipam/prefixes/{}/available-ips/", core.base_url, prefix_id_value);
     if let Some(limit) = limit {
         url = format!("{}?limit={}", url, limit);
     }
@@ -105,7 +108,7 @@ pub async fn get_available_ips(
         let body = response.text().await.unwrap_or_default();
         return Err(NetBoxError::Api(format!(
             "Failed to get available IPs from prefix {}: {} - {}",
-            prefix_id, status, body
+            prefix_id_value, status, body
         )));
     }
     
@@ -142,10 +145,14 @@ pub async fn create_prefix(
     }
     
     // For CREATE operations, NetBox 4.0 requires full tenant object (id, name, slug)
-    helpers::add_nested_reference(&mut body, "site", site_id);
-    helpers::add_nested_reference(&mut body, "vlan", vlan_id.map(|v| v as u64));
-    helpers::add_nested_reference(&mut body, "role", role_id);
-    helpers::add_tenant_for_create(&mut body, core, tenant_id).await;
+    helpers::add_nested_reference(&mut body, "site", site_id.map(|id| id.into()));
+    helpers::add_nested_reference(&mut body, "vlan", vlan_id.map(|id| id as u64));
+    helpers::add_nested_reference(&mut body, "role", role_id.map(|id| id.into()));
+    // For CREATE operations, use just the tenant ID
+    // NetBox 4.0 accepts either {"id": X} or the full object, but using just ID is simpler and avoids validation issues
+    if let Some(tid) = tenant_id {
+        helpers::add_nested_reference(&mut body, "tenant", Some(tid.into()));
+    }
     
     if let Some(tags_vec) = tags {
         body["tags"] = serde_json::to_value(tags_vec)
@@ -179,18 +186,19 @@ pub async fn create_prefix(
 /// Update an existing prefix in NetBox
 pub async fn update_prefix(
     core: &NetBoxClientCore,
-    id: u64,
+    id: PrefixId,
     prefix: Option<&str>,
     description: Option<String>,
     status: Option<&str>,
     role: Option<String>,
-    tenant_id: Option<u64>,
-    site_id: Option<u64>,
-    vlan_id: Option<u32>,
+    tenant_id: Option<TenantId>,
+    site_id: Option<SiteId>,
+    vlan_id: Option<VlanId>,
     tags: Option<Vec<String>>,
 ) -> Result<Prefix, NetBoxError> {
-    let url = format!("{}/api/ipam/prefixes/{}/", core.base_url, id);
-    debug!("Updating prefix {} in NetBox", id);
+    let id_value: u64 = id.into();
+    let url = format!("{}/api/ipam/prefixes/{}/", core.base_url, id_value);
+    debug!("Updating prefix {} in NetBox", id_value);
     
     let mut body = serde_json::json!({});
     
@@ -210,9 +218,9 @@ pub async fn update_prefix(
     
     // NetBox 4.0 PATCH updates: For nested objects, send only {"id": X}
     // Sending the full object causes NetBox to try to CREATE a new object
-    helpers::add_nested_reference(&mut body, "tenant", tenant_id);
-    helpers::add_nested_reference(&mut body, "site", site_id);
-    helpers::add_nested_reference(&mut body, "vlan", vlan_id.map(|v| v as u64));
+    helpers::add_nested_reference(&mut body, "tenant", tenant_id.map(|id| id.into()));
+    helpers::add_nested_reference(&mut body, "site", site_id.map(|id| id.into()));
+    helpers::add_nested_reference(&mut body, "vlan", vlan_id.map(|id: VlanId| <VlanId as Into<u32>>::into(id) as u64));
     
     if let Some(tags_vec) = tags {
         body["tags"] = serde_json::to_value(tags_vec)
@@ -234,7 +242,7 @@ pub async fn update_prefix(
         let body = response.text().await.unwrap_or_default();
         return Err(NetBoxError::Api(format!(
             "Failed to update prefix {}: {} - {}",
-            id, status, body
+            id_value, status, body
         )));
     }
     

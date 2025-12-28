@@ -4,7 +4,7 @@ use super::super::Reconciler;
 use crate::error::ControllerError;
 use tracing::{info, error, debug};
 use crds::{IPPool, IPPoolStatus};
-use netbox_client::NetBoxClientTrait;
+use netbox_client::{NetBoxClientTrait, PrefixId};
 
 impl Reconciler {
     pub async fn reconcile_ip_pool(&self, pool: &IPPool) -> Result<(), ControllerError> {
@@ -76,7 +76,7 @@ impl Reconciler {
             .await?;
         
         // Get prefix from NetBox
-        let prefix = match netbox_client.get_prefix(prefix_id).await {
+        let prefix = match netbox_client.get_prefix(PrefixId(prefix_id)).await {
             Ok(p) => p,
             Err(netbox_client::NetBoxError::NotFound(_)) => {
                 // Prefix not found - this indicates drift (prefix was deleted in NetBox)
@@ -95,7 +95,7 @@ impl Reconciler {
         };
         
         // Get available IPs
-        let available_ips = match netbox_client.get_available_ips(prefix_id, None).await {
+        let available_ips = match netbox_client.get_available_ips(PrefixId(prefix_id), None).await {
             Ok(ips) => ips,
             Err(e) => {
                 let error_msg = format!("Failed to get available IPs: {}", e);

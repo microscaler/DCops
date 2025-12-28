@@ -5,7 +5,7 @@ use crate::error::ControllerError;
 use crate::kube_api_trait::KubeApiTrait;
 use tracing::{info, error, debug, warn};
 use crds::{IPClaim, IPClaimStatus, AllocationState};
-use netbox_client::{AllocateIPRequest, IPAddressStatus, NetBoxClientTrait};
+use netbox_client::{AllocateIPRequest, IPAddressStatus, NetBoxClientTrait, PrefixId};
 
 impl Reconciler {
     pub async fn reconcile_ip_claim(&self, claim: &IPClaim) -> Result<(), ControllerError> {
@@ -125,7 +125,7 @@ impl Reconciler {
             .await?;
         
         // Verify prefix exists in NetBox
-        let _prefix = match netbox_client.get_prefix(prefix_id).await {
+        let _prefix = match netbox_client.get_prefix(PrefixId(prefix_id)).await {
             Ok(p) => p,
             Err(e) => {
                 let error_msg = format!("Prefix {} not found in NetBox: {}", prefix_id, e);
@@ -173,7 +173,7 @@ impl Reconciler {
             tags: tag_refs,
         };
         
-        let allocated_ip = match netbox_client.allocate_ip(prefix_id, Some(allocation_request)).await {
+        let allocated_ip = match netbox_client.allocate_ip(PrefixId(prefix_id), Some(allocation_request)).await {
             Ok(ip) => ip,
             Err(e) => {
                 // Check if error is "already exists" - if so, try to find it (idempotency)

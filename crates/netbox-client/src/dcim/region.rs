@@ -6,6 +6,7 @@ use crate::common::PaginatedResponse;
 use crate::core::{NetBoxClientCore, helpers};
 use crate::error::NetBoxError;
 use crate::models::Region;
+use crate::types::*;
 use tracing::debug;
 
 /// Query regions by filters
@@ -55,8 +56,9 @@ pub async fn get_region_by_name(core: &NetBoxClientCore, name: &str) -> Result<O
 }
 
 /// Get region by ID
-pub async fn get_region(core: &NetBoxClientCore, id: u64) -> Result<Region, NetBoxError> {
-    let url = format!("{}/api/dcim/regions/{}/", core.base_url, id);
+pub async fn get_region(core: &NetBoxClientCore, id: RegionId) -> Result<Region, NetBoxError> {
+    let id_value: u64 = id.into();
+    let url = format!("{}/api/dcim/regions/{}/", core.base_url, id_value);
     let response = core.client
         .get(&url)
         .header("Authorization", format!("Token {}", core.token))
@@ -69,7 +71,7 @@ pub async fn get_region(core: &NetBoxClientCore, id: u64) -> Result<Region, NetB
         let body = response.text().await.unwrap_or_default();
         return Err(NetBoxError::Api(format!(
             "Failed to get region {}: {} - {}",
-            id, status, body
+            id_value, status, body
         )));
     }
     
@@ -81,7 +83,7 @@ pub async fn create_region(
     core: &NetBoxClientCore,
     name: &str,
     slug: Option<&str>,
-    parent_id: Option<u64>,
+    parent_id: Option<RegionId>,
     description: Option<String>,
     comments: Option<String>,
 ) -> Result<Region, NetBoxError> {
@@ -94,7 +96,7 @@ pub async fn create_region(
         "slug": slug_value,
     });
     
-    helpers::add_nested_reference(&mut body, "parent", parent_id);
+    helpers::add_nested_reference(&mut body, "parent", parent_id.map(|id| id.into()));
     helpers::add_optional_string_field_owned(&mut body, "description", description);
     helpers::add_optional_string_field_owned(&mut body, "comments", comments);
     

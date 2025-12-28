@@ -4,6 +4,8 @@
 //!
 //! This controller reconciles `BootIntent` and `BootProfile` CRDs to configure
 //! PXE boot services, ensuring machines boot according to Git-defined intent.
+//!
+//! **Status:** Phase 2+ (stub implementation - not yet implemented)
 
 mod controller;
 mod reconciler;
@@ -17,7 +19,7 @@ use tracing::info;
 async fn main() -> Result<()> {
     tracing_subscriber::fmt::init();
     
-    info!("Starting PXE Intent Controller");
+    info!("Starting PXE Intent Controller (Phase 2+ Stub - not yet implemented)");
     
     // TODO: Load configuration
     // TODO: Initialize controller

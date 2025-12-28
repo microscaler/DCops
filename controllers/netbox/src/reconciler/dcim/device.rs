@@ -2,7 +2,6 @@
 
 use super::super::Reconciler;
 use crate::error::ControllerError;
-use crate::reconcile_helpers;
 use tracing::{info, error, debug, warn};
 use crds::{NetBoxDevice, ResourceState};
 use netbox_client::{NetBoxClientTrait, DeviceId, DeviceTypeId, DeviceRoleId, SiteId, TenantId, PlatformId, LocationId, IpAddressId};
@@ -73,7 +72,8 @@ impl Reconciler {
             Some(device) => {
                 // Resource exists and is up-to-date - only update status if it changed
                 // Use trait-based helper to check if status needs updating
-                let needs_status_update = reconcile_helpers::status_needs_update(
+                use crate::reconcile_helpers::status_needs_update;
+                let needs_status_update = status_needs_update(
                     device_crd.status.as_ref(),
                     device.id,
                     &device.url,

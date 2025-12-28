@@ -9,6 +9,7 @@ use tracing::{debug, info, warn, error};
 /// Trait for NetBox resources that have an ID and URL
 pub trait NetBoxResource {
     fn id(&self) -> u64;
+    #[allow(dead_code)] // May be used in future for status updates
     fn url(&self) -> &str;
 }
 
@@ -168,10 +169,14 @@ pub fn create_pending_status_patch() -> serde_json::Value {
 /// This is for resources that don't have update logic yet.
 /// It only checks if the resource exists and detects drift.
 /// 
+/// **DEPRECATED**: Use `validate_status_and_drift()` instead for better Failed state handling.
+/// This function is kept for backward compatibility and tests.
+/// 
 /// Returns:
 /// - `Ok(Some(resource))` if resource exists
 /// - `Ok(None)` if resource was deleted (drift detected)
 /// - `Err(e)` if there's an error that should be retried
+#[allow(dead_code)] // Still used in tests
 pub async fn check_existing<FGet, Resource>(
     _client: &dyn netbox_client::NetBoxClientTrait,
     netbox_id: u64,

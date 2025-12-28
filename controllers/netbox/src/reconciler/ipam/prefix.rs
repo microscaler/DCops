@@ -2,7 +2,7 @@
 
 use super::super::Reconciler;
 use crate::error::ControllerError;
-use crate::reconcile_helpers;
+use crate::reconcile_helpers::check_and_update_existing;
 use crate::kube_api_trait::KubeApiTrait;
 use tracing::{info, error, debug, warn};
 use crds::{NetBoxPrefix, NetBoxPrefixStatus, PrefixState};
@@ -229,7 +229,7 @@ impl Reconciler {
             if status.state == PrefixState::Created && status.netbox_id.is_some() {
                 if let Some(netbox_id) = status.netbox_id {
                     // Use helper function for drift detection, diffing, and updating
-                    match reconcile_helpers::check_and_update_existing(
+                    match check_and_update_existing(
                         &netbox_client,
                         netbox_id,
                         &format!("NetBoxPrefix {}/{}", namespace, name),

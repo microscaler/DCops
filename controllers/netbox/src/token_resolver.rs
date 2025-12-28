@@ -12,9 +12,11 @@ use tracing::{debug, error, warn, info};
 #[derive(Debug, thiserror::Error)]
 pub enum TokenResolutionError {
     #[error("Tenant CRD not found: {0}")]
+    #[allow(dead_code)] // May be used in future error handling
     TenantNotFound(String),
     
     #[error("Secret not found: {0}")]
+    #[allow(dead_code)] // May be used in future error handling
     SecretNotFound(String),
     
     #[error("Token key '{0}' not found in Secret")]

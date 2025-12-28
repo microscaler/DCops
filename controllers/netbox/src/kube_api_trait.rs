@@ -80,6 +80,7 @@ where
     }
 
     /// Get the underlying `Api<T>` (for cases where direct access is needed)
+    #[allow(dead_code)] // Used for debugging and testing
     pub fn inner(&self) -> &kube::Api<T> {
         &self.api
     }

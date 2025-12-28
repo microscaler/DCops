@@ -129,24 +129,15 @@ impl Reconciler {
                     |crd| crd.status.as_ref(),
                 ).await?;
                 
-                // Resolve role ID if role reference provided
-                let _role_id = if let Some(role_ref) = &vlan_crd.spec.role {
-                    if role_ref.kind != "NetBoxRole" {
-                        warn!("Invalid kind '{}' for role reference in VLAN {}, expected 'NetBoxRole'", role_ref.kind, name);
-                        None
-                    } else {
-                        match self.netbox_role_api.get(&role_ref.name).await {
-                            Ok(role_crd) => {
-                                role_crd.status
-                                    .as_ref()
-                                    .and_then(|s| s.netbox_id)
-                            }
-                            Err(_) => None
-                        }
-                    }
-                } else {
-                    None
-                };
+                // Resolve optional role ID
+                let _role_id = resolve_optional_dependency_id(
+                    &*self.netbox_role_api,
+                    vlan_crd.spec.role.as_ref(),
+                    "NetBoxRole",
+                    "role",
+                    name,
+                    |crd| crd.status.as_ref(),
+                ).await;
                 
                 // Convert status enum to string
                 let status_str = match vlan_crd.spec.status {

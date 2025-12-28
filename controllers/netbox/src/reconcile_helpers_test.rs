@@ -2,8 +2,9 @@
 
 #[cfg(test)]
 mod tests {
-    use crate::reconcile_helpers::{status_needs_update, ipclaim_status_needs_update, create_pending_status_patch, create_drift_status_patch};
+    use crate::reconcile_helpers::{status_needs_update, ipclaim_status_needs_update, create_pending_status_patch, create_drift_status_patch, is_conflict_error, resolve_dependency_id, extract_name_and_namespace, validate_reference_kind};
     use crds::*;
+    use netbox_client::NetBoxError;
 
     #[test]
     fn test_status_needs_update_no_status() {
@@ -285,17 +286,293 @@ mod tests {
         assert!(!needs_update, "Should not need update when all fields match");
     }
 
+    // Tests for is_conflict_error
+    #[test]
+    fn test_is_conflict_error_already_exists() {
+        let error = NetBoxError::Api("tenant with this name already exists".to_string());
+        assert!(is_conflict_error(&error), "Should detect 'already exists' conflict");
+    }
+
+    #[test]
+    fn test_is_conflict_error_duplicate() {
+        let error = NetBoxError::Api("duplicate entry found".to_string());
+        assert!(is_conflict_error(&error), "Should detect 'duplicate' conflict");
+    }
+
+    #[test]
+    fn test_is_conflict_error_unique_constraint() {
+        let error = NetBoxError::Api("unique constraint violation".to_string());
+        assert!(is_conflict_error(&error), "Should detect 'unique constraint' conflict");
+    }
+
+    #[test]
+    fn test_is_conflict_error_slug_already_exists() {
+        let error = NetBoxError::Api("slug already exists".to_string());
+        assert!(is_conflict_error(&error), "Should detect slug conflict");
+    }
+
+    #[test]
+    fn test_is_conflict_error_asset_tag() {
+        let error = NetBoxError::Api("asset tag conflict".to_string());
+        assert!(is_conflict_error(&error), "Should detect asset tag conflict");
+    }
+
+    #[test]
+    fn test_is_conflict_error_not_conflict() {
+        let error = NetBoxError::Api("Invalid token".to_string());
+        assert!(!is_conflict_error(&error), "Should not detect non-conflict errors");
+    }
+
+    #[test]
+    fn test_is_conflict_error_not_found() {
+        let error = NetBoxError::NotFound("Resource not found".to_string());
+        assert!(!is_conflict_error(&error), "Should not detect NotFound as conflict");
+    }
+
+    // Tests for resolve_dependency_id
+    #[test]
+    fn test_resolve_dependency_id_with_valid_id() {
+        let status = NetBoxDeviceStatus {
+            netbox_id: Some(42),
+            netbox_url: Some("http://netbox/api/dcim/devices/42/".to_string()),
+            state: ResourceState::Created,
+            error: None,
+            last_reconciled: None,
+        };
+        let id = resolve_dependency_id(Some(&status), "Device", "test-device");
+        assert_eq!(id, Some(42), "Should return the netbox_id from status");
+    }
+
+    #[test]
+    fn test_resolve_dependency_id_no_status() {
+        let id = resolve_dependency_id(None::<&NetBoxDeviceStatus>, "Device", "test-device");
+        assert_eq!(id, None, "Should return None when status is None");
+    }
+
+    #[test]
+    fn test_resolve_dependency_id_no_netbox_id() {
+        let status = NetBoxDeviceStatus {
+            netbox_id: None,
+            netbox_url: None,
+            state: ResourceState::Pending,
+            error: None,
+            last_reconciled: None,
+        };
+        let id = resolve_dependency_id(Some(&status), "Device", "test-device");
+        assert_eq!(id, None, "Should return None when netbox_id is None");
+    }
+
+    #[test]
+    fn test_resolve_dependency_id_invalid_id_zero() {
+        // Note: resolve_dependency_id doesn't filter out 0 - it just returns what's in status
+        // The filtering happens in resolve_optional_dependency_id
+        let status = NetBoxDeviceStatus {
+            netbox_id: Some(0),
+            netbox_url: Some("http://netbox/api/dcim/devices/0/".to_string()),
+            state: ResourceState::Created,
+            error: None,
+            last_reconciled: None,
+        };
+        let id = resolve_dependency_id(Some(&status), "Device", "test-device");
+        assert_eq!(id, Some(0), "resolve_dependency_id returns the ID from status, even if 0");
+    }
+
+    // Tests for extract_name_and_namespace
+    #[test]
+    fn test_extract_name_and_namespace_with_namespace() {
+        use k8s_openapi::apimachinery::pkg::apis::meta::v1::ObjectMeta;
+        let device = NetBoxDevice {
+            metadata: ObjectMeta {
+                name: Some("test-device".to_string()),
+                namespace: Some("default".to_string()),
+                ..Default::default()
+            },
+            spec: crds::NetBoxDeviceSpec {
+                name: Some("test-device".to_string()),
+                device_type: crds::NetBoxResourceReference {
+                    api_group: "dcops.microscaler.io".to_string(),
+                    kind: "NetBoxDeviceType".to_string(),
+                    name: "test-type".to_string(),
+                    namespace: None,
+                },
+                device_role: crds::NetBoxResourceReference {
+                    api_group: "dcops.microscaler.io".to_string(),
+                    kind: "NetBoxDeviceRole".to_string(),
+                    name: "test-role".to_string(),
+                    namespace: None,
+                },
+                site: crds::NetBoxResourceReference {
+                    api_group: "dcops.microscaler.io".to_string(),
+                    kind: "NetBoxSite".to_string(),
+                    name: "test-site".to_string(),
+                    namespace: None,
+                },
+                tenant: crds::NetBoxResourceReference {
+                    api_group: "dcops.microscaler.io".to_string(),
+                    kind: "NetBoxTenant".to_string(),
+                    name: "datacenter-tenant".to_string(),
+                    namespace: None,
+                },
+                location: None,
+                platform: None,
+                serial: None,
+                asset_tag: None,
+                status: crds::DeviceStatus::Active,
+                primary_ip4: None,
+                primary_ip6: None,
+                description: None,
+                comments: None,
+            },
+            status: None,
+        };
+        let result = extract_name_and_namespace(&device, "NetBoxDevice");
+        assert!(result.is_ok(), "Should extract name and namespace successfully");
+        let (name, namespace) = result.unwrap();
+        assert_eq!(name, "test-device");
+        assert_eq!(namespace, "default");
+    }
+
+    #[test]
+    fn test_extract_name_and_namespace_missing_name() {
+        use k8s_openapi::apimachinery::pkg::apis::meta::v1::ObjectMeta;
+        let device = NetBoxDevice {
+            metadata: ObjectMeta {
+                name: None,
+                namespace: Some("default".to_string()),
+                ..Default::default()
+            },
+            spec: crds::NetBoxDeviceSpec {
+                name: Some("test-device".to_string()),
+                device_type: crds::NetBoxResourceReference {
+                    api_group: "dcops.microscaler.io".to_string(),
+                    kind: "NetBoxDeviceType".to_string(),
+                    name: "test-type".to_string(),
+                    namespace: None,
+                },
+                device_role: crds::NetBoxResourceReference {
+                    api_group: "dcops.microscaler.io".to_string(),
+                    kind: "NetBoxDeviceRole".to_string(),
+                    name: "test-role".to_string(),
+                    namespace: None,
+                },
+                site: crds::NetBoxResourceReference {
+                    api_group: "dcops.microscaler.io".to_string(),
+                    kind: "NetBoxSite".to_string(),
+                    name: "test-site".to_string(),
+                    namespace: None,
+                },
+                tenant: crds::NetBoxResourceReference {
+                    api_group: "dcops.microscaler.io".to_string(),
+                    kind: "NetBoxTenant".to_string(),
+                    name: "datacenter-tenant".to_string(),
+                    namespace: None,
+                },
+                location: None,
+                platform: None,
+                serial: None,
+                asset_tag: None,
+                status: crds::DeviceStatus::Active,
+                primary_ip4: None,
+                primary_ip6: None,
+                description: None,
+                comments: None,
+            },
+            status: None,
+        };
+        let result = extract_name_and_namespace(&device, "NetBoxDevice");
+        assert!(result.is_err(), "Should error when name is missing");
+    }
+
+    #[test]
+    fn test_extract_name_and_namespace_missing_namespace() {
+        // Note: extract_name_and_namespace defaults namespace to "default" if None
+        use k8s_openapi::apimachinery::pkg::apis::meta::v1::ObjectMeta;
+        let device = NetBoxDevice {
+            metadata: ObjectMeta {
+                name: Some("test-device".to_string()),
+                namespace: None,
+                ..Default::default()
+            },
+            spec: crds::NetBoxDeviceSpec {
+                name: Some("test-device".to_string()),
+                device_type: crds::NetBoxResourceReference {
+                    api_group: "dcops.microscaler.io".to_string(),
+                    kind: "NetBoxDeviceType".to_string(),
+                    name: "test-type".to_string(),
+                    namespace: None,
+                },
+                device_role: crds::NetBoxResourceReference {
+                    api_group: "dcops.microscaler.io".to_string(),
+                    kind: "NetBoxDeviceRole".to_string(),
+                    name: "test-role".to_string(),
+                    namespace: None,
+                },
+                site: crds::NetBoxResourceReference {
+                    api_group: "dcops.microscaler.io".to_string(),
+                    kind: "NetBoxSite".to_string(),
+                    name: "test-site".to_string(),
+                    namespace: None,
+                },
+                tenant: crds::NetBoxResourceReference {
+                    api_group: "dcops.microscaler.io".to_string(),
+                    kind: "NetBoxTenant".to_string(),
+                    name: "datacenter-tenant".to_string(),
+                    namespace: None,
+                },
+                location: None,
+                platform: None,
+                serial: None,
+                asset_tag: None,
+                status: crds::DeviceStatus::Active,
+                primary_ip4: None,
+                primary_ip6: None,
+                description: None,
+                comments: None,
+            },
+            status: None,
+        };
+        let result = extract_name_and_namespace(&device, "NetBoxDevice");
+        assert!(result.is_ok(), "Should default namespace to 'default' when None");
+        let (name, namespace) = result.unwrap();
+        assert_eq!(name, "test-device");
+        assert_eq!(namespace, "default");
+    }
+
+    // Tests for validate_reference_kind
+    #[test]
+    fn test_validate_reference_kind_correct() {
+        let reference = NetBoxResourceReference {
+            api_group: "dcops.microscaler.io".to_string(),
+            kind: "NetBoxDeviceType".to_string(),
+            name: "test-type".to_string(),
+            namespace: None,
+        };
+        let result = validate_reference_kind(&reference, "NetBoxDeviceType", "device_type", "test-resource");
+        assert!(result.is_ok(), "Should validate correct kind");
+    }
+
+    #[test]
+    fn test_validate_reference_kind_incorrect() {
+        let reference = NetBoxResourceReference {
+            api_group: "dcops.microscaler.io".to_string(),
+            kind: "NetBoxDeviceType".to_string(),
+            name: "test-type".to_string(),
+            namespace: None,
+        };
+        let result = validate_reference_kind(&reference, "NetBoxSite", "device_type", "test-resource");
+        assert!(result.is_err(), "Should error on incorrect kind");
+    }
+
     // Async helper function tests using MockNetBoxClient
     mod async_tests {
         use crate::reconcile_helpers::{check_existing, check_and_update_existing, NetBoxResource};
         use crate::test_utils::create_test_prefix;
         use netbox_client::{MockNetBoxClient, NetBoxClientTrait};
-        use crate::error::ControllerError;
         
         #[tokio::test]
         async fn test_check_existing_resource_exists() {
             // Setup: Create mock NetBoxClient with existing prefix
-            let mut mock_client = MockNetBoxClient::new("http://test-netbox");
+            let mock_client = MockNetBoxClient::new("http://test-netbox");
             let test_prefix = create_test_prefix(1, "192.168.1.0/24", "http://test-netbox");
             mock_client.add_prefix(test_prefix.clone());
             
@@ -305,7 +582,7 @@ mod tests {
                 client_ref,
                 1,
                 "test-prefix",
-                async { client_ref.get_prefix(1).await },
+                async { client_ref.get_prefix(netbox_client::PrefixId(1)).await },
             ).await;
             
             // Assert: Should return Some(resource)
@@ -327,7 +604,7 @@ mod tests {
                 client_ref,
                 999,
                 "non-existent-prefix",
-                async { client_ref.get_prefix(999).await },
+                async { client_ref.get_prefix(netbox_client::PrefixId(999)).await },
             ).await;
             
             // Assert: Should return Ok(None) for drift detection
@@ -339,7 +616,7 @@ mod tests {
         #[tokio::test]
         async fn test_check_and_update_existing_no_update_needed() {
             // Setup: Create mock NetBoxClient with existing prefix
-            let mut mock_client = MockNetBoxClient::new("http://test-netbox");
+            let mock_client = MockNetBoxClient::new("http://test-netbox");
             let test_prefix = create_test_prefix(1, "192.168.1.0/24", "http://test-netbox");
             mock_client.add_prefix(test_prefix.clone());
             
@@ -349,9 +626,9 @@ mod tests {
                 client_ref,
                 1,
                 "test-prefix",
-                async { client_ref.get_prefix(1).await },
+                async { client_ref.get_prefix(netbox_client::PrefixId(1)).await },
                 |_| false, // No update needed
-                async { client_ref.get_prefix(1).await }, // Won't be called
+                async { client_ref.get_prefix(netbox_client::PrefixId(1)).await }, // Won't be called
             ).await;
             
             // Assert: Should return Some(existing) without updating
@@ -365,7 +642,7 @@ mod tests {
         #[tokio::test]
         async fn test_check_and_update_existing_update_needed() {
             // Setup: Create mock NetBoxClient with existing prefix
-            let mut mock_client = MockNetBoxClient::new("http://test-netbox");
+            let mock_client = MockNetBoxClient::new("http://test-netbox");
             let test_prefix = create_test_prefix(1, "192.168.1.0/24", "http://test-netbox");
             mock_client.add_prefix(test_prefix.clone());
             
@@ -379,7 +656,7 @@ mod tests {
                 client_ref,
                 1,
                 "test-prefix",
-                async { client_ref.get_prefix(1).await },
+                async { client_ref.get_prefix(netbox_client::PrefixId(1)).await },
                 |_| true, // Update needed
                 async { 
                     // Simulate update by returning updated prefix
@@ -406,9 +683,9 @@ mod tests {
                 client_ref,
                 999,
                 "non-existent-prefix",
-                async { client_ref.get_prefix(999).await },
+                async { client_ref.get_prefix(netbox_client::PrefixId(999)).await },
                 |_| true,
-                async { client_ref.get_prefix(999).await },
+                async { client_ref.get_prefix(netbox_client::PrefixId(999)).await },
             ).await;
             
             // Assert: Should return Ok(None) for drift detection
@@ -417,5 +694,708 @@ mod tests {
             assert!(resource.is_none()); // Drift detected - resource deleted
         }
     }
-}
 
+    // Tests for validate_status_and_drift
+    mod validate_status_and_drift_tests {
+        use crate::reconcile_helpers::{validate_status_and_drift, DriftCheckResult};
+        use crate::test_utils::create_test_prefix;
+        use netbox_client::{MockNetBoxClient, NetBoxClientTrait};
+        use crds::*;
+        
+        #[tokio::test]
+        async fn test_validate_status_and_drift_no_status() {
+            // No status - should return Recreate
+            let mock_client = MockNetBoxClient::new("http://test-netbox");
+            let client_ref: &dyn NetBoxClientTrait = &mock_client;
+            
+            let result = validate_status_and_drift::<netbox_client::Prefix, _, _>(
+                None::<&NetBoxPrefixStatus>,
+                "NetBoxPrefix",
+                "default",
+                "test-prefix",
+                |_| async { client_ref.get_prefix(netbox_client::PrefixId(1)).await },
+            ).await;
+            
+            assert!(result.is_ok());
+            match result.unwrap() {
+                DriftCheckResult::Recreate => {}
+                _ => panic!("Should return Recreate when no status"),
+            }
+        }
+        
+        #[tokio::test]
+        async fn test_validate_status_and_drift_created_with_valid_id_exists() {
+            // Created state with valid ID, resource exists
+            let mock_client = MockNetBoxClient::new("http://test-netbox");
+            let test_prefix = create_test_prefix(1, "192.168.1.0/24", "http://test-netbox");
+            mock_client.add_prefix(test_prefix.clone());
+            
+            let status = NetBoxPrefixStatus {
+                netbox_id: Some(1),
+                netbox_url: Some("http://test-netbox/api/ipam/prefixes/1/".to_string()),
+                state: PrefixState::Created,
+                error: None,
+                last_reconciled: None,
+            };
+            
+            let client_ref: &dyn NetBoxClientTrait = &mock_client;
+            let result = validate_status_and_drift::<netbox_client::Prefix, _, _>(
+                Some(&status),
+                "NetBoxPrefix",
+                "default",
+                "test-prefix",
+                |id| async move { client_ref.get_prefix(netbox_client::PrefixId(id)).await },
+            ).await;
+            
+            assert!(result.is_ok());
+            match result.unwrap() {
+                DriftCheckResult::UseExisting(prefix) => {
+                    assert_eq!(prefix.id, 1);
+                }
+                _ => panic!("Should return UseExisting when resource exists"),
+            }
+        }
+        
+        #[tokio::test]
+        async fn test_validate_status_and_drift_created_with_valid_id_not_found() {
+            // Created state with valid ID, but resource deleted (drift)
+            let mock_client = MockNetBoxClient::new("http://test-netbox");
+            
+            let status = NetBoxPrefixStatus {
+                netbox_id: Some(999),
+                netbox_url: Some("http://test-netbox/api/ipam/prefixes/999/".to_string()),
+                state: PrefixState::Created,
+                error: None,
+                last_reconciled: None,
+            };
+            
+            let client_ref: &dyn NetBoxClientTrait = &mock_client;
+            let result = validate_status_and_drift::<netbox_client::Prefix, _, _>(
+                Some(&status),
+                "NetBoxPrefix",
+                "default",
+                "test-prefix",
+                |id| async move { client_ref.get_prefix(netbox_client::PrefixId(id)).await },
+            ).await;
+            
+            assert!(result.is_ok());
+            match result.unwrap() {
+                DriftCheckResult::StatusCleared { message } => {
+                    assert!(message.contains("deleted in NetBox"));
+                }
+                _ => panic!("Should return StatusCleared when resource deleted"),
+            }
+        }
+        
+        #[tokio::test]
+        async fn test_validate_status_and_drift_created_with_invalid_id_zero() {
+            // Created state with invalid ID (0) - should clear status
+            let mock_client = MockNetBoxClient::new("http://test-netbox");
+            
+            let status = NetBoxPrefixStatus {
+                netbox_id: Some(0),
+                netbox_url: Some("http://test-netbox/api/ipam/prefixes/0/".to_string()),
+                state: PrefixState::Created,
+                error: None,
+                last_reconciled: None,
+            };
+            
+            let client_ref: &dyn NetBoxClientTrait = &mock_client;
+            let result = validate_status_and_drift::<netbox_client::Prefix, _, _>(
+                Some(&status),
+                "NetBoxPrefix",
+                "default",
+                "test-prefix",
+                |_| async { client_ref.get_prefix(netbox_client::PrefixId(0)).await },
+            ).await;
+            
+            assert!(result.is_ok());
+            match result.unwrap() {
+                DriftCheckResult::StatusCleared { message } => {
+                    assert!(message.contains("Invalid netbox_id (0)"));
+                }
+                _ => panic!("Should return StatusCleared when ID is 0"),
+            }
+        }
+        
+        #[tokio::test]
+        async fn test_validate_status_and_drift_created_no_netbox_id() {
+            // Created state but no netbox_id - should recreate
+            let mock_client = MockNetBoxClient::new("http://test-netbox");
+            
+            let status = NetBoxPrefixStatus {
+                netbox_id: None,
+                netbox_url: None,
+                state: PrefixState::Created,
+                error: None,
+                last_reconciled: None,
+            };
+            
+            let client_ref: &dyn NetBoxClientTrait = &mock_client;
+            let result = validate_status_and_drift::<netbox_client::Prefix, _, _>(
+                Some(&status),
+                "NetBoxPrefix",
+                "default",
+                "test-prefix",
+                |_| async { client_ref.get_prefix(netbox_client::PrefixId(1)).await },
+            ).await;
+            
+            assert!(result.is_ok());
+            match result.unwrap() {
+                DriftCheckResult::Recreate => {}
+                _ => panic!("Should return Recreate when no netbox_id"),
+            }
+        }
+        
+        #[tokio::test]
+        async fn test_validate_status_and_drift_failed_with_valid_id_exists() {
+            // Failed state with valid ID, resource exists - should update to Created
+            let mock_client = MockNetBoxClient::new("http://test-netbox");
+            let test_prefix = create_test_prefix(1, "192.168.1.0/24", "http://test-netbox");
+            mock_client.add_prefix(test_prefix.clone());
+            
+            let status = NetBoxPrefixStatus {
+                netbox_id: Some(1),
+                netbox_url: Some("http://test-netbox/api/ipam/prefixes/1/".to_string()),
+                state: PrefixState::Failed,
+                error: Some("Previous error".to_string()),
+                last_reconciled: None,
+            };
+            
+            let client_ref: &dyn NetBoxClientTrait = &mock_client;
+            let result = validate_status_and_drift::<netbox_client::Prefix, _, _>(
+                Some(&status),
+                "NetBoxPrefix",
+                "default",
+                "test-prefix",
+                |id| async move { client_ref.get_prefix(netbox_client::PrefixId(id)).await },
+            ).await;
+            
+            assert!(result.is_ok());
+            match result.unwrap() {
+                DriftCheckResult::UseExisting(prefix) => {
+                    assert_eq!(prefix.id, 1);
+                }
+                _ => panic!("Should return UseExisting when resource exists with Failed state"),
+            }
+        }
+        
+        #[tokio::test]
+        async fn test_validate_status_and_drift_failed_with_invalid_id_zero() {
+            // Failed state with invalid ID (0) - should clear status
+            // Note: The function doesn't call get_resource_fn when ID is 0, it returns StatusCleared immediately
+            let _mock_client = MockNetBoxClient::new("http://test-netbox");
+            
+            let status = NetBoxPrefixStatus {
+                netbox_id: Some(0),
+                netbox_url: Some("http://test-netbox/api/ipam/prefixes/0/".to_string()),
+                state: PrefixState::Failed,
+                error: Some("Previous error".to_string()),
+                last_reconciled: None,
+            };
+            
+            // Create a closure that will never be called (since ID is 0)
+            let result = validate_status_and_drift::<netbox_client::Prefix, _, _>(
+                Some(&status),
+                "NetBoxPrefix",
+                "default",
+                "test-prefix",
+                |_| async { 
+                    // This should never be called when ID is 0
+                    panic!("get_resource_fn should not be called when ID is 0");
+                },
+            ).await;
+            
+            assert!(result.is_ok());
+            match result.unwrap() {
+                DriftCheckResult::StatusCleared { message } => {
+                    assert!(message.contains("Failed state with invalid netbox_id (0)") || 
+                            message.contains("Clearing Failed status with invalid netbox_id (0)"));
+                }
+                _ => panic!("Should return StatusCleared when Failed state has ID 0"),
+            }
+        }
+        
+        #[tokio::test]
+        async fn test_validate_status_and_drift_pending_state() {
+            // Pending state - should recreate
+            let mock_client = MockNetBoxClient::new("http://test-netbox");
+            
+            let status = NetBoxPrefixStatus {
+                netbox_id: Some(1),
+                netbox_url: Some("http://test-netbox/api/ipam/prefixes/1/".to_string()),
+                state: PrefixState::Pending,
+                error: None,
+                last_reconciled: None,
+            };
+            
+            let client_ref: &dyn NetBoxClientTrait = &mock_client;
+            let result = validate_status_and_drift::<netbox_client::Prefix, _, _>(
+                Some(&status),
+                "NetBoxPrefix",
+                "default",
+                "test-prefix",
+                |_| async { client_ref.get_prefix(netbox_client::PrefixId(1)).await },
+            ).await;
+            
+            assert!(result.is_ok());
+            match result.unwrap() {
+                DriftCheckResult::Recreate => {}
+                _ => panic!("Should return Recreate for Pending state"),
+            }
+        }
+    }
+
+
+    // Tests for check_existing and check_and_update_existing
+    mod check_existing_tests {
+        use super::*;
+        use crate::reconcile_helpers::{check_existing, check_and_update_existing};
+        use netbox_client::MockNetBoxClient;
+        use netbox_client::{NetBoxClientTrait, NetBoxError};
+        use crate::reconcile_helpers::NetBoxResource;
+
+        // Implement NetBoxResource for a simple test type
+        struct TestResource {
+            id: u64,
+            name: String,
+            url: String, // Store URL to return a reference
+        }
+
+        impl NetBoxResource for TestResource {
+            fn id(&self) -> u64 { self.id }
+            fn url(&self) -> &str { &self.url }
+        }
+
+        impl Clone for TestResource {
+            fn clone(&self) -> Self {
+                Self {
+                    id: self.id,
+                    name: self.name.clone(),
+                    url: self.url.clone(),
+                }
+            }
+        }
+
+        #[tokio::test]
+        async fn test_check_existing_resource_exists() {
+            let mock_client = MockNetBoxClient::new("http://test-netbox");
+            let client_ref: &dyn NetBoxClientTrait = &mock_client;
+            
+            // Create a test resource
+            let resource = TestResource {
+                id: 1,
+                name: "test-resource".to_string(),
+                url: "http://test/api/resource/1/".to_string(),
+            };
+            
+            let result = check_existing(
+                client_ref,
+                1,
+                "test-resource",
+                async { Ok(resource.clone()) },
+            ).await;
+            
+            assert!(result.is_ok());
+            let existing = result.unwrap();
+            assert!(existing.is_some());
+            assert_eq!(existing.unwrap().id(), 1);
+        }
+
+        #[tokio::test]
+        async fn test_check_existing_resource_not_found() {
+            let mock_client = MockNetBoxClient::new("http://test-netbox");
+            let client_ref: &dyn NetBoxClientTrait = &mock_client;
+            
+            let result: Result<Option<TestResource>, _> = check_existing(
+                client_ref,
+                1,
+                "test-resource",
+                async { Err::<TestResource, _>(NetBoxError::NotFound("Resource not found".to_string())) },
+            ).await;
+            
+            assert!(result.is_ok());
+            let existing = result.unwrap();
+            assert!(existing.is_none(), "Should return None when resource not found (drift detected)");
+        }
+
+        #[tokio::test]
+        async fn test_check_existing_other_error() {
+            let mock_client = MockNetBoxClient::new("http://test-netbox");
+            let client_ref: &dyn NetBoxClientTrait = &mock_client;
+            
+            let result: Result<Option<TestResource>, _> = check_existing(
+                client_ref,
+                1,
+                "test-resource",
+                async { Err::<TestResource, _>(NetBoxError::Api("Network error".to_string())) },
+            ).await;
+            
+            assert!(result.is_err(), "Should return error for non-NotFound errors");
+        }
+
+        #[tokio::test]
+        async fn test_check_and_update_existing_no_update_needed() {
+            let mock_client = MockNetBoxClient::new("http://test-netbox");
+            let client_ref: &dyn NetBoxClientTrait = &mock_client;
+            
+            let resource = TestResource {
+                id: 1,
+                name: "test-resource".to_string(),
+                url: "http://test/api/resource/1/".to_string(),
+            };
+            
+            let result = check_and_update_existing(
+                client_ref,
+                1,
+                "test-resource",
+                async { Ok(resource.clone()) },
+                |_| false, // No update needed
+                async { Ok(resource.clone()) },
+            ).await;
+            
+            assert!(result.is_ok());
+            let existing = result.unwrap();
+            assert!(existing.is_some());
+            assert_eq!(existing.unwrap().id(), 1);
+        }
+
+        #[tokio::test]
+        async fn test_check_and_update_existing_update_needed() {
+            let mock_client = MockNetBoxClient::new("http://test-netbox");
+            let client_ref: &dyn NetBoxClientTrait = &mock_client;
+            
+            let resource = TestResource {
+                id: 1,
+                name: "test-resource".to_string(),
+                url: "http://test/api/resource/1/".to_string(),
+            };
+            
+            let updated_resource = TestResource {
+                id: 1,
+                name: "updated-resource".to_string(),
+                url: "http://test/api/resource/1/".to_string(),
+            };
+            
+            let result = check_and_update_existing(
+                client_ref,
+                1,
+                "test-resource",
+                async { Ok(resource.clone()) },
+                |_| true, // Update needed
+                async { Ok(updated_resource.clone()) },
+            ).await;
+            
+            assert!(result.is_ok());
+            let existing = result.unwrap();
+            assert!(existing.is_some());
+            assert_eq!(existing.unwrap().name, "updated-resource");
+        }
+
+        #[tokio::test]
+        async fn test_check_and_update_existing_not_found() {
+            let mock_client = MockNetBoxClient::new("http://test-netbox");
+            let client_ref: &dyn NetBoxClientTrait = &mock_client;
+            
+            let result = check_and_update_existing(
+                client_ref,
+                1,
+                "test-resource",
+                async { Err(NetBoxError::NotFound("Resource not found".to_string())) },
+                |_| false,
+                async { Ok(TestResource { id: 1, name: "test".to_string(), url: "http://test/api/resource/1/".to_string() }) },
+            ).await;
+            
+            assert!(result.is_ok());
+            let existing = result.unwrap();
+            assert!(existing.is_none(), "Should return None when resource not found (drift detected)");
+        }
+    }
+
+    // Tests for resolve_required_dependency_id
+    mod resolve_required_dependency_id_tests {
+        use super::*;
+        use crate::reconcile_helpers::resolve_required_dependency_id;
+        use crate::kube_api_trait::mock::MockKubeApi;
+        use crate::test_utils::create_test_netbox_tenant;
+
+        #[tokio::test]
+        async fn test_resolve_required_dependency_id_success() {
+            let mock_api = MockKubeApi::new();
+            let tenant = create_test_netbox_tenant("test-tenant", "default", Some(42), Some("http://netbox/api/tenancy/tenants/42/".to_string()));
+            mock_api.store("test-tenant".to_string(), tenant);
+
+            let result = resolve_required_dependency_id(
+                &mock_api,
+                "test-tenant",
+                "NetBoxTenant",
+                "test-resource",
+                |crd| crd.status.as_ref(),
+            ).await;
+
+            assert!(result.is_ok());
+            assert_eq!(result.unwrap(), 42);
+        }
+
+        #[tokio::test]
+        async fn test_resolve_required_dependency_id_not_found() {
+            let mock_api = MockKubeApi::<NetBoxTenant>::new();
+
+            let result = resolve_required_dependency_id(
+                &mock_api,
+                "missing-tenant",
+                "NetBoxTenant",
+                "test-resource",
+                |crd| crd.status.as_ref(),
+            ).await;
+
+            assert!(result.is_err());
+            let error = result.unwrap_err();
+            match error {
+                crate::error::ControllerError::InvalidConfig(msg) => {
+                    assert!(msg.contains("not found"));
+                }
+                _ => panic!("Expected InvalidConfig error"),
+            }
+        }
+
+        #[tokio::test]
+        async fn test_resolve_required_dependency_id_no_status() {
+            let mock_api = MockKubeApi::new();
+            let mut tenant = create_test_netbox_tenant("test-tenant", "default", None, None);
+            tenant.status = None;
+            mock_api.store("test-tenant".to_string(), tenant);
+
+            let result = resolve_required_dependency_id(
+                &mock_api,
+                "test-tenant",
+                "NetBoxTenant",
+                "test-resource",
+                |crd| crd.status.as_ref(),
+            ).await;
+
+            assert!(result.is_err());
+            let error = result.unwrap_err();
+            match error {
+                crate::error::ControllerError::InvalidConfig(msg) => {
+                    assert!(msg.contains("no status"));
+                }
+                _ => panic!("Expected InvalidConfig error"),
+            }
+        }
+
+        #[tokio::test]
+        async fn test_resolve_required_dependency_id_no_netbox_id() {
+            let mock_api = MockKubeApi::new();
+            // Create tenant with status but no netbox_id
+            let mut tenant = create_test_netbox_tenant("test-tenant", "default", Some(1), None);
+            tenant.status = Some(crds::NetBoxTenantStatus {
+                netbox_id: None, // Status exists but no netbox_id
+                netbox_url: None,
+                state: crds::ResourceState::Pending,
+                error: None,
+                last_reconciled: None,
+            });
+            mock_api.store("test-tenant".to_string(), tenant);
+
+            let result = resolve_required_dependency_id(
+                &mock_api,
+                "test-tenant",
+                "NetBoxTenant",
+                "test-resource",
+                |crd| crd.status.as_ref(),
+            ).await;
+
+            assert!(result.is_err());
+            let error = result.unwrap_err();
+            match error {
+                crate::error::ControllerError::InvalidConfig(msg) => {
+                    assert!(msg.contains("not been created in NetBox yet") || msg.contains("no netbox_id in status"));
+                }
+                _ => panic!("Expected InvalidConfig error, got: {:?}", error),
+            }
+        }
+    }
+
+    // Tests for resolve_optional_dependency_id
+    mod resolve_optional_dependency_id_tests {
+        use super::*;
+        use crate::reconcile_helpers::resolve_optional_dependency_id;
+        use crate::kube_api_trait::mock::MockKubeApi;
+        use crate::test_utils::create_test_netbox_tenant;
+
+        #[tokio::test]
+        async fn test_resolve_optional_dependency_id_success() {
+            let mock_api = MockKubeApi::new();
+            let tenant = create_test_netbox_tenant("test-tenant", "default", Some(42), Some("http://netbox/api/tenancy/tenants/42/".to_string()));
+            mock_api.store("test-tenant".to_string(), tenant);
+
+            let reference = Some(crds::NetBoxResourceReference {
+                api_group: "dcops.microscaler.io".to_string(),
+                kind: "NetBoxTenant".to_string(),
+                name: "test-tenant".to_string(),
+                namespace: None,
+            });
+
+            let result = resolve_optional_dependency_id(
+                &mock_api,
+                reference.as_ref(),
+                "NetBoxTenant",
+                "tenant",
+                "test-resource",
+                |crd| crd.status.as_ref(),
+            ).await;
+
+            assert_eq!(result, Some(42));
+        }
+
+        #[tokio::test]
+        async fn test_resolve_optional_dependency_id_none_reference() {
+            let mock_api = MockKubeApi::<NetBoxTenant>::new();
+
+            let result = resolve_optional_dependency_id(
+                &mock_api,
+                None,
+                "NetBoxTenant",
+                "tenant",
+                "test-resource",
+                |crd| crd.status.as_ref(),
+            ).await;
+
+            assert_eq!(result, None);
+        }
+
+        #[tokio::test]
+        async fn test_resolve_optional_dependency_id_wrong_kind() {
+            let mock_api = MockKubeApi::<NetBoxTenant>::new();
+
+            let reference = Some(crds::NetBoxResourceReference {
+                api_group: "dcops.microscaler.io".to_string(),
+                kind: "NetBoxSite".to_string(), // Wrong kind
+                name: "test-tenant".to_string(),
+                namespace: None,
+            });
+
+            let result = resolve_optional_dependency_id(
+                &mock_api,
+                reference.as_ref(),
+                "NetBoxTenant",
+                "tenant",
+                "test-resource",
+                |crd| crd.status.as_ref(),
+            ).await;
+
+            assert_eq!(result, None);
+        }
+
+        #[tokio::test]
+        async fn test_resolve_optional_dependency_id_not_found() {
+            let mock_api = MockKubeApi::<NetBoxTenant>::new();
+
+            let reference = Some(crds::NetBoxResourceReference {
+                api_group: "dcops.microscaler.io".to_string(),
+                kind: "NetBoxTenant".to_string(),
+                name: "missing-tenant".to_string(),
+                namespace: None,
+            });
+
+            let result = resolve_optional_dependency_id(
+                &mock_api,
+                reference.as_ref(),
+                "NetBoxTenant",
+                "tenant",
+                "test-resource",
+                |crd| crd.status.as_ref(),
+            ).await;
+
+            assert_eq!(result, None);
+        }
+
+        #[tokio::test]
+        async fn test_resolve_optional_dependency_id_invalid_id_zero() {
+            let mock_api = MockKubeApi::new();
+            let tenant = create_test_netbox_tenant("test-tenant", "default", Some(0), Some("http://netbox/api/tenancy/tenants/0/".to_string()));
+            mock_api.store("test-tenant".to_string(), tenant);
+
+            let reference = Some(crds::NetBoxResourceReference {
+                api_group: "dcops.microscaler.io".to_string(),
+                kind: "NetBoxTenant".to_string(),
+                name: "test-tenant".to_string(),
+                namespace: None,
+            });
+
+            let result = resolve_optional_dependency_id(
+                &mock_api,
+                reference.as_ref(),
+                "NetBoxTenant",
+                "tenant",
+                "test-resource",
+                |crd| crd.status.as_ref(),
+            ).await;
+
+            assert_eq!(result, None, "Should filter out invalid ID 0");
+        }
+    }
+
+    // Tests for update_resource_status
+    mod update_resource_status_tests {
+        use super::*;
+        use crate::reconcile_helpers::update_resource_status;
+        use crate::kube_api_trait::mock::MockKubeApi;
+        use crate::test_utils::create_test_netbox_tenant;
+
+        #[tokio::test]
+        async fn test_update_resource_status_success() {
+            let mock_api = MockKubeApi::new();
+            let tenant = create_test_netbox_tenant("test-tenant", "default", Some(42), Some("http://netbox/api/tenancy/tenants/42/".to_string()));
+            mock_api.store("test-tenant".to_string(), tenant);
+
+            let status_patch = serde_json::json!({
+                "status": {
+                    "netboxId": 42,
+                    "netboxUrl": "http://netbox/api/tenancy/tenants/42/",
+                    "state": "Created",
+                    "error": null
+                }
+            });
+
+            let result = update_resource_status(
+                &mock_api,
+                "test-tenant",
+                "default",
+                &status_patch,
+                "NetBoxTenant",
+                42,
+            ).await;
+
+            assert!(result.is_ok());
+        }
+
+        #[tokio::test]
+        async fn test_update_resource_status_with_zero_id() {
+            let mock_api = MockKubeApi::new();
+            let tenant = create_test_netbox_tenant("test-tenant", "default", None, None);
+            mock_api.store("test-tenant".to_string(), tenant);
+
+            let status_patch = serde_json::json!({
+                "status": {
+                    "netboxId": 0,
+                    "netboxUrl": "",
+                    "state": "Pending",
+                    "error": "Resource was deleted"
+                }
+            });
+
+            let result = update_resource_status(
+                &mock_api,
+                "test-tenant",
+                "default",
+                &status_patch,
+                "NetBoxTenant",
+                0,
+            ).await;
+
+            assert!(result.is_ok());
+        }
+    }
+}

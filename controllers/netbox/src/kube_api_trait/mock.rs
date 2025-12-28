@@ -23,7 +23,7 @@ pub struct MockKubeApi<T> {
 #[cfg(test)]
 impl<T> MockKubeApi<T>
 where
-    T: Resource + Clone + Send + Sync + 'static,
+    T: Resource + Clone + Send + Sync + serde::Serialize + serde::de::DeserializeOwned + std::fmt::Debug + 'static,
     <T as Resource>::DynamicType: Send + Sync,
 {
     /// Create a new mock API with empty resource store
@@ -55,7 +55,7 @@ where
 #[cfg(test)]
 impl<T> Default for MockKubeApi<T>
 where
-    T: Resource + Clone + Send + Sync + 'static,
+    T: Resource + Clone + Send + Sync + serde::Serialize + serde::de::DeserializeOwned + std::fmt::Debug + 'static,
     <T as Resource>::DynamicType: Send + Sync,
 {
     fn default() -> Self {
@@ -67,7 +67,7 @@ where
 #[cfg(test)]
 impl<T> KubeApiTrait<T> for MockKubeApi<T>
 where
-    T: Resource + Clone + Send + Sync + 'static,
+    T: Resource + Clone + Send + Sync + serde::Serialize + serde::de::DeserializeOwned + std::fmt::Debug + 'static,
     <T as Resource>::DynamicType: Send + Sync,
 {
     async fn get(&self, name: &str) -> Result<T, kube::Error> {
@@ -107,13 +107,23 @@ where
                     // Update the resource's status field
                     // This is a simplified implementation - in reality, we'd need to
                     // properly merge the status using serde_json
-                    let resource_json = serde_json::to_value(resource).map_err(|e| {
-                        kube::Error::SerdeError(format!("Failed to serialize resource: {}", e))
+                    let resource_json = serde_json::to_value(&*resource).map_err(|e| {
+                        kube::Error::Api(kube::error::ErrorResponse {
+                            code: 500,
+                            message: format!("Failed to serialize resource: {}", e),
+                            reason: "InternalError".to_string(),
+                            status: "Failure".to_string(),
+                        })
                     })?;
                     let mut merged = resource_json;
                     merged["status"] = status_value.clone();
                     *resource = serde_json::from_value(merged).map_err(|e| {
-                        kube::Error::SerdeError(format!("Failed to deserialize patched resource: {}", e))
+                        kube::Error::Api(kube::error::ErrorResponse {
+                            code: 500,
+                            message: format!("Failed to deserialize patched resource: {}", e),
+                            reason: "InternalError".to_string(),
+                            status: "Failure".to_string(),
+                        })
                     })?;
                 }
             }
@@ -135,7 +145,8 @@ where
         let items: Vec<T> = resources.values().cloned().collect();
         Ok(kube::api::ObjectList {
             items,
-            metadata: kube::core::ObjectMeta::default(),
+            metadata: kube::core::ListMeta::default(),
+            types: kube::core::TypeMeta::default(),
         })
     }
 }

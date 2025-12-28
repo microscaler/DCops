@@ -78,7 +78,12 @@ pub fn create_test_netbox_prefix(
             prefix: "192.168.1.0/24".to_string(),
             description: None,
             site: None,
-            tenant: None,
+            tenant: crds::NetBoxResourceReference {
+                api_group: "dcops.microscaler.io".to_string(),
+                kind: "NetBoxTenant".to_string(),
+                name: "datacenter-tenant".to_string(),
+                namespace: Some(namespace.to_string()),
+            },
             aggregate: None,
             vlan: None,
             status: crds::PrefixStatus::Active,
@@ -100,37 +105,48 @@ pub fn create_test_netbox_prefix(
 /// 
 /// This creates a reconciler with all APIs mocked, enabling true unit testing.
 #[cfg(test)]
+// Note: This function is incomplete - it needs TokenResolver which requires kube::Client
+// For now, tests that need full reconciler setup should be marked #[ignore]
+// until proper mocking infrastructure is in place
+#[allow(dead_code)]
 pub fn create_test_reconciler(
-    mock_client: MockNetBoxClient,
-) -> Reconciler {
-    use crate::kube_api_trait::mock::MockKubeApi;
-    
-    Reconciler::new(
-        mock_client,
-        // IPAM APIs
-        MockKubeApi::new(),
-        MockKubeApi::new(),
-        MockKubeApi::new(),
-        MockKubeApi::new(),
-        MockKubeApi::new(),
-        // Tenancy APIs
-        MockKubeApi::new(),
-        // DCIM APIs
-        MockKubeApi::new(),
-        MockKubeApi::new(),
-        MockKubeApi::new(),
-        MockKubeApi::new(),
-        MockKubeApi::new(),
-        MockKubeApi::new(),
-        MockKubeApi::new(),
-        MockKubeApi::new(),
-        MockKubeApi::new(),
-        MockKubeApi::new(),
-        MockKubeApi::new(),
-        // Custom CRDs
-        MockKubeApi::new(),
-        MockKubeApi::new(),
-    )
+    _mock_client: MockNetBoxClient,
+) {
+    // TODO: This function needs to be updated to create a TokenResolver
+    // which requires a kube::Client. For now, tests using this should be #[ignore]
+    // use crate::kube_api_trait::mock::MockKubeApi;
+    // use crate::token_resolver::TokenResolver;
+    // use std::sync::Arc;
+    // 
+    // let token_resolver = Arc::new(TokenResolver::new(kube_client, "http://test-netbox".to_string()));
+    // 
+    // Reconciler::new(
+    //     token_resolver,
+    //     // IPAM APIs (21 total including netbox_rir_api)
+    //     MockKubeApi::new(), // netbox_prefix_api
+    //     MockKubeApi::new(), // netbox_role_api
+    //     MockKubeApi::new(), // netbox_tag_api
+    //     MockKubeApi::new(), // netbox_aggregate_api
+    //     MockKubeApi::new(), // netbox_vlan_api
+    //     MockKubeApi::new(), // netbox_rir_api
+    //     // Tenancy APIs
+    //     MockKubeApi::new(), // netbox_tenant_api
+    //     // DCIM APIs
+    //     MockKubeApi::new(), // netbox_site_api
+    //     MockKubeApi::new(), // netbox_device_role_api
+    //     MockKubeApi::new(), // netbox_manufacturer_api
+    //     MockKubeApi::new(), // netbox_platform_api
+    //     MockKubeApi::new(), // netbox_device_type_api
+    //     MockKubeApi::new(), // netbox_device_api
+    //     MockKubeApi::new(), // netbox_interface_api
+    //     MockKubeApi::new(), // netbox_mac_address_api
+    //     MockKubeApi::new(), // netbox_region_api
+    //     MockKubeApi::new(), // netbox_site_group_api
+    //     MockKubeApi::new(), // netbox_location_api
+    //     // Custom CRDs
+    //     MockKubeApi::new(), // ip_pool_api
+    //     MockKubeApi::new(), // ip_claim_api
+    // )
 }
 
 /// Helper to create a test Prefix with all required fields
@@ -221,7 +237,12 @@ pub fn create_test_netbox_site(
             shipping_address: None,
             latitude: None,
             longitude: None,
-            tenant: None,
+            tenant: crds::NetBoxResourceReference {
+                api_group: "dcops.microscaler.io".to_string(),
+                kind: "NetBoxTenant".to_string(),
+                name: "datacenter-tenant".to_string(),
+                namespace: Some(namespace.to_string()),
+            },
             region: None,
             site_group: None,
             status: crds::SiteStatus::Active,
@@ -259,6 +280,12 @@ pub fn create_test_netbox_tenant(
             group: None,
             description: None,
             comments: None,
+            reconcile_interval: None,
+            token_secret: crds::SecretReference {
+                name: format!("netbox-token-{}", name),
+                namespace: None,
+                key: None,
+            },
         },
         status: netbox_id.map(|id| crds::NetBoxTenantStatus {
             netbox_id: Some(id),
@@ -309,7 +336,12 @@ pub fn create_test_netbox_device(
                 namespace: Some(namespace.to_string()),
             },
             location: None,
-            tenant: None,
+            tenant: crds::NetBoxResourceReference {
+                api_group: "dcops.microscaler.io".to_string(),
+                kind: "NetBoxTenant".to_string(),
+                name: "datacenter-tenant".to_string(),
+                namespace: Some(namespace.to_string()),
+            },
             platform: None,
             serial: None,
             asset_tag: None,

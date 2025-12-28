@@ -15,7 +15,7 @@ mod tests {
     #[ignore] // Ignored until Kubernetes API mocking is implemented
     async fn test_reconcile_device_create() {
         // Setup: Create mock NetBoxClient
-        let mock_client = MockNetBoxClient::new("http://test-netbox");
+        let _mock_client = MockNetBoxClient::new("http://test-netbox");
         
         // Setup: Create test NetBoxDevice CRD (no status - needs creation)
         // Note: This requires all dependencies to exist (DeviceType, DeviceRole, Site)
@@ -48,7 +48,7 @@ mod tests {
     #[ignore] // Ignored until Kubernetes API mocking is implemented
     async fn test_reconcile_device_update() {
         // Setup: Create mock NetBoxClient
-        let mock_client = MockNetBoxClient::new("http://test-netbox");
+        let _mock_client = MockNetBoxClient::new("http://test-netbox");
         
         // Setup: Create NetBoxDevice CRD with status and updated description
         let mut netbox_device = create_test_netbox_device(
@@ -79,10 +79,10 @@ mod tests {
     #[ignore] // Ignored until Kubernetes API mocking is implemented
     async fn test_reconcile_device_idempotent() {
         // Setup: Create mock NetBoxClient
-        let mock_client = MockNetBoxClient::new("http://test-netbox");
+        let _mock_client = MockNetBoxClient::new("http://test-netbox");
         
         // Setup: Create NetBoxDevice CRD with matching spec
-        let netbox_device = create_test_netbox_device(
+        let _netbox_device = create_test_netbox_device(
             "test-device",
             "default",
             "test-device-type",

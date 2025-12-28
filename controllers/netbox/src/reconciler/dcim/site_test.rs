@@ -13,7 +13,7 @@ mod tests {
     #[ignore] // Ignored until Kubernetes API mocking is implemented
     async fn test_reconcile_site_create() {
         // Setup: Create mock NetBoxClient
-        let mock_client = MockNetBoxClient::new("http://test-netbox");
+        let _mock_client = MockNetBoxClient::new("http://test-netbox");
         
         // Setup: Create test NetBoxSite CRD (no status - needs creation)
         let mut netbox_site = create_test_netbox_site("test-site", "default", None, None);
@@ -36,7 +36,7 @@ mod tests {
     #[ignore] // Ignored until Kubernetes API mocking is implemented
     async fn test_reconcile_site_update() {
         // Setup: Create mock NetBoxClient
-        let mut mock_client = MockNetBoxClient::new("http://test-netbox");
+        let _mock_client = MockNetBoxClient::new("http://test-netbox");
         
         // Setup: Create existing site in NetBox (would need Site model helper)
         // For now, we'll use the mock client's add_site method when available
@@ -67,10 +67,10 @@ mod tests {
     #[ignore] // Ignored until Kubernetes API mocking is implemented
     async fn test_reconcile_site_idempotent() {
         // Setup: Create mock NetBoxClient
-        let mock_client = MockNetBoxClient::new("http://test-netbox");
+        let _mock_client = MockNetBoxClient::new("http://test-netbox");
         
         // Setup: Create NetBoxSite CRD with matching spec
-        let netbox_site = create_test_netbox_site(
+        let _netbox_site = create_test_netbox_site(
             "test-site",
             "default",
             Some(1),

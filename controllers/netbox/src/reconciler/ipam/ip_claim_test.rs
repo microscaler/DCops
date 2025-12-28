@@ -13,15 +13,16 @@ mod tests {
     #[ignore] // Ignored until Kubernetes API mocking is implemented
     async fn test_reconcile_ip_claim_success() {
         // Setup: Create mock NetBoxClient
-        let mut mock_client = MockNetBoxClient::new("http://test-netbox");
+        let _mock_client = MockNetBoxClient::new("http://test-netbox");
         
         // Setup: Create test prefix in mock
-        let test_prefix = create_test_prefix(1, "192.168.1.0/24", "http://test-netbox");
-        mock_client.add_prefix(test_prefix);
+        let _test_prefix = create_test_prefix(1, "192.168.1.0/24", "http://test-netbox");
+        // Note: MockNetBoxClient needs to support add_prefix - this is a placeholder
+        // mock_client.add_prefix(test_prefix);
         
         // Setup: Create test IPPool with status
-        let mut ip_pool = create_test_ip_pool("test-pool", "default", "test-prefix", None);
-        ip_pool.status = Some(crds::IPPoolStatus {
+        let mut _ip_pool = create_test_ip_pool("test-pool", "default", "test-prefix", None);
+        _ip_pool.status = Some(crds::IPPoolStatus {
             netbox_prefix_id: Some(1),
             netbox_prefix_url: Some("http://test-netbox/api/ipam/prefixes/1/".to_string()),
             total_ips: 256,
@@ -31,7 +32,7 @@ mod tests {
         });
         
         // Setup: Create test IPClaim CRD
-        let ip_claim = create_test_ip_claim(
+        let _ip_claim = create_test_ip_claim(
             "test-claim",
             "default",
             "test-pool",
@@ -63,10 +64,10 @@ mod tests {
     #[ignore] // Ignored until Kubernetes API mocking is implemented
     async fn test_reconcile_ip_claim_pool_not_found() {
         // Setup: Create mock NetBoxClient
-        let mock_client = MockNetBoxClient::new("http://test-netbox");
+        let _mock_client = MockNetBoxClient::new("http://test-netbox");
         
         // Setup: Create test IPClaim CRD
-        let ip_claim = create_test_ip_claim(
+        let _ip_claim = create_test_ip_claim(
             "test-claim",
             "default",
             "non-existent-pool",
@@ -90,10 +91,10 @@ mod tests {
     #[ignore] // Ignored until Kubernetes API mocking is implemented
     async fn test_reconcile_ip_claim_already_allocated() {
         // Setup: Create mock NetBoxClient
-        let mock_client = MockNetBoxClient::new("http://test-netbox");
+        let _mock_client = MockNetBoxClient::new("http://test-netbox");
         
         // Setup: Create IPClaim with status showing already allocated
-        let mut ip_claim = create_test_ip_claim(
+        let mut _ip_claim = create_test_ip_claim(
             "test-claim",
             "default",
             "test-pool",
@@ -102,7 +103,7 @@ mod tests {
             None,
             None,
         );
-        ip_claim.status = Some(crds::IPClaimStatus {
+        _ip_claim.status = Some(crds::IPClaimStatus {
             ip: Some("192.168.1.10/24".to_string()),
             state: crds::AllocationState::Allocated,
             netbox_ip_ref: Some("http://test-netbox/api/ipam/ip-addresses/1/".to_string()),

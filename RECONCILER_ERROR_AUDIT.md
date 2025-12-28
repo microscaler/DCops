@@ -304,12 +304,12 @@ The error is caused by an **incomplete refactoring** where `create_site` was cha
 
 #### Critical Fix: NetBoxSite Tenant Reference
 
-- [ ] **Fix Applied**: Replace `add_nested_reference` with `add_tenant_for_create` in `create_site`
+- [x] **Fix Applied**: Replace `add_nested_reference` with `add_tenant_for_create` in `create_site`
   - File: `crates/netbox-client/src/dcim/site.rs`
   - Line: 112
-  - Change: `helpers::add_nested_reference(&mut body, "tenant", Some(tid.into()));` → `helpers::add_tenant_for_create(&mut body, core, tenant_id).await?;`
+  - Change: `helpers::add_nested_reference(&mut body, "tenant", Some(tid.into()));` → `helpers::add_tenant_for_create(&mut body, core, tenant_id).await;`
 
-- [ ] **Code Compiles**: Verify `cargo build` or `python3 scripts/host_aware_build.py --release -p netbox-controller` succeeds
+- [x] **Code Compiles**: Verify `cargo build` or `python3 scripts/host_aware_build.py --release -p netbox-controller` succeeds ✅
 
 - [ ] **Controller Deployed**: Verify new controller image is running
 
@@ -345,30 +345,30 @@ The error is caused by an **incomplete refactoring** where `create_site` was cha
 
 #### High Priority Fixes: Other Resources with Tenant
 
-- [ ] **Fix `create_prefix`**: `crates/netbox-client/src/ipam/prefix.rs:154`
-  - [ ] Code change applied
-  - [ ] Compiles successfully
+- [x] **Fix `create_prefix`**: `crates/netbox-client/src/ipam/prefix.rs:154`
+  - [x] Code change applied
+  - [x] Compiles successfully ✅
   - [ ] Tested with NetBoxPrefix CRD
   - [ ] Logs show tenant object being added correctly
   - [ ] CR status shows `Created` state
 
-- [ ] **Fix `create_device`**: `crates/netbox-client/src/dcim/device.rs:135`
-  - [ ] Code change applied
-  - [ ] Compiles successfully
+- [x] **Fix `create_device`**: `crates/netbox-client/src/dcim/device.rs:135`
+  - [x] Code change applied
+  - [x] Compiles successfully ✅
   - [ ] Tested with NetBoxDevice CRD
   - [ ] Logs show tenant object being added correctly
   - [ ] CR status shows `Created` state
 
-- [ ] **Fix `create_vlan`**: `crates/netbox-client/src/ipam/vlan.rs:111`
-  - [ ] Code change applied
-  - [ ] Compiles successfully
+- [x] **Fix `create_vlan`**: `crates/netbox-client/src/ipam/vlan.rs:111`
+  - [x] Code change applied
+  - [x] Compiles successfully ✅
   - [ ] Tested with NetBoxVLAN CRD
   - [ ] Logs show tenant object being added correctly
   - [ ] CR status shows `Created` state
 
-- [ ] **Fix `create_location`**: `crates/netbox-client/src/dcim/location.rs:119`
-  - [ ] Code change applied
-  - [ ] Compiles successfully
+- [x] **Fix `create_location`**: `crates/netbox-client/src/dcim/location.rs:119`
+  - [x] Code change applied
+  - [x] Compiles successfully ✅
   - [ ] Tested with NetBoxLocation CRD
   - [ ] Logs show tenant object being added correctly
   - [ ] CR status shows `Created` state
@@ -475,11 +475,11 @@ status:
 
 | Fix | Status | Date Applied | Verified | Notes |
 |-----|--------|--------------|----------|-------|
-| `create_site` tenant fix | ⬜ Not Started | - | ⬜ No | - |
-| `create_prefix` tenant fix | ⬜ Not Started | - | ⬜ No | - |
-| `create_device` tenant fix | ⬜ Not Started | - | ⬜ No | - |
-| `create_vlan` tenant fix | ⬜ Not Started | - | ⬜ No | - |
-| `create_location` tenant fix | ⬜ Not Started | - | ⬜ No | - |
+| `create_site` tenant fix | 🟡 In Progress | 2025-12-28 | ⬜ No | Code change applied ✅, compiles ✅, awaiting deployment |
+| `create_prefix` tenant fix | 🟡 In Progress | 2025-12-28 | ⬜ No | Code change applied ✅, compiles ✅, awaiting deployment |
+| `create_device` tenant fix | 🟡 In Progress | 2025-12-28 | ⬜ No | Code change applied ✅, compiles ✅, awaiting deployment |
+| `create_vlan` tenant fix | 🟡 In Progress | 2025-12-28 | ⬜ No | Code change applied ✅, compiles ✅, awaiting deployment |
+| `create_location` tenant fix | 🟡 In Progress | 2025-12-28 | ⬜ No | Code change applied ✅, compiles ✅, awaiting deployment |
 
 **Legend**:
 - ⬜ Not Started

@@ -129,11 +129,8 @@ pub async fn create_device(
     helpers::add_required_nested_reference(&mut body, "site", site_id.into());
     
     helpers::add_optional_string_field(&mut body, "name", name);
-    // For CREATE operations, use just the tenant ID
-    // NetBox 4.0 accepts either {"id": X} or the full object, but using just ID is simpler and avoids validation issues
-    if let Some(tid) = tenant_id {
-        helpers::add_nested_reference(&mut body, "tenant", Some(tid.into()));
-    }
+    // For CREATE operations, NetBox 4.0 requires full tenant object (id, name, slug)
+    helpers::add_tenant_for_create(&mut body, core, tenant_id.map(|id| id.into())).await;
     helpers::add_nested_reference(&mut body, "platform", platform_id.map(|id| id.into()));
     helpers::add_nested_reference(&mut body, "location", location_id.map(|id| id.into()));
     helpers::add_optional_string_field(&mut body, "serial", serial);

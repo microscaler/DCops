@@ -8,10 +8,9 @@ use netbox_client::{NetBoxClientTrait, PrefixId};
 
 impl Reconciler {
     pub async fn reconcile_ip_pool(&self, pool: &IPPool) -> Result<(), ControllerError> {
-        let name = pool.metadata.name.as_ref()
-            .ok_or_else(|| ControllerError::InvalidConfig("IPPool missing name".to_string()))?;
-        let namespace = pool.metadata.namespace.as_deref()
-            .unwrap_or("default");
+        // Extract name and namespace using helper
+        use crate::reconcile_helpers::{extract_name_and_namespace, validate_reference_kind};
+        let (name, namespace) = extract_name_and_namespace(pool, "IPPool")?;
         
         info!("Reconciling IPPool {}/{}", namespace, name);
         
@@ -19,15 +18,8 @@ impl Reconciler {
         // The spec.netbox_prefix_ref is a NetBoxResourceReference pointing to a NetBoxPrefix CRD
         let prefix_ref = &pool.spec.netbox_prefix_ref;
         
-        // Validate that the reference is to a NetBoxPrefix CRD
-        if prefix_ref.kind != "NetBoxPrefix" {
-            let error_msg = format!(
-                "Invalid kind '{}' for netbox_prefix_ref in IPPool {}, expected 'NetBoxPrefix'",
-                prefix_ref.kind, name
-            );
-            error!("{}", error_msg);
-            return Err(ControllerError::InvalidConfig(error_msg));
-        }
+        // Validate that the reference is to a NetBoxPrefix CRD using helper
+        validate_reference_kind(prefix_ref, "NetBoxPrefix", "netbox_prefix_ref", name)?;
         
         // Resolve the NetBoxPrefix CRD to get the NetBox prefix ID
         let prefix_crd_name = &prefix_ref.name;

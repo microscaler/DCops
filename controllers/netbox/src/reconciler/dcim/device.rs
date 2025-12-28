@@ -174,8 +174,9 @@ impl Reconciler {
                 let primary_ip4_id = if let Some(ip_ref) = &device_crd.spec.primary_ip4 {
                     if let Some(claim_ref) = &ip_ref.ip_claim_ref {
                         // Resolve IPClaim CRD reference to get NetBox IP address ID
-                        if claim_ref.kind != "IPClaim" {
-                            warn!("Invalid kind '{}' for primary_ip4 IPClaim reference in device {}, expected 'IPClaim'", claim_ref.kind, name);
+                        use crate::reconcile_helpers::validate_reference_kind;
+                        if validate_reference_kind(claim_ref, "IPClaim", "primary_ip4", name).is_err() {
+                            // Helper already logged the warning, just return None
                             None
                         } else {
                             let claim_namespace = claim_ref.namespace.as_deref()
@@ -242,8 +243,9 @@ impl Reconciler {
                 let primary_ip6_id = if let Some(ip_ref) = &device_crd.spec.primary_ip6 {
                     if let Some(claim_ref) = &ip_ref.ip_claim_ref {
                         // Resolve IPClaim CRD reference to get NetBox IP address ID
-                        if claim_ref.kind != "IPClaim" {
-                            warn!("Invalid kind '{}' for primary_ip6 IPClaim reference in device {}, expected 'IPClaim'", claim_ref.kind, name);
+                        use crate::reconcile_helpers::validate_reference_kind;
+                        if validate_reference_kind(claim_ref, "IPClaim", "primary_ip6", name).is_err() {
+                            // Helper already logged the warning, just return None
                             None
                         } else {
                             let claim_namespace = claim_ref.namespace.as_deref()

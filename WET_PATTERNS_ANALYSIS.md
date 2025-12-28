@@ -155,8 +155,8 @@ where
 - [x] `tenancy.rs:45-48` - Name/namespace extraction ✅
 - [x] `ipam/prefix.rs:71-74` - Name/namespace extraction ✅
 - [x] `ipam/aggregate.rs:11-14` - Name/namespace extraction ✅
-- [ ] `ipam/ip_claim.rs` - Name/namespace extraction
-- [ ] `ipam/ip_pool.rs` - Name/namespace extraction
+- [x] `ipam/ip_claim.rs` - Name/namespace extraction ✅
+- [x] `ipam/ip_pool.rs` - Name/namespace extraction ✅
 - [x] `extras.rs` - Name/namespace extraction (NetBoxRole) ✅
 - [x] `extras.rs` - Name/namespace extraction (NetBoxTag) ✅
 
@@ -203,8 +203,8 @@ fn validate_reference_kind(
 - [x] `dcim/site.rs:210` - SiteGroup kind validation (optional) ✅
 - [x] `dcim/device.rs:201` - Platform kind validation (optional) ✅
 - [x] `dcim/device.rs:218` - Location kind validation (optional) ✅
-- [ ] `dcim/device.rs:238` - IPClaim kind validation (optional, primary_ip4)
-- [ ] `dcim/device.rs:306` - IPClaim kind validation (optional, primary_ip6)
+- [x] `dcim/device.rs:238` - IPClaim kind validation (optional, primary_ip4) ✅
+- [x] `dcim/device.rs:306` - IPClaim kind validation (optional, primary_ip6) ✅
 - [x] `dcim/vlan.rs:114` - Site kind validation (optional) ✅
 - [x] `dcim/vlan.rs:155` - Role kind validation (optional) ✅
 - [x] `dcim/platform.rs:26` - Manufacturer kind validation (optional) ✅
@@ -218,8 +218,8 @@ fn validate_reference_kind(
 - [x] `ipam/prefix.rs:366` - VLAN kind validation (optional, second occurrence) ✅
 - [x] `ipam/prefix.rs:390` - Site kind validation (optional, second occurrence) ✅
 - [x] `ipam/prefix.rs:436` - Role kind validation (optional, second occurrence) ✅
-- [ ] `ipam/ip_claim.rs:355` - NetBoxPrefix kind validation
-- [ ] `ipam/ip_pool.rs:24` - NetBoxPrefix kind validation
+- [x] `ipam/ip_claim.rs:355` - NetBoxPrefix kind validation ✅
+- [x] `ipam/ip_pool.rs:24` - NetBoxPrefix kind validation ✅
 
 ---
 

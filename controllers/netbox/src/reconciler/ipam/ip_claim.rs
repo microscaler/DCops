@@ -9,10 +9,9 @@ use netbox_client::{AllocateIPRequest, IPAddressStatus, NetBoxClientTrait, Prefi
 
 impl Reconciler {
     pub async fn reconcile_ip_claim(&self, claim: &IPClaim) -> Result<(), ControllerError> {
-        let name = claim.metadata.name.as_ref()
-            .ok_or_else(|| ControllerError::InvalidConfig("IPClaim missing name".to_string()))?;
-        let namespace = claim.metadata.namespace.as_deref()
-            .unwrap_or("default");
+        // Extract name and namespace using helper
+        use crate::reconcile_helpers::extract_name_and_namespace;
+        let (name, namespace) = extract_name_and_namespace(claim, "IPClaim")?;
         let resource_key = format!("{}/{}", namespace, name);
         
         info!("Reconciling IPClaim {}/{}", namespace, name);

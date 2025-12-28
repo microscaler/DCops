@@ -8,10 +8,9 @@ use netbox_client::NetBoxClientTrait;
 
 impl Reconciler {
     pub async fn reconcile_netbox_manufacturer(&self, manufacturer_crd: &NetBoxManufacturer) -> Result<(), ControllerError> {
-        let name = manufacturer_crd.metadata.name.as_ref()
-            .ok_or_else(|| ControllerError::InvalidConfig("NetBoxManufacturer missing name".to_string()))?;
-        let namespace = manufacturer_crd.metadata.namespace.as_deref()
-            .unwrap_or("default");
+        // Extract name and namespace using helper
+        use crate::reconcile_helpers::extract_name_and_namespace;
+        let (name, namespace) = extract_name_and_namespace(manufacturer_crd, "NetBoxManufacturer")?;
         
         info!("Reconciling NetBoxManufacturer {}/{}", namespace, name);
         

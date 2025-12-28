@@ -8,10 +8,9 @@ use netbox_client::{NetBoxClientTrait, RirId};
 
 impl Reconciler {
     pub async fn reconcile_netbox_aggregate(&self, aggregate_crd: &NetBoxAggregate) -> Result<(), ControllerError> {
-        let name = aggregate_crd.metadata.name.as_ref()
-            .ok_or_else(|| ControllerError::InvalidConfig("NetBoxAggregate missing name".to_string()))?;
-        let namespace = aggregate_crd.metadata.namespace.as_deref()
-            .unwrap_or("default");
+        // Extract name and namespace using helper
+        use crate::reconcile_helpers::extract_name_and_namespace;
+        let (name, namespace) = extract_name_and_namespace(aggregate_crd, "NetBoxAggregate")?;
         
         info!("Reconciling NetBoxAggregate {}/{}", namespace, name);
         

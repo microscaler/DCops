@@ -9,10 +9,9 @@ use netbox_client::NetBoxClientTrait;
 impl Reconciler {
     /// Reconciles a NetBoxRole resource (Extras Role, not IPAM Role).
     pub async fn reconcile_netbox_role(&self, role_crd: &NetBoxRole) -> Result<(), ControllerError> {
-        let name = role_crd.metadata.name.as_ref()
-            .ok_or_else(|| ControllerError::InvalidConfig("NetBoxRole missing name".to_string()))?;
-        let namespace = role_crd.metadata.namespace.as_deref()
-            .unwrap_or("default");
+        // Extract name and namespace using helper
+        use crate::reconcile_helpers::extract_name_and_namespace;
+        let (name, namespace) = extract_name_and_namespace(role_crd, "NetBoxRole")?;
         
         info!("Reconciling NetBoxRole {}/{}", namespace, name);
         

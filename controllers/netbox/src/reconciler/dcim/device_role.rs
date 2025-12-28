@@ -8,10 +8,9 @@ use netbox_client::NetBoxClientTrait;
 
 impl Reconciler {
     pub async fn reconcile_netbox_device_role(&self, device_role_crd: &NetBoxDeviceRole) -> Result<(), ControllerError> {
-        let name = device_role_crd.metadata.name.as_ref()
-            .ok_or_else(|| ControllerError::InvalidConfig("NetBoxDeviceRole missing name".to_string()))?;
-        let namespace = device_role_crd.metadata.namespace.as_deref()
-            .unwrap_or("default");
+        // Extract name and namespace using helper
+        use crate::reconcile_helpers::extract_name_and_namespace;
+        let (name, namespace) = extract_name_and_namespace(device_role_crd, "NetBoxDeviceRole")?;
         
         info!("Reconciling NetBoxDeviceRole {}/{}", namespace, name);
         

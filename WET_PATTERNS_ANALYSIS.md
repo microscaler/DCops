@@ -140,25 +140,25 @@ where
 ```
 
 **Locations to Refactor** (60+ occurrences across all reconcilers):
-- [ ] `dcim/mac_address.rs:11-14` - Name/namespace extraction
-- [ ] `dcim/interface.rs:11-14` - Name/namespace extraction
+- [x] `dcim/mac_address.rs:11-14` - Name/namespace extraction ✅
+- [x] `dcim/interface.rs:11-14` - Name/namespace extraction ✅
 - [x] `dcim/site.rs:150-153` - Name/namespace extraction ✅
 - [x] `dcim/device.rs:20-21` - Name/namespace extraction ✅
 - [x] `dcim/vlan.rs` - Name/namespace extraction ✅
-- [ ] `dcim/device_type.rs` - Name/namespace extraction
-- [ ] `dcim/manufacturer.rs` - Name/namespace extraction
+- [x] `dcim/device_type.rs` - Name/namespace extraction ✅
+- [x] `dcim/manufacturer.rs` - Name/namespace extraction ✅
 - [x] `dcim/platform.rs` - Name/namespace extraction ✅
 - [x] `dcim/site_group.rs` - Name/namespace extraction ✅
 - [x] `dcim/location.rs` - Name/namespace extraction ✅
-- [ ] `dcim/device_role.rs` - Name/namespace extraction
+- [x] `dcim/device_role.rs` - Name/namespace extraction ✅
 - [x] `dcim/region.rs` - Name/namespace extraction ✅
 - [x] `tenancy.rs:45-48` - Name/namespace extraction ✅
 - [x] `ipam/prefix.rs:71-74` - Name/namespace extraction ✅
-- [ ] `ipam/aggregate.rs:11-14` - Name/namespace extraction
+- [x] `ipam/aggregate.rs:11-14` - Name/namespace extraction ✅
 - [ ] `ipam/ip_claim.rs` - Name/namespace extraction
 - [ ] `ipam/ip_pool.rs` - Name/namespace extraction
-- [ ] `extras.rs` - Name/namespace extraction (NetBoxRole)
-- [ ] `extras.rs` - Name/namespace extraction (NetBoxTag)
+- [x] `extras.rs` - Name/namespace extraction (NetBoxRole) ✅
+- [x] `extras.rs` - Name/namespace extraction (NetBoxTag) ✅
 
 ---
 

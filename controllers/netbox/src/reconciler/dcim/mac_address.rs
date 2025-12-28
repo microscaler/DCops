@@ -8,10 +8,9 @@ use netbox_client::NetBoxClientTrait;
 
 impl Reconciler {
     pub async fn reconcile_netbox_mac_address(&self, mac_address_crd: &NetBoxMACAddress) -> Result<(), ControllerError> {
-        let name = mac_address_crd.metadata.name.as_ref()
-            .ok_or_else(|| ControllerError::InvalidConfig("NetBoxMACAddress missing name".to_string()))?;
-        let namespace = mac_address_crd.metadata.namespace.as_deref()
-            .unwrap_or("default");
+        // Extract name and namespace using helper
+        use crate::reconcile_helpers::extract_name_and_namespace;
+        let (name, namespace) = extract_name_and_namespace(mac_address_crd, "NetBoxMACAddress")?;
         
         info!("Reconciling NetBoxMACAddress {}/{}", namespace, name);
         

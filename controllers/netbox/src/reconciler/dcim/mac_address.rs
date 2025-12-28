@@ -62,46 +62,42 @@ impl Reconciler {
             }
         };
         
-        // Check if already created - use helper for drift detection
-        let netbox_mac_address = if let Some(status) = &mac_address_crd.status {
-            if status.state == ResourceState::Created && status.netbox_id.is_some() {
-                if let Some(netbox_id) = status.netbox_id {
-                    match reconcile_helpers::check_existing(
-                        &netbox_client,
-                        netbox_id,
-                        &format!("NetBoxMACAddress {}/{}", namespace, name),
-                        async {
-                            netbox_client.get_mac_address_by_address(&mac_address_crd.spec.mac_address)
-                                .await
-                                .and_then(|opt| opt.ok_or_else(|| netbox_client::NetBoxError::NotFound(format!("MAC address {} not found", mac_address_crd.spec.mac_address))))
-                        },
-                    ).await {
-                        Ok(Some(resource)) => Some(resource),
-                        Ok(None) => {
-                            warn!("NetBoxMACAddress {}/{} was deleted in NetBox (ID: {}), clearing status and will recreate", namespace, name, netbox_id);
-                            let status_patch = Self::create_typed_mac_address_status_patch(
-                                0, String::new(), ResourceState::Pending,
-                                Some("Resource was deleted in NetBox, will recreate".to_string()),
-                            );
-                            let pp = kube::api::PatchParams::default();
-                            if let Err(e) = self.netbox_mac_address_api
-                                .patch_status(name, &pp, &kube::api::Patch::Merge(status_patch.clone()))
-                                .await
-                            {
-                                warn!("Failed to clear NetBoxMACAddress status after drift detection: {}", e);
-                            }
-                            None
-                        }
-                        Err(e) => return Err(e),
-                    }
-                } else {
-                    None
+        // Check if already created - use shared helper for drift detection and status validation
+        use crate::reconcile_helpers::{validate_status_and_drift, DriftCheckResult};
+        
+        let mac_address = mac_address_crd.spec.mac_address.clone();
+        let drift_result = {
+            let netbox_client_ref = &netbox_client;
+            validate_status_and_drift(
+                mac_address_crd.status.as_ref(),
+                "NetBoxMACAddress",
+                namespace,
+                name,
+                |_netbox_id| async move {
+                    netbox_client_ref.get_mac_address_by_address(&mac_address)
+                        .await
+                        .and_then(|opt| opt.ok_or_else(|| netbox_client::NetBoxError::NotFound(format!("MAC address {} not found", mac_address))))
+                },
+            ).await?
+        };
+        
+        let netbox_mac_address = match drift_result {
+            DriftCheckResult::UseExisting(mac_address) => Some(mac_address),
+            DriftCheckResult::StatusCleared { message } => {
+                let status_patch = Self::create_typed_mac_address_status_patch(
+                    0, String::new(), ResourceState::Pending,
+                    Some(message),
+                );
+                let pp = kube::api::PatchParams::default();
+                if let Err(update_err) = self.netbox_mac_address_api
+                    .patch_status(name, &pp, &kube::api::Patch::Merge(status_patch.clone()))
+                    .await
+                {
+                    warn!("Failed to clear NetBoxMACAddress status: {}", update_err);
                 }
-            } else {
                 None
             }
-        } else {
-            None
+            DriftCheckResult::Recreate => None,
         };
         
         let netbox_mac_address = match netbox_mac_address {

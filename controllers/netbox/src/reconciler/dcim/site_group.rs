@@ -44,53 +44,49 @@ impl Reconciler {
             None
         };
         
-        // Check if already created - use helper for drift detection
-        let netbox_site_group = if let Some(status) = &site_group_crd.status {
-            if status.state == ResourceState::Created && status.netbox_id.is_some() {
-                if let Some(netbox_id) = status.netbox_id {
-                    // Use simple helper function for drift detection (no update logic yet)
-                    match reconcile_helpers::check_existing(
-                        &netbox_client,
-                        netbox_id,
-                        &format!("NetBoxSiteGroup {}/{}", namespace, name),
-                        netbox_client.get_site_group(SiteGroupId(netbox_id)),
-                    ).await {
-                        Ok(Some(resource)) => {
-                            // Resource exists and is up-to-date
-                            Some(resource)
-                        }
-                        Ok(None) => {
-                            // Drift detected - resource was deleted, clear status and recreate
-                            warn!("NetBoxSiteGroup {}/{} was deleted in NetBox (ID: {}), clearing status and will recreate", namespace, name, netbox_id);
-                            let status_patch = Self::create_typed_site_group_status_patch(
-                                0, // Clear netbox_id
-                                String::new(), // Clear URL
-                                ResourceState::Pending,
-                                Some("Resource was deleted in NetBox, will recreate".to_string()),
-                            );
-                            let pp = kube::api::PatchParams::default();
-                            if let Err(e) = self.netbox_site_group_api
-                                .patch_status(name, &pp, &kube::api::Patch::Merge(status_patch.clone()))
-                                .await
-                            {
-                                warn!("Failed to clear NetBoxSiteGroup status after drift detection: {}", e);
-                            }
-                            // Fall through to creation
-                            None
-                        }
-                        Err(e) => {
-                            // Error during drift detection - return to retry
-                            return Err(e);
-                        }
-                    }
-                } else {
-                    None // No netbox_id, need to create
-                }
-            } else {
-                None // Not in Created state, need to create
+        // Check if already created - use shared helper for drift detection and status validation
+        use crate::reconcile_helpers::{validate_status_and_drift, DriftCheckResult};
+        
+        let drift_result = {
+            let netbox_client_ref = &netbox_client;
+            validate_status_and_drift(
+                site_group_crd.status.as_ref(),
+                "NetBoxSiteGroup",
+                namespace,
+                name,
+                |netbox_id| async move {
+                    netbox_client_ref.get_site_group(SiteGroupId(netbox_id)).await
+                },
+            ).await?
+        };
+        
+        let netbox_site_group = match drift_result {
+            DriftCheckResult::UseExisting(site_group) => {
+                // Resource exists and is up-to-date
+                Some(site_group)
             }
-        } else {
-            None // No status, need to create
+            DriftCheckResult::StatusCleared { message } => {
+                // Status was cleared - update it to Pending
+                let status_patch = Self::create_typed_site_group_status_patch(
+                    0, // Clear netbox_id
+                    String::new(), // Clear URL
+                    ResourceState::Pending,
+                    Some(message),
+                );
+                let pp = kube::api::PatchParams::default();
+                if let Err(update_err) = self.netbox_site_group_api
+                    .patch_status(name, &pp, &kube::api::Patch::Merge(status_patch.clone()))
+                    .await
+                {
+                    warn!("Failed to clear NetBoxSiteGroup status: {}", update_err);
+                }
+                // Fall through to creation
+                None
+            }
+            DriftCheckResult::Recreate => {
+                // Need to create - fall through
+                None
+            }
         };
         
         // Handle existing site group (from helper) or create new

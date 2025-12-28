@@ -22,49 +22,44 @@ impl Reconciler {
             .await
             .map_err(|e| ControllerError::TokenResolution(e))?;
         
-        // Check if already created - use helper for drift detection
-        let netbox_manufacturer = if let Some(status) = &manufacturer_crd.status {
-            if status.state == ResourceState::Created && status.netbox_id.is_some() {
-                if let Some(netbox_id) = status.netbox_id {
-                    match reconcile_helpers::check_existing(
-                        &netbox_client,
-                        netbox_id,
-                        &format!("NetBoxManufacturer {}/{}", namespace, name),
-                        async {
-                            let id_str = netbox_id.to_string();
-                            netbox_client.query_manufacturers(&[("id", &id_str)], false)
-                                .await
-                                .and_then(|mut manufacturers| {
-                                    manufacturers.pop().ok_or_else(|| netbox_client::NetBoxError::NotFound(format!("Manufacturer {} not found", netbox_id)))
-                                })
-                        },
-                    ).await {
-                        Ok(Some(resource)) => Some(resource),
-                        Ok(None) => {
-                            warn!("NetBoxManufacturer {}/{} was deleted in NetBox (ID: {}), clearing status and will recreate", namespace, name, netbox_id);
-                            let status_patch = Self::create_typed_manufacturer_status_patch(
-                                0, String::new(), ResourceState::Pending,
-                                Some("Resource was deleted in NetBox, will recreate".to_string()),
-                            );
-                            let pp = kube::api::PatchParams::default();
-                            if let Err(e) = self.netbox_manufacturer_api
-                                .patch_status(name, &pp, &kube::api::Patch::Merge(status_patch.clone()))
-                                .await
-                            {
-                                warn!("Failed to clear NetBoxManufacturer status after drift detection: {}", e);
-                            }
-                            None
-                        }
-                        Err(e) => return Err(e),
-                    }
-                } else {
-                    None
+        // Check if already created - use shared helper for drift detection and status validation
+        use crate::reconcile_helpers::{validate_status_and_drift, DriftCheckResult};
+        
+        let drift_result = {
+            let netbox_client_ref = &netbox_client;
+            validate_status_and_drift(
+                manufacturer_crd.status.as_ref(),
+                "NetBoxManufacturer",
+                namespace,
+                name,
+                |netbox_id| async move {
+                    let id_str = netbox_id.to_string();
+                    netbox_client_ref.query_manufacturers(&[("id", &id_str)], false)
+                        .await
+                        .and_then(|mut manufacturers| {
+                            manufacturers.pop().ok_or_else(|| netbox_client::NetBoxError::NotFound(format!("Manufacturer {} not found", netbox_id)))
+                        })
+                },
+            ).await?
+        };
+        
+        let netbox_manufacturer = match drift_result {
+            DriftCheckResult::UseExisting(manufacturer) => Some(manufacturer),
+            DriftCheckResult::StatusCleared { message } => {
+                let status_patch = Self::create_typed_manufacturer_status_patch(
+                    0, String::new(), ResourceState::Pending,
+                    Some(message),
+                );
+                let pp = kube::api::PatchParams::default();
+                if let Err(update_err) = self.netbox_manufacturer_api
+                    .patch_status(name, &pp, &kube::api::Patch::Merge(status_patch.clone()))
+                    .await
+                {
+                    warn!("Failed to clear NetBoxManufacturer status: {}", update_err);
                 }
-            } else {
                 None
             }
-        } else {
-            None
+            DriftCheckResult::Recreate => None,
         };
         
         let netbox_manufacturer = match netbox_manufacturer {

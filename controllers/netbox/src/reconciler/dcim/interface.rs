@@ -41,42 +41,47 @@ impl Reconciler {
                 format!("Device '{}' has not been created in NetBox yet (no netbox_id in status)", device_name)
             ))?;
         
-        // Check if already created - use helper for drift detection
-        let netbox_interface = if let Some(status) = &interface_crd.status {
-            if status.state == ResourceState::Created && status.netbox_id.is_some() {
-                if let Some(netbox_id) = status.netbox_id {
-                    match reconcile_helpers::check_existing(
-                        &netbox_client,
-                        netbox_id,
-                        &format!("NetBoxInterface {}/{}", namespace, name),
-                        netbox_client.get_interface(InterfaceId(netbox_id)),
-                    ).await {
-                        Ok(Some(resource)) => Some(resource),
-                        Ok(None) => {
-                            warn!("NetBoxInterface {}/{} was deleted in NetBox (ID: {}), clearing status and will recreate", namespace, name, netbox_id);
-                            let status_patch = Self::create_typed_interface_status_patch(
-                                0, String::new(), ResourceState::Pending,
-                                Some("Resource was deleted in NetBox, will recreate".to_string()),
-                            );
-                            let pp = kube::api::PatchParams::default();
-                            if let Err(e) = self.netbox_interface_api
-                                .patch_status(name, &pp, &kube::api::Patch::Merge(status_patch.clone()))
-                                .await
-                            {
-                                warn!("Failed to clear NetBoxInterface status after drift detection: {}", e);
-                            }
-                            None
-                        }
-                        Err(e) => return Err(e),
-                    }
-                } else {
-                    None
+        // Check if already created - use shared helper for drift detection and status validation
+        use crate::reconcile_helpers::{validate_status_and_drift, DriftCheckResult};
+        
+        let drift_result = {
+            let netbox_client_ref = &netbox_client;
+            validate_status_and_drift(
+                interface_crd.status.as_ref(),
+                "NetBoxInterface",
+                namespace,
+                name,
+                |netbox_id| async move {
+                    netbox_client_ref.get_interface(InterfaceId(netbox_id)).await
+                },
+            ).await?
+        };
+        
+        let netbox_interface = match drift_result {
+            DriftCheckResult::UseExisting(interface) => {
+                // Resource exists and is up-to-date
+                Some(interface)
+            }
+            DriftCheckResult::StatusCleared { message } => {
+                // Status was cleared - update it to Pending
+                let status_patch = Self::create_typed_interface_status_patch(
+                    0, String::new(), ResourceState::Pending,
+                    Some(message),
+                );
+                let pp = kube::api::PatchParams::default();
+                if let Err(update_err) = self.netbox_interface_api
+                    .patch_status(name, &pp, &kube::api::Patch::Merge(status_patch.clone()))
+                    .await
+                {
+                    warn!("Failed to clear NetBoxInterface status: {}", update_err);
                 }
-            } else {
+                // Fall through to creation
                 None
             }
-        } else {
-            None
+            DriftCheckResult::Recreate => {
+                // Need to create - fall through
+                None
+            }
         };
         
         let netbox_interface = match netbox_interface {

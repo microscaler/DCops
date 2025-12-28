@@ -42,47 +42,42 @@ impl Reconciler {
             None // RIR is optional
         };
         
-        // Check if already created - use helper for drift detection
-        let netbox_aggregate = if let Some(status) = &aggregate_crd.status {
-            if status.state == ResourceState::Created && status.netbox_id.is_some() {
-                if let Some(netbox_id) = status.netbox_id {
-                    match reconcile_helpers::check_existing(
-                        &netbox_client,
-                        netbox_id,
-                        &format!("NetBoxAggregate {}/{}", namespace, name),
-                        async {
-                            netbox_client.query_aggregates(&[("id", &netbox_id.to_string())], false)
-                                .await
-                                .map(|mut aggregates| aggregates.pop().ok_or_else(|| netbox_client::NetBoxError::NotFound(format!("Aggregate {} not found", netbox_id))))
-                                .and_then(|res| res)
-                        },
-                    ).await {
-                        Ok(Some(resource)) => Some(resource),
-                        Ok(None) => {
-                            warn!("NetBoxAggregate {}/{} was deleted in NetBox (ID: {}), clearing status and will recreate", namespace, name, netbox_id);
-                            let status_patch = Self::create_resource_status_patch(
-                                0, String::new(), ResourceState::Pending,
-                                Some("Resource was deleted in NetBox, will recreate".to_string()),
-                            );
-                            let pp = kube::api::PatchParams::default();
-                            if let Err(e) = self.netbox_aggregate_api
-                                .patch_status(name, &pp, &kube::api::Patch::Merge(status_patch.clone()))
-                                .await
-                            {
-                                warn!("Failed to clear NetBoxAggregate status after drift detection: {}", e);
-                            }
-                            None
-                        }
-                        Err(e) => return Err(e),
-                    }
-                } else {
-                    None
+        // Check if already created - use shared helper for drift detection and status validation
+        use crate::reconcile_helpers::{validate_status_and_drift, DriftCheckResult};
+        
+        let drift_result = {
+            let netbox_client_ref = &netbox_client;
+            validate_status_and_drift(
+                aggregate_crd.status.as_ref(),
+                "NetBoxAggregate",
+                namespace,
+                name,
+                |netbox_id| async move {
+                    netbox_client_ref.query_aggregates(&[("id", &netbox_id.to_string())], false)
+                        .await
+                        .map(|mut aggregates| aggregates.pop().ok_or_else(|| netbox_client::NetBoxError::NotFound(format!("Aggregate {} not found", netbox_id))))
+                        .and_then(|res| res)
+                },
+            ).await?
+        };
+        
+        let netbox_aggregate = match drift_result {
+            DriftCheckResult::UseExisting(aggregate) => Some(aggregate),
+            DriftCheckResult::StatusCleared { message } => {
+                let status_patch = Self::create_resource_status_patch(
+                    0, String::new(), ResourceState::Pending,
+                    Some(message),
+                );
+                let pp = kube::api::PatchParams::default();
+                if let Err(update_err) = self.netbox_aggregate_api
+                    .patch_status(name, &pp, &kube::api::Patch::Merge(status_patch.clone()))
+                    .await
+                {
+                    warn!("Failed to clear NetBoxAggregate status: {}", update_err);
                 }
-            } else {
                 None
             }
-        } else {
-            None
+            DriftCheckResult::Recreate => None,
         };
         
         let netbox_aggregate = match netbox_aggregate {

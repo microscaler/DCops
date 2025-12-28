@@ -961,6 +961,16 @@ where
         Ok(dependency_crd) => {
             extract_status(&dependency_crd)
                 .and_then(|status| status.netbox_id())
+                .and_then(|id| {
+                    // Filter out invalid IDs (0) - these indicate the dependency hasn't been created yet
+                    if id == 0 {
+                        warn!("{} '{}' has invalid netboxId (0) for {} reference in {}, skipping", 
+                            expected_kind, reference.name, dependency_name, current_resource_name);
+                        None
+                    } else {
+                        Some(id)
+                    }
+                })
         }
         Err(_) => {
             warn!("{} CRD '{}' not found for {}, skipping {} reference", 

@@ -190,14 +190,26 @@ pub async fn add_tenant_for_create(
 - **Root Cause**: Site `datacenter-1` doesn't exist in NetBox (netboxId: 0)
 - **Dependency**: Requires NetBoxSite `datacenter-1` to be created first
 - **Status**: No status (resource never created)
+- **Operation**: CREATE
 
 **NetBoxVLAN** (`default/control-plane-vlan`):
 - **Error**: `400 Bad Request - {"site":["Related object not found using the provided attributes: {'id': 0}"]}`
 - **Root Cause**: Site `datacenter-1` doesn't exist in NetBox (netboxId: 0)
 - **Dependency**: Requires NetBoxSite `datacenter-1` to be created first
 - **Status**: No status (resource never created)
+- **Operation**: CREATE
 
-**Resolution Path**: These will automatically resolve once NetBoxSite is successfully created.
+**NetBoxPrefix** (`default/control-plane-prefix`):
+- **Error**: `Failed to update prefix 1: 400 Bad Request - {"site":["Related object not found using the provided attributes: {'id': 0}"]}`
+- **Root Cause**: 
+  1. Site `datacenter-1` doesn't exist in NetBox (netboxId: 0)
+  2. **BUG**: `resolve_optional_dependency_id` returns `Some(0)` instead of `None` when dependency has `netboxId: 0`, causing update to send `{"site": {"id": 0}}` which NetBox rejects
+- **Dependency**: Requires NetBoxSite `datacenter-1` to be created first
+- **Status**: `netboxId: 1, state: Created` (resource exists, but update fails)
+- **Operation**: UPDATE (resource already exists, but trying to update with site reference)
+- **Fix**: Filter out `netboxId: 0` values in `resolve_optional_dependency_id` helper
+
+**Resolution Path**: These will automatically resolve once NetBoxSite is successfully created. However, NetBoxPrefix has an additional issue where it's trying to UPDATE with an invalid site reference.
 
 #### Separate Error: NetBoxAggregate RIR
 
@@ -563,6 +575,7 @@ status:
 | `create_device` tenant fix | 🟡 In Progress | 2025-12-28 | ⬜ No | Code change applied ✅, compiles ✅, awaiting deployment |
 | `create_vlan` tenant fix | 🟡 In Progress | 2025-12-28 | ⬜ No | Code change applied ✅, compiles ✅, awaiting deployment |
 | `create_location` tenant fix | 🟡 In Progress | 2025-12-28 | ⬜ No | Code change applied ✅, compiles ✅, awaiting deployment |
+| `resolve_optional_dependency_id` bug fix | ✅ Complete | 2025-12-28 | ⬜ No | Fixed to filter out `netboxId: 0` values ✅, compiles ✅ |
 | NetBoxAggregate RIR fix | ⬜ Not Started | - | ⬜ No | Separate issue - needs investigation |
 
 ### Failure Analysis: Current State
@@ -620,6 +633,57 @@ A fix is considered **resolved** when:
 6. ✅ No reconciliation loops (single successful attempt)
 7. ✅ NetBox API confirms resource exists with correct tenant
 8. ✅ No regression in other resources
+
+---
+
+## Additional Error: NetBoxPrefix Update with Invalid Site Reference
+
+### Error Details
+
+**Resource**: `NetBoxPrefix` CRD `default/control-plane-prefix`  
+**Error**: `Failed to update prefix 1: 400 Bad Request - {"site":["Related object not found using the provided attributes: {'id': 0}"]}`  
+**Location**: `controllers/netbox/src/reconcile_helpers.rs:933-971` - `resolve_optional_dependency_id`  
+**Status**: `netboxId: 1, state: Created` (resource exists, but update fails)
+
+### Root Cause
+
+**BUG**: The `resolve_optional_dependency_id` helper was returning `Some(0)` when a dependency CRD had `netboxId: 0` (indicating it hasn't been created yet). This caused UPDATE operations to send `{"site": {"id": 0}}` to NetBox, which rejects it as invalid.
+
+**Code Flow**:
+1. Prefix reconciler calls `resolve_optional_dependency_id` for site reference
+2. Site CRD has `netboxId: 0` (not created yet)
+3. Helper returns `Some(0)` instead of `None`
+4. Update call includes `site_id: Some(SiteId(0))`
+5. NetBox client sends `{"site": {"id": 0}}` in PATCH request
+6. NetBox rejects with: `{"site":["Related object not found using the provided attributes: {'id': 0}"]}`
+
+### Fix Applied
+
+**File**: `controllers/netbox/src/reconcile_helpers.rs:960-971`
+
+**Change**: Added filtering to treat `netboxId: 0` as invalid and return `None` instead of `Some(0)`:
+
+```rust
+extract_status(&dependency_crd)
+    .and_then(|status| status.netbox_id())
+    .and_then(|id| {
+        // Filter out invalid IDs (0) - these indicate the dependency hasn't been created yet
+        if id == 0 {
+            warn!("{} '{}' has invalid netboxId (0) for {} reference in {}, skipping", 
+                expected_kind, reference.name, dependency_name, current_resource_name);
+            None
+        } else {
+            Some(id)
+        }
+    })
+```
+
+**Impact**: 
+- Prevents UPDATE operations from sending invalid `{"id": 0}` references
+- Resources will skip optional dependencies that aren't ready yet
+- Once the dependency is created, the next reconciliation will include it
+
+**Status**: ✅ **FIXED** - Code change applied, compiles successfully
 
 ---
 

@@ -203,9 +203,13 @@ pub async fn add_tenant_for_create(
 
 **NetBoxAggregate** (`default/private-network-aggregate`):
 - **Error**: `RIR is required for aggregates but was not provided`
-- **Root Cause**: Aggregate reconciler requires RIR, but CRD may not specify one or RIR doesn't exist
+- **Root Cause**: 
+  - CRD specifies `rir: ARIN` but RIR "ARIN" doesn't exist in NetBox
+  - Reconciler correctly handles this by setting `rir_id = None`
+  - But `create_aggregate` function requires RIR and returns error if `None`
+  - **Location**: `crates/netbox-client/src/ipam/aggregate.rs:93-95`
 - **Status**: No status (resource never created)
-- **Note**: This is unrelated to the tenant reference issue
+- **Note**: This is unrelated to the tenant reference issue. The `create_aggregate` function needs to allow optional RIR.
 
 ---
 
@@ -635,12 +639,24 @@ The aggregate reconciler calls `create_aggregate` which requires an RIR. However
 - The RIR may be specified but not found in NetBox
 - The reconciler may not be handling optional RIR correctly
 
-### Investigation Needed
+### Investigation Results
 
-- [ ] Check NetBoxAggregate CRD spec for RIR field
-- [ ] Verify if RIR is optional in NetBox API
-- [ ] Check reconciler logic for RIR handling
-- [ ] Determine if RIR should be optional or required
+- [x] **CRD Spec**: `rir: ARIN` is specified in the CRD
+- [x] **Reconciler Logic**: Correctly handles missing RIR (sets `rir_id = None` if not found)
+- [x] **NetBox Client**: `create_aggregate` function requires RIR (line 93-95) and returns error if `None`
+- [ ] **NetBox API**: Need to verify if RIR is actually required or optional in NetBox
+- [ ] **Fix Needed**: Make `create_aggregate` accept `Option<RirId>` instead of requiring it
+
+### Code Location
+
+**File**: `crates/netbox-client/src/ipam/aggregate.rs:93-95`
+```rust
+let rir_id_value: u64 = rir_id.map(|id| id.into()).ok_or_else(|| NetBoxError::Api(
+    "RIR is required for aggregates but was not provided".to_string()
+))?;
+```
+
+**Issue**: The function requires RIR, but the reconciler may pass `None` when RIR doesn't exist in NetBox.
 
 ### Relationship to Primary Issue
 

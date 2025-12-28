@@ -298,6 +298,236 @@ The error is caused by an **incomplete refactoring** where `create_site` was cha
 
 ---
 
+## Fix Tracking & Verification
+
+### Implementation Checklist
+
+#### Critical Fix: NetBoxSite Tenant Reference
+
+- [ ] **Fix Applied**: Replace `add_nested_reference` with `add_tenant_for_create` in `create_site`
+  - File: `crates/netbox-client/src/dcim/site.rs`
+  - Line: 112
+  - Change: `helpers::add_nested_reference(&mut body, "tenant", Some(tid.into()));` → `helpers::add_tenant_for_create(&mut body, core, tenant_id).await?;`
+
+- [ ] **Code Compiles**: Verify `cargo build` or `python3 scripts/host_aware_build.py --release -p netbox-controller` succeeds
+
+- [ ] **Controller Deployed**: Verify new controller image is running
+
+- [ ] **Log Verification - Before Fix**:
+  ```
+  ERROR Failed to create site in NetBox: 400 Bad Request - {"tenant":{"name":["This field is required."],"slug":["This field is required."]}}
+  ```
+
+- [ ] **Log Verification - After Fix** (Expected):
+  ```
+  DEBUG Adding full tenant object for CREATE: id=2, name=Data Center Operations
+  INFO Created site Data Center 1 in NetBox (ID: X)
+  INFO Updated NetBoxSite default/datacenter-1 status: NetBox ID X
+  ```
+
+- [ ] **CR Status Verification**:
+  - [ ] NetBoxSite `default/datacenter-1` status transitions: `Pending` → `Created`
+  - [ ] `netboxId` is set to valid ID (not 0)
+  - [ ] `netboxUrl` is populated
+  - [ ] `error` field is cleared/None
+  - [ ] `state` is `Created`
+
+- [ ] **NetBox API Verification**:
+  - [ ] Site exists in NetBox with correct name: "Data Center 1"
+  - [ ] Site has correct tenant: ID 2 ("Data Center Operations")
+  - [ ] Site has correct region (if specified)
+  - [ ] Site has correct site_group (if specified)
+
+- [ ] **Reconciliation Loop Verification**:
+  - [ ] No more continuous retry attempts
+  - [ ] Reconciliation succeeds on first attempt
+  - [ ] No error status updates
+
+#### High Priority Fixes: Other Resources with Tenant
+
+- [ ] **Fix `create_prefix`**: `crates/netbox-client/src/ipam/prefix.rs:154`
+  - [ ] Code change applied
+  - [ ] Compiles successfully
+  - [ ] Tested with NetBoxPrefix CRD
+  - [ ] Logs show tenant object being added correctly
+  - [ ] CR status shows `Created` state
+
+- [ ] **Fix `create_device`**: `crates/netbox-client/src/dcim/device.rs:135`
+  - [ ] Code change applied
+  - [ ] Compiles successfully
+  - [ ] Tested with NetBoxDevice CRD
+  - [ ] Logs show tenant object being added correctly
+  - [ ] CR status shows `Created` state
+
+- [ ] **Fix `create_vlan`**: `crates/netbox-client/src/ipam/vlan.rs:111`
+  - [ ] Code change applied
+  - [ ] Compiles successfully
+  - [ ] Tested with NetBoxVLAN CRD
+  - [ ] Logs show tenant object being added correctly
+  - [ ] CR status shows `Created` state
+
+- [ ] **Fix `create_location`**: `crates/netbox-client/src/dcim/location.rs:119`
+  - [ ] Code change applied
+  - [ ] Compiles successfully
+  - [ ] Tested with NetBoxLocation CRD
+  - [ ] Logs show tenant object being added correctly
+  - [ ] CR status shows `Created` state
+
+### Verification Log Comparison
+
+#### Before Fix (Current State)
+
+**Error Pattern**:
+```
+2025-12-28T15:06:22.604028Z ERROR reconciling object{object.ref=NetBoxSite.v1alpha1.dcops.microscaler.io/datacenter-1.default object.reason=object updated}: netbox_controller::reconciler::dcim::site: Failed to create site in NetBox: NetBox API error: Failed to create site: 400 Bad Request - {"tenant":{"name":["This field is required."],"slug":["This field is required."]}}
+```
+
+**Status State**:
+```yaml
+status:
+  netboxId: 0
+  netboxUrl: ""
+  state: Failed
+  error: "Failed to create site in NetBox: NetBox API error: Failed to create site: 400 Bad Request - {\"tenant\":{\"name\":[\"This field is required.\"],\"slug\":[\"This field is required.\"]}}"
+```
+
+**Reconciliation Pattern**:
+- Attempt 580-595+ (continuous)
+- Status: `Pending` → `Failed` → `Pending` (loop)
+- Backoff: 600s
+
+#### After Fix (Expected State)
+
+**Success Pattern** (Expected):
+```
+2025-12-28TXX:XX:XX.XXXXXXZ INFO reconciling object{object.ref=NetBoxSite.v1alpha1.dcops.microscaler.io/datacenter-1.default object.reason=object updated}: netbox_controller::reconciler::dcim::site: Reconciling NetBoxSite default/datacenter-1
+2025-12-28TXX:XX:XX.XXXXXXZ DEBUG netbox_controller::core::helpers: Adding full tenant object for CREATE: id=2, name=Data Center Operations
+2025-12-28TXX:XX:XX.XXXXXXZ INFO netbox_controller::reconciler::dcim::site: Created site Data Center 1 in NetBox (ID: X)
+2025-12-28TXX:XX:XX.XXXXXXZ INFO netbox_controller::reconciler::dcim::site: Updated NetBoxSite default/datacenter-1 status: NetBox ID X
+```
+
+**Status State** (Expected):
+```yaml
+status:
+  netboxId: <valid_id>
+  netboxUrl: "http://netbox.netbox/api/dcim/sites/<id>/"
+  state: Created
+  error: null
+```
+
+**Reconciliation Pattern** (Expected):
+- Single attempt
+- Status: `Pending` → `Created`
+- No retries needed
+
+### Test Cases
+
+#### Test Case 1: NetBoxSite Creation with Tenant
+
+**Setup**:
+- NetBoxTenant CRD `default/datacenter-tenant` exists and is `Created` (netboxId: 2)
+- NetBoxSite CRD `default/datacenter-1` exists with `state: Pending`
+
+**Steps**:
+1. Apply fix to `create_site`
+2. Rebuild and deploy controller
+3. Observe reconciliation logs
+4. Check NetBoxSite CRD status
+
+**Expected Results**:
+- [ ] No 400 Bad Request errors
+- [ ] Log shows "Adding full tenant object for CREATE: id=2, name=Data Center Operations"
+- [ ] Log shows "Created site Data Center 1 in NetBox (ID: X)"
+- [ ] NetBoxSite status.netboxId is set to valid ID
+- [ ] NetBoxSite status.state is `Created`
+- [ ] NetBoxSite status.error is None
+
+**Actual Results** (Fill in after testing):
+```
+[ ] Test completed: YYYY-MM-DD HH:MM:SS
+[ ] Result: PASS / FAIL
+[ ] Notes: <any observations>
+```
+
+#### Test Case 2: Verify No Regression in Other Resources
+
+**Setup**:
+- Ensure other resources (prefix, device, vlan, location) can still be created
+
+**Steps**:
+1. Apply fixes to all identified functions
+2. Test each resource type
+3. Verify no new errors introduced
+
+**Expected Results**:
+- [ ] All resources create successfully
+- [ ] No new error patterns in logs
+- [ ] All CR statuses show `Created` state
+
+**Actual Results**:
+```
+[ ] Test completed: YYYY-MM-DD HH:MM:SS
+[ ] Result: PASS / FAIL
+[ ] Notes: <any observations>
+```
+
+### Progress Tracking
+
+| Fix | Status | Date Applied | Verified | Notes |
+|-----|--------|--------------|----------|-------|
+| `create_site` tenant fix | ⬜ Not Started | - | ⬜ No | - |
+| `create_prefix` tenant fix | ⬜ Not Started | - | ⬜ No | - |
+| `create_device` tenant fix | ⬜ Not Started | - | ⬜ No | - |
+| `create_vlan` tenant fix | ⬜ Not Started | - | ⬜ No | - |
+| `create_location` tenant fix | ⬜ Not Started | - | ⬜ No | - |
+
+**Legend**:
+- ⬜ Not Started
+- 🟡 In Progress
+- ✅ Complete
+- ❌ Failed
+
+### Log Monitoring Commands
+
+**Before Fix Verification**:
+```bash
+# Check for current error pattern
+tilt logs netbox-controller 2>&1 | grep -E "(Failed to create site|tenant.*name.*required|tenant.*slug.*required)"
+
+# Check reconciliation attempts
+tilt logs netbox-controller 2>&1 | grep -E "Requeuing.*datacenter-1.*after error" | tail -5
+
+# Check status updates
+kubectl get netboxsite datacenter-1 -o jsonpath='{.status}' | jq
+```
+
+**After Fix Verification**:
+```bash
+# Check for success pattern
+tilt logs netbox-controller 2>&1 | grep -E "(Adding full tenant object|Created site.*in NetBox|Updated NetBoxSite.*status)"
+
+# Verify no errors
+tilt logs netbox-controller 2>&1 | grep -E "(Failed to create site|400 Bad Request)" | tail -10
+
+# Check final status
+kubectl get netboxsite datacenter-1 -o jsonpath='{.status}' | jq
+```
+
+### Resolution Criteria
+
+A fix is considered **resolved** when:
+
+1. ✅ Code change applied and committed
+2. ✅ Controller compiles without errors
+3. ✅ Controller deployed successfully
+4. ✅ Logs show success pattern (no 400 errors)
+5. ✅ CR status shows `Created` state with valid `netboxId`
+6. ✅ No reconciliation loops (single successful attempt)
+7. ✅ NetBox API confirms resource exists with correct tenant
+8. ✅ No regression in other resources
+
+---
+
 ## Appendix: Related Code References
 
 - `crates/netbox-client/src/dcim/site.rs:76-237` - `create_site` function

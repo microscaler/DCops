@@ -136,26 +136,22 @@ impl Reconciler {
             }
         };
         
+        use crate::reconcile_helpers::update_resource_status;
         let status_patch = Self::create_typed_device_role_status_patch(
             netbox_device_role.id,
             netbox_device_role.url.clone(),
             ResourceState::Created,
             None,
         );
-        let pp = kube::api::PatchParams::default();
-        match self.netbox_device_role_api
-            .patch_status(name, &pp, &kube::api::Patch::Merge(status_patch.clone()))
-            .await
-        {
-            Ok(_) => {
-                info!("Updated NetBoxDeviceRole {}/{} status: NetBox ID {}", namespace, name, netbox_device_role.id);
-                Ok(())
-            }
-            Err(e) => {
-                let error_msg = format!("Failed to update NetBoxDeviceRole status: {}", e);
-                error!("{}", error_msg);
-                Err(ControllerError::Kube(e.into()))
-            }
-        }
+        update_resource_status(
+            &*self.netbox_device_role_api,
+            name,
+            namespace,
+            &status_patch,
+            "NetBoxDeviceRole",
+            netbox_device_role.id,
+        ).await?;
+        info!("Updated NetBoxDeviceRole {}/{} status: NetBox ID {}", namespace, name, netbox_device_role.id);
+        Ok(())
     }
 }

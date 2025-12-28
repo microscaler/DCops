@@ -98,26 +98,23 @@ impl Reconciler {
                 );
                 
                 if needs_status_update {
+                    use crate::reconcile_helpers::update_resource_status;
                     let status_patch = Self::create_typed_interface_status_patch(
                         interface.id,
                         interface.url.clone(),
                         ResourceState::Created,
                         None,
                     );
-                    let pp = kube::api::PatchParams::default();
-                    match self.netbox_interface_api
-                        .patch_status(name, &pp, &kube::api::Patch::Merge(status_patch.clone()))
-                        .await
-                    {
-                        Ok(_) => {
-                            debug!("Updated NetBoxInterface {}/{} status: NetBox ID {}", namespace, name, interface.id);
-                            return Ok(());
-                        }
-                        Err(e) => {
-                            error!("Failed to update NetBoxInterface status: {}", e);
-                            return Err(ControllerError::Kube(e.into()));
-                        }
-                    }
+                    update_resource_status(
+                        &*self.netbox_interface_api,
+                        name,
+                        namespace,
+                        &status_patch,
+                        "NetBoxInterface",
+                        interface.id,
+                    ).await?;
+                    debug!("Updated NetBoxInterface {}/{} status: NetBox ID {}", namespace, name, interface.id);
+                    return Ok(());
                 } else {
                     debug!("NetBoxInterface {}/{} already has correct status (ID: {}), skipping update", namespace, name, interface.id);
                     return Ok(());
@@ -163,26 +160,22 @@ impl Reconciler {
             }
         };
         
+        use crate::reconcile_helpers::update_resource_status;
         let status_patch = Self::create_typed_interface_status_patch(
             netbox_interface.id,
             netbox_interface.url.clone(),
             ResourceState::Created,
             None,
         );
-        let pp = kube::api::PatchParams::default();
-        match self.netbox_interface_api
-            .patch_status(name, &pp, &kube::api::Patch::Merge(status_patch.clone()))
-            .await
-        {
-            Ok(_) => {
-                info!("Updated NetBoxInterface {}/{} status: NetBox ID {}", namespace, name, netbox_interface.id);
-                Ok(())
-            }
-            Err(e) => {
-                let error_msg = format!("Failed to update NetBoxInterface status: {}", e);
-                error!("{}", error_msg);
-                Err(ControllerError::Kube(e.into()))
-            }
-        }
+        update_resource_status(
+            &*self.netbox_interface_api,
+            name,
+            namespace,
+            &status_patch,
+            "NetBoxInterface",
+            netbox_interface.id,
+        ).await?;
+        info!("Updated NetBoxInterface {}/{} status: NetBox ID {}", namespace, name, netbox_interface.id);
+        Ok(())
     }
 }

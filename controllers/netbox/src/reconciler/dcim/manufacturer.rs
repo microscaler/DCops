@@ -130,26 +130,22 @@ impl Reconciler {
             }
         };
         
+        use crate::reconcile_helpers::update_resource_status;
         let status_patch = Self::create_typed_manufacturer_status_patch(
             netbox_manufacturer.id,
             netbox_manufacturer.url.clone(),
             ResourceState::Created,
             None,
         );
-        let pp = kube::api::PatchParams::default();
-        match self.netbox_manufacturer_api
-            .patch_status(name, &pp, &kube::api::Patch::Merge(status_patch.clone()))
-            .await
-        {
-            Ok(_) => {
-                info!("Updated NetBoxManufacturer {}/{} status: NetBox ID {}", namespace, name, netbox_manufacturer.id);
-                Ok(())
-            }
-            Err(e) => {
-                let error_msg = format!("Failed to update NetBoxManufacturer status: {}", e);
-                error!("{}", error_msg);
-                Err(ControllerError::Kube(e.into()))
-            }
-        }
+        update_resource_status(
+            &*self.netbox_manufacturer_api,
+            name,
+            namespace,
+            &status_patch,
+            "NetBoxManufacturer",
+            netbox_manufacturer.id,
+        ).await?;
+        info!("Updated NetBoxManufacturer {}/{} status: NetBox ID {}", namespace, name, netbox_manufacturer.id);
+        Ok(())
     }
 }

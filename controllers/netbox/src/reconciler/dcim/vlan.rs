@@ -79,27 +79,23 @@ impl Reconciler {
                 );
                 
                 if needs_status_update {
+                    use crate::reconcile_helpers::update_resource_status;
                     let status_patch = Self::create_resource_status_patch(
                         vlan.id,
                         vlan.url.clone(),
                         ResourceState::Created,
                         None,
                     );
-                    let pp = kube::api::PatchParams::default();
-                    match self.netbox_vlan_api
-                        .patch_status(name, &pp, &kube::api::Patch::Merge(status_patch.clone()))
-                        .await
-                    {
-                        Ok(_) => {
-                            debug!("Updated NetBoxVLAN {}/{} status: NetBox ID {}", namespace, name, vlan.id);
-                            return Ok(());
-                        }
-                        Err(e) => {
-                            let error_msg = format!("Failed to update NetBoxVLAN status: {}", e);
-                            error!("{}", error_msg);
-                            return Err(ControllerError::Kube(e.into()));
-                        }
-                    }
+                    update_resource_status(
+                        &*self.netbox_vlan_api,
+                        name,
+                        namespace,
+                        &status_patch,
+                        "NetBoxVLAN",
+                        vlan.id,
+                    ).await?;
+                    debug!("Updated NetBoxVLAN {}/{} status: NetBox ID {}", namespace, name, vlan.id);
+                    return Ok(());
                 } else {
                     debug!("NetBoxVLAN {}/{} already has correct status (ID: {}), skipping update", namespace, name, vlan.id);
                     return Ok(());
@@ -190,26 +186,22 @@ impl Reconciler {
         };
         
         // Update status (use PascalCase state to match CRD validation schema)
+        use crate::reconcile_helpers::update_resource_status;
         let status_patch = Self::create_resource_status_patch(
             netbox_vlan.id,
             netbox_vlan.url.clone(),
             ResourceState::Created,
             None,
         );
-        let pp = kube::api::PatchParams::default();
-        match self.netbox_vlan_api
-            .patch_status(name, &pp, &kube::api::Patch::Merge(status_patch.clone()))
-            .await
-        {
-            Ok(_) => {
-                info!("Updated NetBoxVLAN {}/{} status: NetBox ID {}", namespace, name, netbox_vlan.id);
-                Ok(())
-            }
-            Err(e) => {
-                let error_msg = format!("Failed to update NetBoxVLAN status: {}", e);
-                error!("{}", error_msg);
-                Err(ControllerError::Kube(e.into()))
-            }
-        }
+        update_resource_status(
+            &*self.netbox_vlan_api,
+            name,
+            namespace,
+            &status_patch,
+            "NetBoxVLAN",
+            netbox_vlan.id,
+        ).await?;
+        info!("Updated NetBoxVLAN {}/{} status: NetBox ID {}", namespace, name, netbox_vlan.id);
+        Ok(())
     }
 }

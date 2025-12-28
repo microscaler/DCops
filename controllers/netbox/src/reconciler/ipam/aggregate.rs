@@ -90,26 +90,23 @@ impl Reconciler {
                 );
                 
                 if needs_status_update {
+                    use crate::reconcile_helpers::update_resource_status;
                     let status_patch = Self::create_resource_status_patch(
                         aggregate.id,
                         aggregate.url.clone(),
                         ResourceState::Created,
                         None,
                     );
-                    let pp = kube::api::PatchParams::default();
-                    match self.netbox_aggregate_api
-                        .patch_status(name, &pp, &kube::api::Patch::Merge(status_patch.clone()))
-                        .await
-                    {
-                        Ok(_) => {
-                            debug!("Updated NetBoxAggregate {}/{} status: NetBox ID {}", namespace, name, aggregate.id);
-                            return Ok(());
-                        }
-                        Err(e) => {
-                            error!("Failed to update NetBoxAggregate status: {}", e);
-                            return Err(ControllerError::Kube(e.into()));
-                        }
-                    }
+                    update_resource_status(
+                        &*self.netbox_aggregate_api,
+                        name,
+                        namespace,
+                        &status_patch,
+                        "NetBoxAggregate",
+                        aggregate.id,
+                    ).await?;
+                    debug!("Updated NetBoxAggregate {}/{} status: NetBox ID {}", namespace, name, aggregate.id);
+                    return Ok(());
                 } else {
                     debug!("NetBoxAggregate {}/{} already has correct status (ID: {}), skipping update", namespace, name, aggregate.id);
                     return Ok(());

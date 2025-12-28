@@ -114,26 +114,23 @@ impl Reconciler {
                 );
                 
                 if needs_status_update {
+                    use crate::reconcile_helpers::update_resource_status;
                     let status_patch = Self::create_typed_mac_address_status_patch(
                         mac_address.id,
                         mac_address.url.clone(),
                         ResourceState::Created,
                         None,
                     );
-                    let pp = kube::api::PatchParams::default();
-                    match self.netbox_mac_address_api
-                        .patch_status(name, &pp, &kube::api::Patch::Merge(status_patch.clone()))
-                        .await
-                    {
-                        Ok(_) => {
-                            debug!("Updated NetBoxMACAddress {}/{} status: NetBox ID {}", namespace, name, mac_address.id);
-                            return Ok(());
-                        }
-                        Err(e) => {
-                            error!("Failed to update NetBoxMACAddress status: {}", e);
-                            return Err(ControllerError::Kube(e.into()));
-                        }
-                    }
+                    update_resource_status(
+                        &*self.netbox_mac_address_api,
+                        name,
+                        namespace,
+                        &status_patch,
+                        "NetBoxMACAddress",
+                        mac_address.id,
+                    ).await?;
+                    debug!("Updated NetBoxMACAddress {}/{} status: NetBox ID {}", namespace, name, mac_address.id);
+                    return Ok(());
                 } else {
                     debug!("NetBoxMACAddress {}/{} already has correct status (ID: {}), skipping update", namespace, name, mac_address.id);
                     return Ok(());
@@ -178,26 +175,22 @@ impl Reconciler {
             }
         };
         
+        use crate::reconcile_helpers::update_resource_status;
         let status_patch = Self::create_typed_mac_address_status_patch(
             netbox_mac_address.id,
             netbox_mac_address.url.clone(),
             ResourceState::Created,
             None,
         );
-        let pp = kube::api::PatchParams::default();
-        match self.netbox_mac_address_api
-            .patch_status(name, &pp, &kube::api::Patch::Merge(status_patch.clone()))
-            .await
-        {
-            Ok(_) => {
-                info!("Updated NetBoxMACAddress {}/{} status: NetBox ID {}", namespace, name, netbox_mac_address.id);
-                Ok(())
-            }
-            Err(e) => {
-                let error_msg = format!("Failed to update NetBoxMACAddress status: {}", e);
-                error!("{}", error_msg);
-                Err(ControllerError::Kube(e.into()))
-            }
-        }
+        update_resource_status(
+            &*self.netbox_mac_address_api,
+            name,
+            namespace,
+            &status_patch,
+            "NetBoxMACAddress",
+            netbox_mac_address.id,
+        ).await?;
+        info!("Updated NetBoxMACAddress {}/{} status: NetBox ID {}", namespace, name, netbox_mac_address.id);
+        Ok(())
     }
 }

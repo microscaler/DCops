@@ -79,27 +79,23 @@ impl Reconciler {
                 );
                 
                 if needs_status_update {
+                    use crate::reconcile_helpers::update_resource_status;
                     let status_patch = Self::create_resource_status_patch(
                         location.id,
                         location.url.clone(),
                         ResourceState::Created,
                         None,
                     );
-                    let pp = kube::api::PatchParams::default();
-                    match self.netbox_location_api
-                        .patch_status(name, &pp, &kube::api::Patch::Merge(status_patch.clone()))
-                        .await
-                    {
-                        Ok(_) => {
-                            debug!("Updated NetBoxLocation {}/{} status: NetBox ID {}", namespace, name, location.id);
-                            return Ok(());
-                        }
-                        Err(e) => {
-                            let error_msg = format!("Failed to update NetBoxLocation status: {}", e);
-                            error!("{}", error_msg);
-                            return Err(ControllerError::Kube(e.into()));
-                        }
-                    }
+                    update_resource_status(
+                        &*self.netbox_location_api,
+                        name,
+                        namespace,
+                        &status_patch,
+                        "NetBoxLocation",
+                        location.id,
+                    ).await?;
+                    debug!("Updated NetBoxLocation {}/{} status: NetBox ID {}", namespace, name, location.id);
+                    return Ok(());
                 } else {
                     debug!("NetBoxLocation {}/{} already has correct status (ID: {}), skipping update", namespace, name, location.id);
                     return Ok(());
@@ -179,26 +175,22 @@ impl Reconciler {
         };
         
         // Update status (use lowercase state to match CRD validation schema)
+        use crate::reconcile_helpers::update_resource_status;
         let status_patch = Self::create_resource_status_patch(
             netbox_location.id,
             netbox_location.url.clone(),
             ResourceState::Created,
             None,
         );
-        let pp = kube::api::PatchParams::default();
-        match self.netbox_location_api
-            .patch_status(name, &pp, &kube::api::Patch::Merge(status_patch.clone()))
-            .await
-        {
-            Ok(_) => {
-                info!("Updated NetBoxLocation {}/{} status: NetBox ID {}", namespace, name, netbox_location.id);
-                Ok(())
-            }
-            Err(e) => {
-                let error_msg = format!("Failed to update NetBoxLocation status: {}", e);
-                error!("{}", error_msg);
-                Err(ControllerError::Kube(e.into()))
-            }
-        }
+        update_resource_status(
+            &*self.netbox_location_api,
+            name,
+            namespace,
+            &status_patch,
+            "NetBoxLocation",
+            netbox_location.id,
+        ).await?;
+        info!("Updated NetBoxLocation {}/{} status: NetBox ID {}", namespace, name, netbox_location.id);
+        Ok(())
     }
 }

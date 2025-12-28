@@ -1009,7 +1009,7 @@ pub async fn update_resource_status<API, CRD>(
     api: &API,
     name: &str,
     namespace: &str,
-    status_patch: serde_json::Value,
+    status_patch: &serde_json::Value,
     resource_name: &str,
     netbox_id: u64,
 ) -> Result<(), ControllerError>
@@ -1021,7 +1021,7 @@ where
 {
     let pp = kube::api::PatchParams::default();
     match api
-        .patch_status(name, &pp, &kube::api::Patch::Merge(status_patch))
+        .patch_status(name, &pp, &kube::api::Patch::Merge(status_patch.clone()))
         .await
     {
         Ok(_) => {

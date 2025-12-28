@@ -82,26 +82,23 @@ impl Reconciler {
                 );
                 
                 if needs_status_update {
+                    use crate::reconcile_helpers::update_resource_status;
                     let status_patch = Self::create_typed_platform_status_patch(
                         platform.id,
                         platform.url.clone(),
                         ResourceState::Created,
                         None,
                     );
-                    let pp = kube::api::PatchParams::default();
-                    match self.netbox_platform_api
-                        .patch_status(name, &pp, &kube::api::Patch::Merge(status_patch.clone()))
-                        .await
-                    {
-                        Ok(_) => {
-                            debug!("Updated NetBoxPlatform {}/{} status: NetBox ID {}", namespace, name, platform.id);
-                            return Ok(());
-                        }
-                        Err(e) => {
-                            error!("Failed to update NetBoxPlatform status: {}", e);
-                            return Err(ControllerError::Kube(e.into()));
-                        }
-                    }
+                    update_resource_status(
+                        &*self.netbox_platform_api,
+                        name,
+                        namespace,
+                        &status_patch,
+                        "NetBoxPlatform",
+                        platform.id,
+                    ).await?;
+                    debug!("Updated NetBoxPlatform {}/{} status: NetBox ID {}", namespace, name, platform.id);
+                    return Ok(());
                 } else {
                     debug!("NetBoxPlatform {}/{} already has correct status (ID: {}), skipping update", namespace, name, platform.id);
                     return Ok(());
@@ -147,26 +144,22 @@ impl Reconciler {
             }
         };
         
+        use crate::reconcile_helpers::update_resource_status;
         let status_patch = Self::create_typed_platform_status_patch(
             netbox_platform.id,
             netbox_platform.url.clone(),
             ResourceState::Created,
             None,
         );
-        let pp = kube::api::PatchParams::default();
-        match self.netbox_platform_api
-            .patch_status(name, &pp, &kube::api::Patch::Merge(status_patch.clone()))
-            .await
-        {
-            Ok(_) => {
-                info!("Updated NetBoxPlatform {}/{} status: NetBox ID {}", namespace, name, netbox_platform.id);
-                Ok(())
-            }
-            Err(e) => {
-                let error_msg = format!("Failed to update NetBoxPlatform status: {}", e);
-                error!("{}", error_msg);
-                Err(ControllerError::Kube(e.into()))
-            }
-        }
+        update_resource_status(
+            &*self.netbox_platform_api,
+            name,
+            namespace,
+            &status_patch,
+            "NetBoxPlatform",
+            netbox_platform.id,
+        ).await?;
+        info!("Updated NetBoxPlatform {}/{} status: NetBox ID {}", namespace, name, netbox_platform.id);
+        Ok(())
     }
 }

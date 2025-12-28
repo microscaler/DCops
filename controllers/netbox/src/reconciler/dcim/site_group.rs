@@ -89,27 +89,23 @@ impl Reconciler {
                 );
                 
                 if needs_status_update {
+                    use crate::reconcile_helpers::update_resource_status;
                     let status_patch = Self::create_typed_site_group_status_patch(
                         site_group.id,
                         site_group.url.clone(),
                         ResourceState::Created,
                         None,
                     );
-                    let pp = kube::api::PatchParams::default();
-                    match self.netbox_site_group_api
-                        .patch_status(name, &pp, &kube::api::Patch::Merge(status_patch.clone()))
-                        .await
-                    {
-                        Ok(_) => {
-                            debug!("Updated NetBoxSiteGroup {}/{} status: NetBox ID {}", namespace, name, site_group.id);
-                            return Ok(());
-                        }
-                        Err(e) => {
-                            let error_msg = format!("Failed to update NetBoxSiteGroup status: {}", e);
-                            error!("{}", error_msg);
-                            return Err(ControllerError::Kube(e.into()));
-                        }
-                    }
+                    update_resource_status(
+                        &*self.netbox_site_group_api,
+                        name,
+                        namespace,
+                        &status_patch,
+                        "NetBoxSiteGroup",
+                        site_group.id,
+                    ).await?;
+                    debug!("Updated NetBoxSiteGroup {}/{} status: NetBox ID {}", namespace, name, site_group.id);
+                    return Ok(());
                 } else {
                     debug!("NetBoxSiteGroup {}/{} already has correct status (ID: {}), skipping update", namespace, name, site_group.id);
                     return Ok(());
@@ -155,27 +151,23 @@ impl Reconciler {
             }
         };
         
-        // Update status
+        // Update status using helper
+        use crate::reconcile_helpers::update_resource_status;
         let status_patch = Self::create_typed_site_group_status_patch(
             netbox_site_group.id,
             netbox_site_group.url.clone(),
             ResourceState::Created,
             None,
         );
-        let pp = kube::api::PatchParams::default();
-        match self.netbox_site_group_api
-            .patch_status(name, &pp, &kube::api::Patch::Merge(status_patch.clone()))
-            .await
-        {
-            Ok(_) => {
-                info!("Updated NetBoxSiteGroup {}/{} status: NetBox ID {}", namespace, name, netbox_site_group.id);
-                Ok(())
-            }
-            Err(e) => {
-                let error_msg = format!("Failed to update NetBoxSiteGroup status: {}", e);
-                error!("{}", error_msg);
-                Err(ControllerError::Kube(e.into()))
-            }
-        }
+        update_resource_status(
+            &*self.netbox_site_group_api,
+            name,
+            namespace,
+            &status_patch,
+            "NetBoxSiteGroup",
+            netbox_site_group.id,
+        ).await?;
+        info!("Updated NetBoxSiteGroup {}/{} status: NetBox ID {}", namespace, name, netbox_site_group.id);
+        Ok(())
     }
 }

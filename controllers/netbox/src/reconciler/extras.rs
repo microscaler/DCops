@@ -73,26 +73,23 @@ impl Reconciler {
                 );
                 
                 if needs_status_update {
+                    use crate::reconcile_helpers::update_resource_status;
                     let status_patch = Self::create_typed_role_status_patch(
                         role.id,
                         role.url.clone(),
                         ResourceState::Created,
                         None,
                     );
-                    let pp = kube::api::PatchParams::default();
-                    match self.netbox_role_api
-                        .patch_status(name, &pp, &kube::api::Patch::Merge(status_patch.clone()))
-                        .await
-                    {
-                        Ok(_) => {
-                            debug!("Updated NetBoxRole {}/{} status: NetBox ID {}", namespace, name, role.id);
-                            return Ok(());
-                        }
-                        Err(e) => {
-                            error!("Failed to update NetBoxRole status: {}", e);
-                            return Err(ControllerError::Kube(e.into()));
-                        }
-                    }
+                    update_resource_status(
+                        &*self.netbox_role_api,
+                        name,
+                        namespace,
+                        &status_patch,
+                        "NetBoxRole",
+                        role.id,
+                    ).await?;
+                    debug!("Updated NetBoxRole {}/{} status: NetBox ID {}", namespace, name, role.id);
+                    return Ok(());
                 } else {
                     debug!("NetBoxRole {}/{} already has correct status (ID: {}), skipping update", namespace, name, role.id);
                     return Ok(());
@@ -138,27 +135,23 @@ impl Reconciler {
             }
         };
         
+        use crate::reconcile_helpers::update_resource_status;
         let status_patch = Self::create_typed_role_status_patch(
             netbox_role.id,
             netbox_role.url.clone(),
             ResourceState::Created,
             None,
         );
-        let pp = kube::api::PatchParams::default();
-        match self.netbox_role_api
-            .patch_status(name, &pp, &kube::api::Patch::Merge(status_patch.clone()))
-            .await
-        {
-            Ok(_) => {
-                info!("Updated NetBoxRole {}/{} status: NetBox ID {}", namespace, name, netbox_role.id);
-                Ok(())
-            }
-            Err(e) => {
-                let error_msg = format!("Failed to update NetBoxRole status: {}", e);
-                error!("{}", error_msg);
-                Err(ControllerError::Kube(e.into()))
-            }
-        }
+        update_resource_status(
+            &*self.netbox_role_api,
+            name,
+            namespace,
+            &status_patch,
+            "NetBoxRole",
+            netbox_role.id,
+        ).await?;
+        info!("Updated NetBoxRole {}/{} status: NetBox ID {}", namespace, name, netbox_role.id);
+        Ok(())
     }
     
     /// Reconciles a NetBoxTag resource.
@@ -227,26 +220,23 @@ impl Reconciler {
                 );
                 
                 if needs_status_update {
+                    use crate::reconcile_helpers::update_resource_status;
                     let status_patch = Self::create_typed_tag_status_patch(
                         tag.id,
                         tag.url.clone(),
                         ResourceState::Created,
                         None,
                     );
-                    let pp = kube::api::PatchParams::default();
-                    match self.netbox_tag_api
-                        .patch_status(name, &pp, &kube::api::Patch::Merge(status_patch.clone()))
-                        .await
-                    {
-                        Ok(_) => {
-                            debug!("Updated NetBoxTag {}/{} status: NetBox ID {}", namespace, name, tag.id);
-                            return Ok(());
-                        }
-                        Err(e) => {
-                            error!("Failed to update NetBoxTag status: {}", e);
-                            return Err(ControllerError::Kube(e.into()));
-                        }
-                    }
+                    update_resource_status(
+                        &*self.netbox_tag_api,
+                        name,
+                        namespace,
+                        &status_patch,
+                        "NetBoxTag",
+                        tag.id,
+                    ).await?;
+                    debug!("Updated NetBoxTag {}/{} status: NetBox ID {}", namespace, name, tag.id);
+                    return Ok(());
                 } else {
                     debug!("NetBoxTag {}/{} already has correct status (ID: {}), skipping update", namespace, name, tag.id);
                     return Ok(());
@@ -292,26 +282,22 @@ impl Reconciler {
             }
         };
         
+        use crate::reconcile_helpers::update_resource_status;
         let status_patch = Self::create_typed_tag_status_patch(
             netbox_tag.id,
             netbox_tag.url.clone(),
             ResourceState::Created,
             None,
         );
-        let pp = kube::api::PatchParams::default();
-        match self.netbox_tag_api
-            .patch_status(name, &pp, &kube::api::Patch::Merge(status_patch.clone()))
-            .await
-        {
-            Ok(_) => {
-                info!("Updated NetBoxTag {}/{} status: NetBox ID {}", namespace, name, netbox_tag.id);
-                Ok(())
-            }
-            Err(e) => {
-                let error_msg = format!("Failed to update NetBoxTag status: {}", e);
-                error!("{}", error_msg);
-                Err(ControllerError::Kube(e.into()))
-            }
-        }
+        update_resource_status(
+            &*self.netbox_tag_api,
+            name,
+            namespace,
+            &status_patch,
+            "NetBoxTag",
+            netbox_tag.id,
+        ).await?;
+        info!("Updated NetBoxTag {}/{} status: NetBox ID {}", namespace, name, netbox_tag.id);
+        Ok(())
     }
 }

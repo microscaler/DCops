@@ -107,46 +107,53 @@ pub fn create_test_netbox_prefix(
 #[cfg(test)]
 // Note: This function is incomplete - it needs TokenResolver which requires kube::Client
 // For now, tests that need full reconciler setup should be marked #[ignore]
-// until proper mocking infrastructure is in place
-#[allow(dead_code)]
+/// Helper to create a test reconciler with all mocked dependencies
+///
+/// This creates a Reconciler with:
+/// - TokenResolver (requires a real kube::Client - use kube::Client::try_default() in tests)
+/// - Mock Kubernetes APIs for all CRDs
+///
+/// Note: TokenResolver requires a real kube::Client to fetch secrets.
+/// For unit tests, you may need to use kube's test framework or mark tests as #[ignore]
+/// until kube::Client mocking is implemented.
+#[cfg(test)]
 pub fn create_test_reconciler(
-    _mock_client: MockNetBoxClient,
-) {
-    // TODO: This function needs to be updated to create a TokenResolver
-    // which requires a kube::Client. For now, tests using this should be #[ignore]
-    // use crate::kube_api_trait::mock::MockKubeApi;
-    // use crate::token_resolver::TokenResolver;
-    // use std::sync::Arc;
-    // 
-    // let token_resolver = Arc::new(TokenResolver::new(kube_client, "http://test-netbox".to_string()));
-    // 
-    // Reconciler::new(
-    //     token_resolver,
-    //     // IPAM APIs (21 total including netbox_rir_api)
-    //     MockKubeApi::new(), // netbox_prefix_api
-    //     MockKubeApi::new(), // netbox_role_api
-    //     MockKubeApi::new(), // netbox_tag_api
-    //     MockKubeApi::new(), // netbox_aggregate_api
-    //     MockKubeApi::new(), // netbox_vlan_api
-    //     MockKubeApi::new(), // netbox_rir_api
-    //     // Tenancy APIs
-    //     MockKubeApi::new(), // netbox_tenant_api
-    //     // DCIM APIs
-    //     MockKubeApi::new(), // netbox_site_api
-    //     MockKubeApi::new(), // netbox_device_role_api
-    //     MockKubeApi::new(), // netbox_manufacturer_api
-    //     MockKubeApi::new(), // netbox_platform_api
-    //     MockKubeApi::new(), // netbox_device_type_api
-    //     MockKubeApi::new(), // netbox_device_api
-    //     MockKubeApi::new(), // netbox_interface_api
-    //     MockKubeApi::new(), // netbox_mac_address_api
-    //     MockKubeApi::new(), // netbox_region_api
-    //     MockKubeApi::new(), // netbox_site_group_api
-    //     MockKubeApi::new(), // netbox_location_api
-    //     // Custom CRDs
-    //     MockKubeApi::new(), // ip_pool_api
-    //     MockKubeApi::new(), // ip_claim_api
-    // )
+    kube_client: Client,
+    netbox_url: String,
+) -> Reconciler {
+    use crate::kube_api_trait::mock::MockKubeApi;
+    use crate::token_resolver::TokenResolver;
+    use std::sync::Arc;
+    
+    let token_resolver = Arc::new(TokenResolver::new(kube_client, netbox_url));
+    
+    Reconciler::new(
+        token_resolver,
+        // IPAM APIs (21 total including netbox_rir_api)
+        MockKubeApi::new(), // netbox_prefix_api
+        MockKubeApi::new(), // netbox_role_api
+        MockKubeApi::new(), // netbox_tag_api
+        MockKubeApi::new(), // netbox_aggregate_api
+        MockKubeApi::new(), // netbox_vlan_api
+        MockKubeApi::new(), // netbox_rir_api
+        // Tenancy APIs
+        MockKubeApi::new(), // netbox_tenant_api
+        // DCIM APIs
+        MockKubeApi::new(), // netbox_site_api
+        MockKubeApi::new(), // netbox_device_role_api
+        MockKubeApi::new(), // netbox_manufacturer_api
+        MockKubeApi::new(), // netbox_platform_api
+        MockKubeApi::new(), // netbox_device_type_api
+        MockKubeApi::new(), // netbox_device_api
+        MockKubeApi::new(), // netbox_interface_api
+        MockKubeApi::new(), // netbox_mac_address_api
+        MockKubeApi::new(), // netbox_region_api
+        MockKubeApi::new(), // netbox_site_group_api
+        MockKubeApi::new(), // netbox_location_api
+        // Custom CRDs
+        MockKubeApi::new(), // ip_pool_api
+        MockKubeApi::new(), // ip_claim_api
+    )
 }
 
 /// Helper to create a test Prefix with all required fields

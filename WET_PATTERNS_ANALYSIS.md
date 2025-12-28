@@ -260,38 +260,25 @@ where
 ```
 
 **Locations to Refactor**:
-- [ ] `dcim/mac_address.rs:134` - Status update error handling
-- [ ] `dcim/mac_address.rs:198` - Status update error handling
-- [ ] `dcim/interface.rs:118` - Status update error handling
-- [ ] `dcim/interface.rs:183` - Status update error handling
-- [ ] `dcim/site.rs:143` - Status update error handling (error status)
-- [ ] `dcim/site.rs:368` - Status update error handling
-- [ ] `dcim/site.rs:443` - Status update error handling
-- [ ] `dcim/device.rs:101` - Status update error handling
-- [ ] `dcim/device.rs:540` - Status update error handling
-- [ ] `dcim/vlan.rs:100` - Status update error handling
-- [ ] `dcim/vlan.rs:239` - Status update error handling
-- [ ] `dcim/device_type.rs:115` - Status update error handling
-- [ ] `dcim/device_type.rs:182` - Status update error handling
-- [ ] `dcim/manufacturer.rs:92` - Status update error handling
-- [ ] `dcim/manufacturer.rs:153` - Status update error handling
-- [ ] `dcim/platform.rs:114` - Status update error handling
-- [ ] `dcim/platform.rs:179` - Status update error handling
-- [ ] `dcim/site_group.rs:121` - Status update error handling
-- [ ] `dcim/site_group.rs:188` - Status update error handling
-- [ ] `dcim/location.rs:100` - Status update error handling
-- [ ] `dcim/location.rs:234` - Status update error handling
-- [ ] `dcim/device_role.rs` - Status update error handling
-- [ ] `dcim/region.rs` - Status update error handling
-- [ ] `extras.rs:93` - Status update error handling (NetBoxRole)
-- [ ] `extras.rs:158` - Status update error handling (NetBoxRole)
-- [ ] `extras.rs:248` - Status update error handling (NetBoxTag)
-- [ ] `extras.rs:313` - Status update error handling (NetBoxTag)
-- [ ] `ipam/prefix.rs:113` - Status update error handling (error status)
-- [ ] `ipam/prefix.rs:343` - Status update error handling
-- [ ] `ipam/prefix.rs:604` - Status update error handling
-- [ ] `ipam/aggregate.rs` - Status update error handling
-- [ ] `tenancy.rs` - Status update error handling
+- [x] `dcim/mac_address.rs` - Status update error handling ✅
+- [x] `dcim/interface.rs` - Status update error handling ✅
+- [x] `dcim/site.rs:368` - Status update error handling ✅
+- [x] `dcim/device.rs` - Status update error handling (2 locations) ✅
+- [x] `dcim/vlan.rs` - Status update error handling (2 locations) ✅
+- [x] `dcim/device_type.rs` - Status update error handling (2 locations) ✅
+- [x] `dcim/manufacturer.rs` - Status update error handling (2 locations) ✅
+- [x] `dcim/platform.rs` - Status update error handling (2 locations) ✅
+- [x] `dcim/site_group.rs` - Status update error handling (2 locations) ✅
+- [x] `dcim/location.rs` - Status update error handling (2 locations) ✅
+- [x] `dcim/device_role.rs` - Status update error handling (2 locations) ✅
+- [x] `dcim/region.rs` - Status update error handling (2 locations) ✅
+- [x] `extras.rs` - Status update error handling (NetBoxRole - 2 locations) ✅
+- [x] `extras.rs` - Status update error handling (NetBoxTag - 2 locations) ✅
+- [x] `ipam/prefix.rs:490` - Status update error handling ✅
+- [x] `ipam/aggregate.rs` - Status update error handling ✅
+- [x] `tenancy.rs` - Status update error handling ✅
+
+**Note**: Error status updates (e.g., `dcim/site.rs:143`, `ipam/prefix.rs:113`) use a different pattern where errors are logged but not returned. These are intentionally left as-is since they handle error state updates differently.
 
 ---
 

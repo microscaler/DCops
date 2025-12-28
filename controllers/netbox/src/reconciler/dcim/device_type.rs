@@ -8,10 +8,9 @@ use netbox_client::{NetBoxClientTrait, ManufacturerId};
 
 impl Reconciler {
     pub async fn reconcile_netbox_device_type(&self, device_type_crd: &NetBoxDeviceType) -> Result<(), ControllerError> {
-        let name = device_type_crd.metadata.name.as_ref()
-            .ok_or_else(|| ControllerError::InvalidConfig("NetBoxDeviceType missing name".to_string()))?;
-        let namespace = device_type_crd.metadata.namespace.as_deref()
-            .unwrap_or("default");
+        // Extract name and namespace using helper
+        use crate::reconcile_helpers::{extract_name_and_namespace, validate_reference_kind, resolve_required_dependency_id};
+        let (name, namespace) = extract_name_and_namespace(device_type_crd, "NetBoxDeviceType")?;
         
         info!("Reconciling NetBoxDeviceType {}/{}", namespace, name);
         
@@ -21,28 +20,15 @@ impl Reconciler {
             .await
             .map_err(|e| ControllerError::TokenResolution(e))?;
         
-        // Resolve manufacturer ID (required)
-        let manufacturer_id = if device_type_crd.spec.manufacturer.kind != "NetBoxManufacturer" {
-            return Err(ControllerError::InvalidConfig(
-                format!("Invalid kind '{}' for manufacturer reference in device type {}, expected 'NetBoxManufacturer'", device_type_crd.spec.manufacturer.kind, name)
-            ));
-        } else {
-            match self.netbox_manufacturer_api.get(&device_type_crd.spec.manufacturer.name).await {
-                Ok(manufacturer_crd) => {
-                    manufacturer_crd.status
-                        .as_ref()
-                        .and_then(|s| s.netbox_id)
-                        .ok_or_else(|| ControllerError::InvalidConfig(
-                            format!("Manufacturer '{}' has not been created in NetBox yet (no netbox_id in status)", device_type_crd.spec.manufacturer.name)
-                        ))?
-                }
-                Err(_) => {
-                    return Err(ControllerError::InvalidConfig(
-                        format!("Manufacturer CRD '{}' not found for device type {}", device_type_crd.spec.manufacturer.name, name)
-                    ));
-                }
-            }
-        };
+        // Validate and resolve manufacturer ID (required) using helper
+        validate_reference_kind(&device_type_crd.spec.manufacturer, "NetBoxManufacturer", "manufacturer", name)?;
+        let manufacturer_id = resolve_required_dependency_id(
+            &*self.netbox_manufacturer_api,
+            &device_type_crd.spec.manufacturer.name,
+            "Manufacturer",
+            name,
+            |crd| crd.status.as_ref(),
+        ).await?;
         
         // Check if already created - use shared helper for drift detection and status validation
         use crate::reconcile_helpers::{validate_status_and_drift, DriftCheckResult};

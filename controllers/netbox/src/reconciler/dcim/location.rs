@@ -8,17 +8,15 @@ use netbox_client::{NetBoxClientTrait, LocationId, SiteId, TenantId};
 
 impl Reconciler {
     pub async fn reconcile_netbox_location(&self, location_crd: &NetBoxLocation) -> Result<(), ControllerError> {
-        // Extract namespace and tenant reference
-        let namespace = location_crd.metadata.namespace.as_deref().unwrap_or("default");
+        // Extract name and namespace using helper
+        use crate::reconcile_helpers::extract_name_and_namespace;
+        let (name, namespace) = extract_name_and_namespace(location_crd, "NetBoxLocation")?;
         let tenant_ref = &location_crd.spec.tenant;
         
         // SINGLE POINT: Get tenant-specific client
         let netbox_client = self.token_resolver
             .create_client_for_tenant(namespace, tenant_ref)
             .await?;
-        
-        let name = location_crd.metadata.name.as_ref()
-            .ok_or_else(|| ControllerError::InvalidConfig("NetBoxLocation missing name".to_string()))?;
         
         info!("Reconciling NetBoxLocation {}/{}", namespace, name);
         
@@ -108,72 +106,38 @@ impl Reconciler {
                 }
             }
             None => {
-                // Need to create location - resolve dependencies first
-                // Resolve site ID (required)
-                if location_crd.spec.site.kind != "NetBoxSite" {
-                    return Err(ControllerError::InvalidConfig(
-                        format!("Invalid kind '{}' for site reference in location {}, expected 'NetBoxSite'", location_crd.spec.site.kind, name)
-                    ));
-                }
-                let site_id = match self.netbox_site_api.get(&location_crd.spec.site.name).await {
-                    Ok(site_crd) => {
-                        site_crd.status
-                            .as_ref()
-                            .and_then(|s| s.netbox_id)
-                            .ok_or_else(|| ControllerError::InvalidConfig(
-                                format!("Site '{}' has not been created in NetBox yet (no netbox_id in status)", location_crd.spec.site.name)
-                            ))?
-                    }
-                    Err(_) => {
-                        return Err(ControllerError::InvalidConfig(
-                            format!("Site CRD '{}' not found for location {}", location_crd.spec.site.name, name)
-                        ));
-                    }
-                };
+                // Need to create location - resolve dependencies first using helpers
+                use crate::reconcile_helpers::{validate_reference_kind, resolve_required_dependency_id, resolve_optional_dependency_id};
                 
-                // Resolve parent location ID if parent reference provided
-                let parent_id = if let Some(parent_ref) = &location_crd.spec.parent {
-            if parent_ref.kind != "NetBoxLocation" {
-                warn!("Invalid kind '{}' for parent location reference in location {}, expected 'NetBoxLocation'", parent_ref.kind, name);
-                None
-            } else {
-                match self.netbox_location_api.get(&parent_ref.name).await {
-                    Ok(parent_crd) => {
-                        parent_crd.status
-                            .as_ref()
-                            .and_then(|s| s.netbox_id)
-                    }
-                    Err(_) => {
-                        warn!("Parent location CRD '{}' not found for location {}", parent_ref.name, name);
-                        None
-                    }
-                }
-            }
-                } else {
-                    None
-                };
+                // Validate and resolve site ID (required)
+                validate_reference_kind(&location_crd.spec.site, "NetBoxSite", "site", name)?;
+                let site_id = resolve_required_dependency_id(
+                    &*self.netbox_site_api,
+                    &location_crd.spec.site.name,
+                    "Site",
+                    name,
+                    |crd| crd.status.as_ref(),
+                ).await?;
                 
-                // Resolve tenant ID (required)
-                if location_crd.spec.tenant.kind != "NetBoxTenant" {
-                    return Err(ControllerError::InvalidConfig(
-                        format!("Invalid kind '{}' for tenant reference in location {}, expected 'NetBoxTenant'", location_crd.spec.tenant.kind, name)
-                    ));
-                }
-                let tenant_id = match self.netbox_tenant_api.get(&location_crd.spec.tenant.name).await {
-                    Ok(tenant_crd) => {
-                        tenant_crd.status
-                            .as_ref()
-                            .and_then(|s| s.netbox_id)
-                            .ok_or_else(|| ControllerError::InvalidConfig(
-                                format!("Tenant '{}' has not been created in NetBox yet (no netbox_id in status)", location_crd.spec.tenant.name)
-                            ))?
-                    }
-                    Err(_) => {
-                        return Err(ControllerError::InvalidConfig(
-                            format!("Tenant CRD '{}' not found for location {}", location_crd.spec.tenant.name, name)
-                        ));
-                    }
-                };
+                // Resolve optional parent location ID
+                let parent_id = resolve_optional_dependency_id(
+                    &*self.netbox_location_api,
+                    location_crd.spec.parent.as_ref(),
+                    "NetBoxLocation",
+                    "parent",
+                    name,
+                    |crd| crd.status.as_ref(),
+                ).await;
+                
+                // Validate and resolve tenant ID (required)
+                validate_reference_kind(&location_crd.spec.tenant, "NetBoxTenant", "tenant", name)?;
+                let tenant_id = resolve_required_dependency_id(
+                    &*self.netbox_tenant_api,
+                    &location_crd.spec.tenant.name,
+                    "Tenant",
+                    name,
+                    |crd| crd.status.as_ref(),
+                ).await?;
                 
                 // Try to find existing location by name and site
                 let existing_location = match netbox_client.query_locations(

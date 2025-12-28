@@ -46,9 +46,9 @@ where
 - [x] `dcim/device.rs:162` - Site ID resolution ✅
 - [x] `dcim/device.rs:184` - Tenant ID resolution ✅
 - [x] `dcim/vlan.rs:137` - Tenant ID resolution ✅
-- [ ] `dcim/device_type.rs:30` - Manufacturer ID resolution
-- [ ] `dcim/location.rs:118` - Site ID resolution
-- [ ] `dcim/location.rs:162` - Tenant ID resolution
+- [x] `dcim/device_type.rs:30` - Manufacturer ID resolution ✅
+- [x] `dcim/location.rs:118` - Site ID resolution ✅
+- [x] `dcim/location.rs:162` - Tenant ID resolution ✅
 - [ ] `ipam/prefix.rs:179` - Tenant ID resolution (first occurrence)
 - [ ] `ipam/prefix.rs:417` - Tenant ID resolution (second occurrence in update path)
 
@@ -105,7 +105,7 @@ where
 - [x] `dcim/vlan.rs:155` - Role ID resolution (optional) ✅
 - [ ] `dcim/platform.rs:30` - Manufacturer ID resolution (optional)
 - [ ] `dcim/site_group.rs:26` - Parent SiteGroup ID resolution (optional)
-- [ ] `dcim/location.rs:136` - Parent Location ID resolution (optional)
+- [x] `dcim/location.rs:136` - Parent Location ID resolution (optional) ✅
 - [ ] `dcim/region.rs:26` - Parent Region ID resolution (optional)
 - [ ] `tenancy.rs:168` - TenantGroup ID resolution (optional)
 - [ ] `ipam/prefix.rs:134` - Site ID resolution (optional, first occurrence)
@@ -192,9 +192,9 @@ fn validate_reference_kind(
 - [x] `dcim/device.rs:157` - Site kind validation (required) ✅
 - [x] `dcim/device.rs:179` - Tenant kind validation (required) ✅
 - [x] `dcim/vlan.rs:133` - Tenant kind validation (required) ✅
-- [ ] `dcim/device_type.rs:26` - Manufacturer kind validation (required)
-- [ ] `dcim/location.rs:114` - Site kind validation (required)
-- [ ] `dcim/location.rs:158` - Tenant kind validation (required)
+- [x] `dcim/device_type.rs:26` - Manufacturer kind validation (required) ✅
+- [x] `dcim/location.rs:114` - Site kind validation (required) ✅
+- [x] `dcim/location.rs:158` - Tenant kind validation (required) ✅
 - [ ] `ipam/prefix.rs:175` - Tenant kind validation (required, first occurrence)
 - [ ] `ipam/prefix.rs:413` - Tenant kind validation (required, second occurrence in update path)
 
@@ -209,7 +209,7 @@ fn validate_reference_kind(
 - [x] `dcim/vlan.rs:155` - Role kind validation (optional) ✅
 - [ ] `dcim/platform.rs:26` - Manufacturer kind validation (optional)
 - [ ] `dcim/site_group.rs:26` - Parent SiteGroup kind validation (optional)
-- [ ] `dcim/location.rs:136` - Parent Location kind validation (optional)
+- [x] `dcim/location.rs:136` - Parent Location kind validation (optional) ✅
 - [ ] `dcim/region.rs:26` - Parent Region kind validation (optional)
 - [ ] `tenancy.rs:168` - TenantGroup kind validation (optional)
 - [ ] `ipam/prefix.rs:130` - Site kind validation (optional)

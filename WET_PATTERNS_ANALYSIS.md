@@ -40,7 +40,7 @@ where
 ```
 
 **Locations to Refactor**:
-- [ ] `dcim/site.rs:170` - Tenant ID resolution
+- [x] `dcim/site.rs:170` - Tenant ID resolution ✅
 - [ ] `dcim/device.rs:120` - DeviceType ID resolution
 - [ ] `dcim/device.rs:141` - DeviceRole ID resolution
 - [ ] `dcim/device.rs:162` - Site ID resolution
@@ -97,8 +97,8 @@ where
 ```
 
 **Locations to Refactor**:
-- [ ] `dcim/site.rs:187` - Region ID resolution (optional)
-- [ ] `dcim/site.rs:209` - SiteGroup ID resolution (optional)
+- [x] `dcim/site.rs:187` - Region ID resolution (optional) ✅
+- [x] `dcim/site.rs:209` - SiteGroup ID resolution (optional) ✅
 - [ ] `dcim/device.rs:201` - Platform ID resolution (optional)
 - [ ] `dcim/device.rs:218` - Location ID resolution (optional)
 - [ ] `dcim/vlan.rs:118` - Site ID resolution (optional)
@@ -142,7 +142,7 @@ where
 **Locations to Refactor** (60+ occurrences across all reconcilers):
 - [ ] `dcim/mac_address.rs:11-14` - Name/namespace extraction
 - [ ] `dcim/interface.rs:11-14` - Name/namespace extraction
-- [ ] `dcim/site.rs:150-153` - Name/namespace extraction
+- [x] `dcim/site.rs:150-153` - Name/namespace extraction ✅
 - [ ] `dcim/device.rs:20-21` - Name/namespace extraction
 - [ ] `dcim/vlan.rs` - Name/namespace extraction
 - [ ] `dcim/device_type.rs` - Name/namespace extraction
@@ -186,7 +186,7 @@ fn validate_reference_kind(
 ```
 
 **Locations to Refactor** (Required - return error):
-- [ ] `dcim/site.rs:158` - Tenant kind validation (required)
+- [x] `dcim/site.rs:158` - Tenant kind validation (required) ✅
 - [ ] `dcim/device.rs:116` - DeviceType kind validation (required)
 - [ ] `dcim/device.rs:137` - DeviceRole kind validation (required)
 - [ ] `dcim/device.rs:157` - Site kind validation (required)
@@ -199,8 +199,8 @@ fn validate_reference_kind(
 - [ ] `ipam/prefix.rs:413` - Tenant kind validation (required, second occurrence in update path)
 
 **Locations to Refactor** (Optional - warn and return None):
-- [ ] `dcim/site.rs:188` - Region kind validation (optional)
-- [ ] `dcim/site.rs:210` - SiteGroup kind validation (optional)
+- [x] `dcim/site.rs:188` - Region kind validation (optional) ✅
+- [x] `dcim/site.rs:210` - SiteGroup kind validation (optional) ✅
 - [ ] `dcim/device.rs:201` - Platform kind validation (optional)
 - [ ] `dcim/device.rs:218` - Location kind validation (optional)
 - [ ] `dcim/device.rs:238` - IPClaim kind validation (optional, primary_ip4)

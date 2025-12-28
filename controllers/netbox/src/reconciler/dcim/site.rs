@@ -147,85 +147,49 @@ impl Reconciler {
             }
         }
         
-        let name = site_crd.metadata.name.as_ref()
-            .ok_or_else(|| ControllerError::InvalidConfig("NetBoxSite missing name".to_string()))?;
-        let namespace = site_crd.metadata.namespace.as_deref()
-            .unwrap_or("default");
+        // Extract name and namespace using helper
+        use crate::reconcile_helpers::{extract_name_and_namespace, validate_reference_kind, resolve_required_dependency_id};
+        let (name, namespace) = extract_name_and_namespace(site_crd, "NetBoxSite")?;
         
         info!("Reconciling NetBoxSite {}/{}", namespace, name);
         
-        // Validate tenant reference
-        if site_crd.spec.tenant.kind != "NetBoxTenant" {
-            return Err(ControllerError::InvalidConfig(
-                format!("Invalid kind '{}' for tenant reference in site {}, expected 'NetBoxTenant'", site_crd.spec.tenant.kind, name)
-            ));
-        }
+        // Validate tenant reference using helper
+        validate_reference_kind(&site_crd.spec.tenant, "NetBoxTenant", "tenant", name)?;
         
         // SINGLE POINT OF DEPENDENCY INJECTION: Get tenant-specific NetBoxClient
         let netbox_client = self.token_resolver
             .create_client_for_tenant(namespace, &site_crd.spec.tenant)
             .await?;
         
-        // Resolve tenant ID (required)
-        let tenant_id = match self.netbox_tenant_api.get(&site_crd.spec.tenant.name).await {
-            Ok(tenant_crd) => {
-                tenant_crd.status
-                    .as_ref()
-                    .and_then(|s| s.netbox_id)
-                    .ok_or_else(|| ControllerError::InvalidConfig(
-                        format!("Tenant '{}' has not been created in NetBox yet (no netbox_id in status)", site_crd.spec.tenant.name)
-                    ))?
-            }
-            Err(_) => {
-                return Err(ControllerError::InvalidConfig(
-                    format!("Tenant CRD '{}' not found for site {}", site_crd.spec.tenant.name, name)
-                ));
-            }
-        };
+        // Resolve tenant ID (required) using helper
+        let tenant_id = resolve_required_dependency_id(
+            &*self.netbox_tenant_api,
+            &site_crd.spec.tenant.name,
+            "Tenant",
+            name,
+            |crd| crd.status.as_ref(),
+        ).await?;
         
-        // Resolve region ID if region reference provided
-        let region_id = if let Some(region_ref) = &site_crd.spec.region {
-            if region_ref.kind != "NetBoxRegion" {
-                warn!("Invalid kind '{}' for region reference in site {}, expected 'NetBoxRegion'", region_ref.kind, name);
-                None
-            } else {
-                match self.netbox_region_api.get(&region_ref.name).await {
-                    Ok(region_crd) => {
-                        region_crd.status
-                            .as_ref()
-                            .and_then(|s| s.netbox_id)
-                    }
-                    Err(_) => {
-                        warn!("Region CRD '{}' not found for site {}, skipping region reference", region_ref.name, name);
-                        None
-                    }
-                }
-            }
-        } else {
-            None
-        };
+        // Resolve region ID if region reference provided (optional) using helper
+        use crate::reconcile_helpers::resolve_optional_dependency_id;
+        let region_id = resolve_optional_dependency_id(
+            &*self.netbox_region_api,
+            site_crd.spec.region.as_ref(),
+            "NetBoxRegion",
+            "region",
+            name,
+            |crd| crd.status.as_ref(),
+        ).await;
         
-        // Resolve site group ID if site group reference provided
-        let site_group_id = if let Some(site_group_ref) = &site_crd.spec.site_group {
-            if site_group_ref.kind != "NetBoxSiteGroup" {
-                warn!("Invalid kind '{}' for site group reference in site {}, expected 'NetBoxSiteGroup'", site_group_ref.kind, name);
-                None
-            } else {
-                match self.netbox_site_group_api.get(&site_group_ref.name).await {
-                    Ok(site_group_crd) => {
-                        site_group_crd.status
-                            .as_ref()
-                            .and_then(|s| s.netbox_id)
-                    }
-                    Err(_) => {
-                        warn!("SiteGroup CRD '{}' not found for site {}, skipping site group reference", site_group_ref.name, name);
-                        None
-                    }
-                }
-            }
-        } else {
-            None
-        };
+        // Resolve site group ID if site group reference provided (optional) using helper
+        let site_group_id = resolve_optional_dependency_id(
+            &*self.netbox_site_group_api,
+            site_crd.spec.site_group.as_ref(),
+            "NetBoxSiteGroup",
+            "site_group",
+            name,
+            |crd| crd.status.as_ref(),
+        ).await;
         
         // Convert status enum to string
         let status_str = match site_crd.spec.status {

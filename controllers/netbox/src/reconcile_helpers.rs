@@ -5,6 +5,7 @@
 
 use crate::error::ControllerError;
 use tracing::{debug, info, warn, error};
+use crds;
 
 /// Trait for NetBox resources that have an ID and URL
 pub trait NetBoxResource {
@@ -758,6 +759,212 @@ pub fn resolve_dependency_id(
         Some(id) => Some(id),
         None => {
             debug!("{} '{}' has not been created in NetBox yet (no netbox_id in status), waiting for {} to be created", resource_kind, resource_name, resource_kind);
+            None
+        }
+    }
+}
+
+/// Extract name and namespace from CRD metadata.
+/// 
+/// This helper centralizes the common pattern of extracting name and namespace
+/// from CRD metadata with proper error handling.
+/// 
+/// # Arguments
+/// - `crd`: The CRD resource
+/// - `resource_kind`: Human-readable resource kind for error messages (e.g., "NetBoxSite")
+/// 
+/// # Returns
+/// - `Ok((name, namespace))` if both are available (namespace defaults to "default" if None)
+/// - `Err(InvalidConfig)` if name is missing
+/// 
+/// # Example
+/// ```rust
+/// let (name, namespace) = extract_name_and_namespace(&site_crd, "NetBoxSite")?;
+/// ```
+pub fn extract_name_and_namespace<'a, CRD>(
+    crd: &'a CRD,
+    resource_kind: &str,
+) -> Result<(&'a str, &'a str), ControllerError>
+where
+    CRD: kube::Resource,
+{
+    let name = crd.meta().name.as_deref()
+        .ok_or_else(|| ControllerError::InvalidConfig(
+            format!("{} missing name", resource_kind)
+        ))?;
+    let namespace = crd.meta().namespace.as_deref()
+        .unwrap_or("default");
+    Ok((name, namespace))
+}
+
+/// Validate that a resource reference kind matches the expected kind.
+/// 
+/// This helper centralizes the pattern of validating resource reference kinds.
+/// 
+/// # Arguments
+/// - `reference`: The resource reference to validate
+/// - `expected_kind`: The expected kind (e.g., "NetBoxTenant")
+/// - `reference_name`: Name of the reference field (e.g., "tenant", "site") for error messages
+/// - `current_resource_name`: Name of the current resource (for error messages)
+/// 
+/// # Returns
+/// - `Ok(())` if the kind matches
+/// - `Err(InvalidConfig)` if the kind doesn't match
+/// 
+/// # Example
+/// ```rust
+/// validate_reference_kind(
+///     &site_crd.spec.tenant,
+///     "NetBoxTenant",
+///     "tenant",
+///     name,
+/// )?;
+/// ```
+pub fn validate_reference_kind(
+    reference: &crds::NetBoxResourceReference,
+    expected_kind: &str,
+    reference_name: &str,
+    current_resource_name: &str,
+) -> Result<(), ControllerError> {
+    if reference.kind != expected_kind {
+        return Err(ControllerError::InvalidConfig(
+            format!("Invalid kind '{}' for {} reference in {}, expected '{}'", 
+                reference.kind, reference_name, current_resource_name, expected_kind)
+        ));
+    }
+    Ok(())
+}
+
+/// Resolve a required dependency's netbox_id from CRD status.
+/// 
+/// This helper centralizes the pattern of resolving a required dependency's netbox_id.
+/// It gets the CRD, extracts the netbox_id from its status using a closure, and returns
+/// appropriate errors if the CRD is not found or doesn't have a netbox_id yet.
+/// 
+/// # Arguments
+/// - `api`: Kubernetes API for the dependency CRD type
+/// - `dependency_name`: Name of the dependency CRD to fetch
+/// - `dependency_kind`: Human-readable kind for error messages (e.g., "Tenant", "DeviceType")
+/// - `current_resource_name`: Name of the resource that depends on this dependency (for error messages)
+/// - `extract_status`: Closure that extracts the status from the CRD (e.g., `|crd| crd.status.as_ref()`)
+/// 
+/// # Returns
+/// - `Ok(u64)` if the dependency has a netbox_id (ready to use)
+/// - `Err(InvalidConfig)` if the CRD is not found or doesn't have a netbox_id
+/// 
+/// # Example
+/// ```rust
+/// let tenant_id = resolve_required_dependency_id(
+///     &self.netbox_tenant_api,
+///     &site_crd.spec.tenant.name,
+///     "Tenant",
+///     name,
+///     |crd| crd.status.as_ref(),
+/// ).await?;
+/// ```
+pub async fn resolve_required_dependency_id<API, CRD, F, S>(
+    api: &API,
+    dependency_name: &str,
+    dependency_kind: &str,
+    current_resource_name: &str,
+    extract_status: F,
+) -> Result<u64, ControllerError>
+where
+    API: crate::kube_api_trait::KubeApiTrait<CRD> + ?Sized,
+    CRD: kube::Resource + Clone + Send + Sync + 'static,
+    CRD: std::fmt::Debug + serde::de::DeserializeOwned,
+    <CRD as kube::Resource>::DynamicType: Send + Sync,
+    F: FnOnce(&CRD) -> Option<&S>,
+    S: NetBoxStatusCheck,
+{
+    match api.get(dependency_name).await {
+        Ok(dependency_crd) => {
+            match extract_status(&dependency_crd) {
+                Some(status) => {
+                    match status.netbox_id() {
+                        Some(id) => Ok(id),
+                        None => Err(ControllerError::InvalidConfig(
+                            format!("{} '{}' has not been created in NetBox yet (no netbox_id in status)", dependency_kind, dependency_name)
+                        ))
+                    }
+                }
+                None => Err(ControllerError::InvalidConfig(
+                    format!("{} '{}' has no status", dependency_kind, dependency_name)
+                ))
+            }
+        }
+        Err(_) => {
+            Err(ControllerError::InvalidConfig(
+                format!("{} CRD '{}' not found for {}", dependency_kind, dependency_name, current_resource_name)
+            ))
+        }
+    }
+}
+
+/// Resolve an optional dependency's netbox_id from CRD status.
+/// 
+/// This helper centralizes the pattern of resolving an optional dependency's netbox_id.
+/// It validates the kind, gets the CRD, extracts the netbox_id from its status, and returns
+/// None if the CRD is not found or doesn't have a netbox_id (with appropriate warnings).
+/// 
+/// # Arguments
+/// - `api`: Kubernetes API for the dependency CRD type
+/// - `reference`: Optional resource reference (None means dependency not specified)
+/// - `expected_kind`: The expected kind (e.g., "NetBoxRegion")
+/// - `dependency_name`: Name of the dependency field (e.g., "region", "site_group") for error messages
+/// - `current_resource_name`: Name of the current resource (for error messages)
+/// - `extract_status`: Closure that extracts the status from the CRD (e.g., `|crd| crd.status.as_ref()`)
+/// 
+/// # Returns
+/// - `Some(u64)` if the dependency has a netbox_id (ready to use)
+/// - `None` if the reference is None, kind doesn't match, CRD not found, or no netbox_id
+/// 
+/// # Example
+/// ```rust
+/// let region_id = resolve_optional_dependency_id(
+///     &self.netbox_region_api,
+///     site_crd.spec.region.as_ref(),
+///     "NetBoxRegion",
+///     "region",
+///     name,
+///     |crd| crd.status.as_ref(),
+/// ).await;
+/// ```
+pub async fn resolve_optional_dependency_id<API, CRD, F, S>(
+    api: &API,
+    reference: Option<&crds::NetBoxResourceReference>,
+    expected_kind: &str,
+    dependency_name: &str,
+    current_resource_name: &str,
+    extract_status: F,
+) -> Option<u64>
+where
+    API: crate::kube_api_trait::KubeApiTrait<CRD> + ?Sized,
+    CRD: kube::Resource + Clone + Send + Sync + 'static,
+    CRD: std::fmt::Debug + serde::de::DeserializeOwned,
+    <CRD as kube::Resource>::DynamicType: Send + Sync,
+    F: FnOnce(&CRD) -> Option<&S>,
+    S: NetBoxStatusCheck,
+{
+    let reference = match reference {
+        Some(ref_ref) => ref_ref,
+        None => return None,
+    };
+    
+    if reference.kind != expected_kind {
+        warn!("Invalid kind '{}' for {} reference in {}, expected '{}'", 
+            reference.kind, dependency_name, current_resource_name, expected_kind);
+        return None;
+    }
+    
+    match api.get(&reference.name).await {
+        Ok(dependency_crd) => {
+            extract_status(&dependency_crd)
+                .and_then(|status| status.netbox_id())
+        }
+        Err(_) => {
+            warn!("{} CRD '{}' not found for {}, skipping {} reference", 
+                expected_kind, reference.name, current_resource_name, dependency_name);
             None
         }
     }

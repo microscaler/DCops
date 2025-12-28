@@ -262,8 +262,13 @@ helpers::add_tenant_for_create(&mut body, core, tenant_id).await?;
 | `create_site` | `dcim/site.rs` | 112 | `add_nested_reference` | ❌ **FAILING** | **CRITICAL** |
 | `create_prefix` | `ipam/prefix.rs` | 154 | `add_nested_reference` | ⚠️ **POTENTIAL** | **HIGH** |
 | `create_device` | `dcim/device.rs` | 135 | `add_nested_reference` | ⚠️ **POTENTIAL** | **HIGH** |
-| `create_vlan` | `ipam/vlan.rs` | ~120 | `add_nested_reference` | ⚠️ **POTENTIAL** | **HIGH** |
-| `create_location` | `dcim/location.rs` | ~120 | `add_nested_reference` | ⚠️ **POTENTIAL** | **HIGH** |
+| `create_vlan` | `ipam/vlan.rs` | 111 | `add_nested_reference` | ⚠️ **POTENTIAL** | **HIGH** |
+| `create_location` | `dcim/location.rs` | 119 | `add_nested_reference` | ⚠️ **POTENTIAL** | **HIGH** |
+
+**Note**: All identified functions use `add_nested_reference` for tenant, which may cause the same error when tenant is required. The error may not be visible yet if:
+- These resources haven't been created yet
+- Tenant is optional for some resources
+- NetBox validation is less strict for some resource types
 
 **Recommendation**: 
 1. **IMMEDIATE**: Fix `create_site` to use `add_tenant_for_create`

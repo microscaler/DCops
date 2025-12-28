@@ -15,4 +15,10 @@ spec:
     name: netbox-token-datacenter-tenant
     # namespace: default  # Optional: defaults to same namespace as Tenant CR
     # key: token          # Optional: defaults to "token"
+  
+  # Reconcile interval in seconds (optional)
+  # How often to check for drift between the CRD spec and NetBox, even when no changes occur.
+  # Defaults to 300 seconds (5 minutes) if not specified.
+  # Set to 0 to disable periodic reconciliation (only reconcile on changes).
+  reconcileInterval: 300  # Check for drift every 5 minutes
 

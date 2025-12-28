@@ -57,11 +57,30 @@ pub async fn get_tenant(core: &NetBoxClientCore, id: u64) -> Result<Tenant, NetB
         .header("Authorization", format!("Token {}", core.token))
         .header("Accept", "application/json")
         .send()
-        .await?;
+        .await
+        .map_err(|e| {
+            // Convert reqwest errors to appropriate NetBoxError types
+            if e.is_timeout() {
+                NetBoxError::Api(format!("Request timeout: {}", e))
+            } else if e.is_connect() {
+                NetBoxError::Api(format!("Connection error: {}", e))
+            } else {
+                NetBoxError::Http(e)
+            }
+        })?;
     
     if !response.status().is_success() {
         let status = response.status();
         let body = response.text().await.unwrap_or_default();
+        
+        // Handle 404 specifically as NotFound
+        if status == 404 {
+            return Err(NetBoxError::NotFound(format!(
+                "Tenant {} not found: {}",
+                id, body
+            )));
+        }
+        
         return Err(NetBoxError::Api(format!(
             "Failed to get tenant {}: {} - {}",
             id, status, body
@@ -113,6 +132,55 @@ pub async fn create_tenant(
         return Err(NetBoxError::Api(format!(
             "Failed to create tenant: {} - {}",
             status, body
+        )));
+    }
+    
+    response.json().await.map_err(|e| NetBoxError::Http(e))
+}
+
+/// Update an existing tenant
+pub async fn update_tenant(
+    core: &NetBoxClientCore,
+    id: u64,
+    name: Option<&str>,
+    slug: Option<&str>,
+    description: Option<String>,
+    comments: Option<String>,
+    group: Option<u64>, // Tenant group ID
+) -> Result<Tenant, NetBoxError> {
+    let url = format!("{}/api/tenancy/tenants/{}/", core.base_url, id);
+    debug!("Updating tenant {} in NetBox", id);
+    
+    let mut body = serde_json::json!({});
+    
+    if let Some(name_val) = name {
+        body["name"] = serde_json::Value::String(name_val.to_string());
+    }
+    
+    if let Some(slug_val) = slug {
+        body["slug"] = serde_json::Value::String(slug_val.to_string());
+    }
+    
+    helpers::add_optional_string_field_owned(&mut body, "description", description);
+    helpers::add_optional_string_field_owned(&mut body, "comments", comments);
+    helpers::add_nested_reference(&mut body, "group", group.map(|id| id.into()));
+    
+    let response = core.client
+        .patch(&url)
+        .header("Authorization", format!("Token {}", core.token))
+        .header("Accept", "application/json")
+        .header("Content-Type", "application/json")
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| NetBoxError::Http(e))?;
+    
+    if !response.status().is_success() {
+        let status = response.status();
+        let body_text = response.text().await.unwrap_or_default();
+        return Err(NetBoxError::Api(format!(
+            "Failed to update tenant {}: {} - {}",
+            id, status, body_text
         )));
     }
     

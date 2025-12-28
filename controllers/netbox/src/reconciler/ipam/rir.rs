@@ -1,0 +1,199 @@
+//! NetBoxRIR reconciler
+//!
+//! Handles reconciliation of NetBox RIR (Regional Internet Registry) resources.
+
+use super::super::Reconciler;
+use crate::error::ControllerError;
+use crate::reconcile_helpers::{extract_name_and_namespace, validate_status_and_drift, DriftCheckResult, status_needs_update, update_resource_status, is_conflict_error};
+use tracing::{info, error, debug, warn};
+use crds::{NetBoxRIR, ResourceState};
+use netbox_client::NetBoxClientTrait;
+
+impl Reconciler {
+    /// Reconciles a NetBoxRIR resource.
+    pub async fn reconcile_netbox_rir(&self, rir_crd: &NetBoxRIR) -> Result<(), ControllerError> {
+        let (name, namespace) = extract_name_and_namespace(rir_crd, "NetBoxRIR")?;
+        
+        info!("Reconciling NetBoxRIR {}/{}", namespace, name);
+        
+        // Get client for shared resource (RIRs are shared resources)
+        let netbox_client = self.token_resolver
+            .create_client_for_shared_resource(namespace, "NetBoxRIR", name)
+            .await
+            .map_err(|e| ControllerError::TokenResolution(e))?;
+        
+        // Check if already created - use shared helper for drift detection and status validation
+        let drift_result = {
+            let netbox_client_ref = &netbox_client;
+            validate_status_and_drift(
+                rir_crd.status.as_ref(),
+                "NetBoxRIR",
+                namespace,
+                name,
+                |netbox_id: u64| async move {
+                    let id_str = netbox_id.to_string();
+                    netbox_client_ref.query_rirs(&[("id", &id_str)], false)
+                        .await
+                        .and_then(|mut rirs| {
+                            rirs.pop().ok_or_else(|| netbox_client::NetBoxError::NotFound(format!("RIR {} not found", netbox_id)))
+                        })
+                },
+            ).await?
+        };
+        
+        let netbox_rir = match drift_result {
+            DriftCheckResult::UseExisting(rir) => Some(rir),
+            DriftCheckResult::StatusCleared { message } => {
+                let status_patch = Self::create_typed_rir_status_patch(
+                    0, String::new(), ResourceState::Pending,
+                    Some(message),
+                );
+                let pp = kube::api::PatchParams::default();
+                if let Err(update_err) = self.netbox_rir_api
+                    .patch_status(name, &pp, &kube::api::Patch::Merge(status_patch.clone()))
+                    .await
+                {
+                    warn!("Failed to clear NetBoxRIR status: {}", update_err);
+                }
+                None
+            }
+            DriftCheckResult::Recreate => None,
+        };
+        
+        let netbox_rir = match netbox_rir {
+            Some(rir) => {
+                let needs_status_update = status_needs_update(
+                    rir_crd.status.as_ref(),
+                    rir.id,
+                    &rir.url,
+                    "Created",
+                    None,
+                );
+                
+                if needs_status_update {
+                    let status_patch = Self::create_typed_rir_status_patch(
+                        rir.id,
+                        rir.url.clone(),
+                        ResourceState::Created,
+                        None,
+                    );
+                    update_resource_status(
+                        &*self.netbox_rir_api,
+                        name,
+                        namespace,
+                        &status_patch,
+                        "NetBoxRIR",
+                        rir.id,
+                    ).await?;
+                    debug!("Updated NetBoxRIR {}/{} status: NetBox ID {}", namespace, name, rir.id);
+                    return Ok(());
+                } else {
+                    debug!("NetBoxRIR {}/{} already has correct status (ID: {}), skipping update", namespace, name, rir.id);
+                    return Ok(());
+                }
+            }
+            None => {
+                // Try to find existing RIR by name or slug
+                let existing_rir = match netbox_client.get_rir_by_name(&rir_crd.spec.name).await {
+                    Ok(Some(rir)) => Some(rir),
+                    Ok(None) => None,
+                    Err(e) => {
+                        warn!("Failed to query RIR by name: {}, will try to create", e);
+                        None
+                    }
+                };
+                
+                if let Some(r) = existing_rir.as_ref() {
+                    info!("RIR {} already exists in NetBox (ID: {}), acknowledging existence (idempotency)", rir_crd.spec.name, r.id);
+                }
+                
+                if let Some(existing) = existing_rir {
+                    existing
+                } else {
+                    debug!("Attempting to create RIR {} in NetBox", rir_crd.spec.name);
+                    match netbox_client.create_rir(
+                        &rir_crd.spec.name,
+                        rir_crd.spec.slug.as_deref(),
+                        rir_crd.spec.description.clone(),
+                        rir_crd.spec.is_private,
+                    ).await {
+                        Ok(created) => {
+                            info!("Created RIR {} in NetBox (ID: {})", created.name, created.id);
+                            created
+                        }
+                        Err(e) => {
+                            if is_conflict_error(&e) {
+                                warn!("RIR {} creation conflicted, attempting idempotent lookup", rir_crd.spec.name);
+
+                                // Strategy 1: by name
+                                let mut found_rir = match netbox_client.get_rir_by_name(&rir_crd.spec.name).await {
+                                    Ok(Some(rir)) => Some(rir),
+                                    _ => None,
+                                };
+
+                                // Strategy 2: by slug if provided
+                                if found_rir.is_none() {
+                                    if let Some(slug) = &rir_crd.spec.slug {
+                                        if let Ok(Some(rir)) = netbox_client.get_rir_by_name(slug).await {
+                                            info!("Found existing RIR by slug '{}' in NetBox (ID: {}) after conflict", slug, rir.id);
+                                            found_rir = Some(rir);
+                                        }
+                                    }
+                                }
+
+                                // Strategy 3: fallback query all and filter
+                                if found_rir.is_none() {
+                                    if let Ok(all_rirs) = netbox_client.query_rirs(&[], true).await {
+                                        if let Some(rir) = all_rirs.iter().find(|r| {
+                                            let slug_match = rir_crd
+                                                .spec
+                                                .slug
+                                                .as_ref()
+                                                .map(|spec_slug| r.slug == *spec_slug)
+                                                .unwrap_or(false);
+                                            r.name == rir_crd.spec.name || slug_match
+                                        }) {
+                                            info!("Found existing RIR in NetBox (ID: {}) via fallback query", rir.id);
+                                            found_rir = Some(rir.clone());
+                                        }
+                                    }
+                                }
+
+                                if let Some(found) = found_rir {
+                                    found
+                                } else {
+                                    let error_msg = format!("RIR {} already exists in NetBox but could not retrieve it: {}", rir_crd.spec.name, e);
+                                    error!("{}", error_msg);
+                                    return Err(ControllerError::NetBox(netbox_client::NetBoxError::Api(error_msg)));
+                                }
+                            } else {
+                                let error_msg = format!("Failed to create RIR in NetBox: {}", e);
+                                error!("{}", error_msg);
+                                return Err(ControllerError::NetBox(e));
+                            }
+                        }
+                    }
+                }
+            }
+        };
+        
+        // Update status using helper
+        let status_patch = Self::create_typed_rir_status_patch(
+            netbox_rir.id,
+            netbox_rir.url.clone(),
+            ResourceState::Created,
+            None,
+        );
+        update_resource_status(
+            &*self.netbox_rir_api,
+            name,
+            namespace,
+            &status_patch,
+            "NetBoxRIR",
+            netbox_rir.id,
+        ).await?;
+        info!("Updated NetBoxRIR {}/{} status: NetBox ID {}", namespace, name, netbox_rir.id);
+        Ok(())
+    }
+}
+

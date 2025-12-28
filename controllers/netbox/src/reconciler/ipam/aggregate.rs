@@ -14,6 +14,35 @@ impl Reconciler {
         
         info!("Reconciling NetBoxAggregate {}/{}", namespace, name);
         
+        // Local helper to patch status with an error message.
+        async fn update_status_error(
+            api: &(dyn crate::kube_api_trait::KubeApiTrait<NetBoxAggregate> + Send + Sync),
+            name: &str,
+            namespace: &str,
+            error_msg: String,
+            current_status: Option<&crds::NetBoxAggregateStatus>,
+        ) {
+            if let Some(status) = current_status {
+                if status.state == ResourceState::Failed && status.error.as_ref() == Some(&error_msg) {
+                    debug!("NetBoxAggregate {}/{} already has this error in status, skipping update", namespace, name);
+                    return;
+                }
+            }
+            
+            let status_patch = Reconciler::create_resource_status_patch(
+                0, // No netbox_id on error
+                String::new(), // No URL on error
+                ResourceState::Failed,
+                Some(error_msg.clone()),
+            );
+            let pp = kube::api::PatchParams::default();
+            if let Err(e) = api.patch_status(name, &pp, &kube::api::Patch::Merge(status_patch.clone())).await {
+                error!("Failed to update NetBoxAggregate {}/{} error status: {}", namespace, name, e);
+            } else {
+                info!("Updated NetBoxAggregate {}/{} status with error", namespace, name);
+            }
+        }
+        
         // Get client for shared resource (falls back to main tenant)
         let netbox_client = self.token_resolver
             .create_client_for_shared_resource(namespace, "NetBoxAggregate", name)
@@ -28,12 +57,16 @@ impl Reconciler {
                     Some(rir.id)
                 }
                 Ok(None) => {
-                    warn!("RIR '{}' not found in NetBox for aggregate {}, creating aggregate without RIR", rir_name, name);
-                    None
+                    let error_msg = format!("RIR '{}' not found in NetBox for aggregate {}", rir_name, name);
+                    warn!("{} — will not create until RIR exists or spec.rir is removed", error_msg);
+                    update_status_error(&*self.netbox_aggregate_api, name, namespace, error_msg.clone(), aggregate_crd.status.as_ref()).await;
+                    return Err(ControllerError::InvalidConfig(error_msg));
                 }
                 Err(e) => {
-                    warn!("Failed to get RIR '{}' for aggregate {}: {}, creating aggregate without RIR", rir_name, name, e);
-                    None
+                    let error_msg = format!("Failed to get RIR '{}' for aggregate {}: {}", rir_name, name, e);
+                    warn!("{} — will not create until resolved", error_msg);
+                    update_status_error(&*self.netbox_aggregate_api, name, namespace, error_msg.clone(), aggregate_crd.status.as_ref()).await;
+                    return Err(ControllerError::NetBox(e));
                 }
             }
         } else {
@@ -50,7 +83,7 @@ impl Reconciler {
                 "NetBoxAggregate",
                 namespace,
                 name,
-                |netbox_id| async move {
+                |netbox_id: u64| async move {
                     netbox_client_ref.query_aggregates(&[("id", &netbox_id.to_string())], false)
                         .await
                         .map(|mut aggregates| aggregates.pop().ok_or_else(|| netbox_client::NetBoxError::NotFound(format!("Aggregate {} not found", netbox_id))))
@@ -130,7 +163,7 @@ impl Reconciler {
                 if let Some(existing) = existing_aggregate {
                     existing
                 } else {
-                    info!("Creating NetBoxAggregate {} in NetBox", aggregate_crd.spec.prefix);
+                    debug!("Attempting to create NetBoxAggregate {} in NetBox", aggregate_crd.spec.prefix);
                     match netbox_client.create_aggregate(
                         &aggregate_crd.spec.prefix,
                         rir_id.map(RirId),

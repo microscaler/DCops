@@ -47,6 +47,7 @@ use crds::ipam::{
     NetBoxAggregate,
     NetBoxRole,
     NetBoxVLAN,
+    NetBoxRIR,
 };
 
 // Tenancy resources
@@ -77,6 +78,7 @@ fn main() {
     crds.push(NetBoxTag::crd());
     crds.push(NetBoxAggregate::crd());
     crds.push(NetBoxVLAN::crd());
+    crds.push(NetBoxRIR::crd());
     
     // Boot resources
     crds.push(BootProfile::crd());

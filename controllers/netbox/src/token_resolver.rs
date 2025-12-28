@@ -3,7 +3,7 @@
 //! Single point of dependency injection for NetBox API tokens.
 //! Resolves tenant-specific tokens from Kubernetes Secrets referenced by Tenant CRDs.
 
-use crds::{NetBoxResourceReference, NetBoxTenant, NetBoxDevice, NetBoxSite};
+use crds::{NetBoxResourceReference, NetBoxTenant, NetBoxDevice, NetBoxSite, NetBoxAggregate, NetBoxPrefix};
 use kube::{Api, Client};
 use netbox_client::{NetBoxClient, NetBoxError};
 use tracing::{debug, error, warn, info};
@@ -55,6 +55,14 @@ impl TokenResolver {
             kube_client,
             netbox_url,
         }
+    }
+    
+    /// Get a reference to the kube client
+    /// 
+    /// This is needed for special cases like NetBoxTenant reconciler
+    /// which needs to read the secret directly to avoid circular dependencies.
+    pub fn kube_client(&self) -> &Client {
+        &self.kube_client
     }
     
     /// Resolve token for a tenant reference
@@ -213,6 +221,22 @@ impl TokenResolver {
                 // Find a Site that uses this resource
                 self.find_tenant_from_referencing_sites(namespace, resource_kind, resource_name).await
             }
+            "NetBoxRIR" => {
+                // Find an Aggregate that uses this RIR
+                self.find_tenant_from_referencing_aggregates(namespace, resource_name).await
+            }
+            "NetBoxRole" => {
+                // Find a Prefix that uses this role
+                self.find_tenant_from_referencing_prefixes(namespace, resource_name).await
+            }
+            "NetBoxTag" => {
+                // Find a Prefix or other resource that uses this tag
+                self.find_tenant_from_referencing_tagged_resources(namespace, resource_name).await
+            }
+            "NetBoxAggregate" => {
+                // Find a Prefix that uses this aggregate
+                self.find_tenant_from_referencing_prefixes_by_aggregate(namespace, resource_name).await
+            }
             _ => {
                 // Unknown shared resource kind - fall back to main tenant
                 warn!("Unknown shared resource kind: {}. Falling back to main tenant (datacenter-tenant).", resource_kind);
@@ -351,6 +375,169 @@ impl TokenResolver {
         // Return error to trigger fallback to main tenant
         Err(TokenResolutionError::NoReferencingResourceFound(
             resource_name.to_string(),
+            namespace.to_string(),
+        ))
+    }
+    
+    /// Find tenant from Aggregates that reference this RIR
+    async fn find_tenant_from_referencing_aggregates(
+        &self,
+        namespace: &str,
+        rir_name: &str,
+    ) -> Result<NetBoxResourceReference, TokenResolutionError> {
+        let aggregate_api: Api<NetBoxAggregate> = Api::namespaced(self.kube_client.clone(), namespace);
+        
+        // List all aggregates in the namespace
+        let aggregates = aggregate_api.list(&Default::default()).await
+            .map_err(|e| {
+                error!("Failed to list aggregates in namespace {}: {}", namespace, e);
+                TokenResolutionError::TenantFetchError(format!("Failed to list aggregates: {}", e))
+            })?;
+        
+        // Find an aggregate that references this RIR by name
+        for aggregate in aggregates.items {
+            let aggregate_spec = &aggregate.spec;
+            
+            // Check if aggregate references this RIR
+            if aggregate_spec.rir.as_ref()
+                .map(|r| r == rir_name)
+                .unwrap_or(false)
+            {
+                info!(
+                    "Found Aggregate {}/{} that references RIR {}, using aggregate's tenant (fallback to main tenant)",
+                    namespace, aggregate.metadata.name.as_deref().unwrap_or("<unnamed>"),
+                    rir_name
+                );
+                // Aggregates are shared resources too, so fall back to main tenant
+                // In the future, if aggregates get tenant fields, we'd use that here
+                return Ok(self.get_main_tenant_reference());
+            }
+        }
+        
+        // Return error to trigger fallback to main tenant
+        Err(TokenResolutionError::NoReferencingResourceFound(
+            rir_name.to_string(),
+            namespace.to_string(),
+        ))
+    }
+    
+    /// Find tenant from Prefixes that reference this Role
+    async fn find_tenant_from_referencing_prefixes(
+        &self,
+        namespace: &str,
+        role_name: &str,
+    ) -> Result<NetBoxResourceReference, TokenResolutionError> {
+        let prefix_api: Api<NetBoxPrefix> = Api::namespaced(self.kube_client.clone(), namespace);
+        
+        // List all prefixes in the namespace
+        let prefixes = prefix_api.list(&Default::default()).await
+            .map_err(|e| {
+                error!("Failed to list prefixes in namespace {}: {}", namespace, e);
+                TokenResolutionError::TenantFetchError(format!("Failed to list prefixes: {}", e))
+            })?;
+        
+        // Find a prefix that references this role
+        for prefix in prefixes.items {
+            let prefix_spec = &prefix.spec;
+            
+            // Check if prefix references this role
+            if prefix_spec.role.as_ref()
+                .map(|r| r.name == role_name)
+                .unwrap_or(false)
+            {
+                info!(
+                    "Found Prefix {}/{} that references NetBoxRole {}, using prefix's tenant",
+                    namespace, prefix.metadata.name.as_deref().unwrap_or("<unnamed>"),
+                    role_name
+                );
+                return Ok(prefix_spec.tenant.clone());
+            }
+        }
+        
+        // Return error to trigger fallback to main tenant
+        Err(TokenResolutionError::NoReferencingResourceFound(
+            role_name.to_string(),
+            namespace.to_string(),
+        ))
+    }
+    
+    /// Find tenant from Prefixes that reference this Aggregate
+    async fn find_tenant_from_referencing_prefixes_by_aggregate(
+        &self,
+        namespace: &str,
+        aggregate_name: &str,
+    ) -> Result<NetBoxResourceReference, TokenResolutionError> {
+        let prefix_api: Api<NetBoxPrefix> = Api::namespaced(self.kube_client.clone(), namespace);
+        
+        // List all prefixes in the namespace
+        let prefixes = prefix_api.list(&Default::default()).await
+            .map_err(|e| {
+                error!("Failed to list prefixes in namespace {}: {}", namespace, e);
+                TokenResolutionError::TenantFetchError(format!("Failed to list prefixes: {}", e))
+            })?;
+        
+        // Find a prefix that references this aggregate
+        for prefix in prefixes.items {
+            let prefix_spec = &prefix.spec;
+            
+            // Check if prefix references this aggregate
+            if prefix_spec.aggregate.as_ref()
+                .map(|a| a.name == aggregate_name)
+                .unwrap_or(false)
+            {
+                info!(
+                    "Found Prefix {}/{} that references NetBoxAggregate {}, using prefix's tenant",
+                    namespace, prefix.metadata.name.as_deref().unwrap_or("<unnamed>"),
+                    aggregate_name
+                );
+                return Ok(prefix_spec.tenant.clone());
+            }
+        }
+        
+        // Return error to trigger fallback to main tenant
+        Err(TokenResolutionError::NoReferencingResourceFound(
+            aggregate_name.to_string(),
+            namespace.to_string(),
+        ))
+    }
+    
+    /// Find tenant from resources that use this Tag
+    async fn find_tenant_from_referencing_tagged_resources(
+        &self,
+        namespace: &str,
+        tag_name: &str,
+    ) -> Result<NetBoxResourceReference, TokenResolutionError> {
+        // Try to find a Prefix that uses this tag (most common case)
+        let prefix_api: Api<NetBoxPrefix> = Api::namespaced(self.kube_client.clone(), namespace);
+        
+        // List all prefixes in the namespace
+        let prefixes = prefix_api.list(&Default::default()).await
+            .map_err(|e| {
+                error!("Failed to list prefixes in namespace {}: {}", namespace, e);
+                TokenResolutionError::TenantFetchError(format!("Failed to list prefixes: {}", e))
+            })?;
+        
+        // Find a prefix that references this tag
+        for prefix in prefixes.items {
+            let prefix_spec = &prefix.spec;
+            
+            // Check if prefix references this tag
+            if prefix_spec.tags.as_ref()
+                .map(|tags| tags.iter().any(|t| t.name == tag_name))
+                .unwrap_or(false)
+            {
+                info!(
+                    "Found Prefix {}/{} that references NetBoxTag {}, using prefix's tenant",
+                    namespace, prefix.metadata.name.as_deref().unwrap_or("<unnamed>"),
+                    tag_name
+                );
+                return Ok(prefix_spec.tenant.clone());
+            }
+        }
+        
+        // Return error to trigger fallback to main tenant
+        Err(TokenResolutionError::NoReferencingResourceFound(
+            tag_name.to_string(),
             namespace.to_string(),
         ))
     }

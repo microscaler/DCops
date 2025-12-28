@@ -21,7 +21,7 @@ impl Reconciler {
             .map_err(|e| ControllerError::TokenResolution(e))?;
         
         // Resolve optional parent region ID using helper
-        let parent_id = resolve_optional_dependency_id(
+        let parent_id: Option<u64> = resolve_optional_dependency_id(
             &*self.netbox_region_api,
             region_crd.spec.parent.as_ref(),
             "NetBoxRegion",
@@ -40,7 +40,7 @@ impl Reconciler {
                 "NetBoxRegion",
                 namespace,
                 name,
-                |netbox_id| async move {
+                |netbox_id: u64| async move {
                     netbox_client_ref.get_region(RegionId(netbox_id)).await
                 },
             ).await?
@@ -129,7 +129,7 @@ impl Reconciler {
                     existing
                 } else {
                     // Create region
-                    info!("Creating region {} in NetBox", region_crd.spec.name);
+                    debug!("Attempting to create region {} in NetBox", region_crd.spec.name);
                     match netbox_client.create_region(
                         &region_crd.spec.name,
                         region_crd.spec.slug.as_deref(),
@@ -142,9 +142,59 @@ impl Reconciler {
                             created
                         }
                         Err(e) => {
-                            let error_msg = format!("Failed to create region in NetBox: {}", e);
-                            error!("{}", error_msg);
-                            return Err(ControllerError::NetBox(e));
+                            use crate::reconcile_helpers::is_conflict_error;
+
+                            if is_conflict_error(&e) {
+                                warn!("Region {} creation conflicted, attempting idempotent lookup", region_crd.spec.name);
+
+                                // Strategy 1: by name
+                                let mut found_region = match netbox_client.get_region_by_name(&region_crd.spec.name).await {
+                                    Ok(Some(r)) => Some(r),
+                                    _ => None,
+                                };
+
+                                // Strategy 2: by slug if provided
+                                if found_region.is_none() {
+                                    if let Some(slug) = &region_crd.spec.slug {
+                                        if let Ok(regions) = netbox_client.query_regions(&[("slug", slug)], false).await {
+                                            if let Some(r) = regions.first() {
+                                                info!("Found existing region by slug '{}' in NetBox (ID: {}) after conflict", slug, r.id);
+                                                found_region = Some(r.clone());
+                                            }
+                                        }
+                                    }
+                                }
+
+                                // Strategy 3: fallback query all and filter
+                                if found_region.is_none() {
+                                    if let Ok(all_regions) = netbox_client.query_regions(&[], true).await {
+                                        if let Some(r) = all_regions.iter().find(|r| {
+                                            let slug_match = region_crd
+                                                .spec
+                                                .slug
+                                                .as_ref()
+                                                .map(|spec_slug| r.slug == *spec_slug)
+                                                .unwrap_or(false);
+                                            r.name == region_crd.spec.name || slug_match
+                                        }) {
+                                            info!("Found existing region in NetBox (ID: {}) via fallback query", r.id);
+                                            found_region = Some(r.clone());
+                                        }
+                                    }
+                                }
+
+                                if let Some(found) = found_region {
+                                    found
+                                } else {
+                                    let error_msg = format!("Region {} already exists in NetBox but could not retrieve it: {}", region_crd.spec.name, e);
+                                    error!("{}", error_msg);
+                                    return Err(ControllerError::NetBox(netbox_client::NetBoxError::Api(error_msg)));
+                                }
+                            } else {
+                                let error_msg = format!("Failed to create region in NetBox: {}", e);
+                                error!("{}", error_msg);
+                                return Err(ControllerError::NetBox(e));
+                            }
                         }
                     }
                 }

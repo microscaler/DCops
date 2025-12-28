@@ -49,11 +49,60 @@ impl Reconciler {
         info!("Reconciling NetBoxTenant {}/{}", namespace, name);
         
         // SPECIAL CASE: Tenant reconciler needs to use the token from the tenant's own secret
-        // We can't use TokenResolver here because it would create a circular dependency
-        // Instead, we resolve the token directly from the tenant's token_secret
-        let token = self.token_resolver
-            .resolve_token(namespace, &crds::NetBoxResourceReference::netbox("NetBoxTenant", name.to_string()))
-            .await?;
+        // We can't use TokenResolver.resolve_token() here because it would create a circular dependency
+        // (it would try to fetch the NetBoxTenant CRD, which requires the token we're trying to resolve)
+        // Instead, we resolve the token directly from the tenant's token_secret in the spec
+        let secret_ref = &tenant_crd.spec.token_secret;
+        let secret_namespace = secret_ref.namespace.as_deref().unwrap_or(namespace);
+        
+        // Fetch Secret directly
+        use kube::Api;
+        // We need access to kube_client - get it from TokenResolver
+        let kube_client = self.token_resolver.kube_client().clone();
+        let secret_api: Api<k8s_openapi::api::core::v1::Secret> =
+            Api::namespaced(kube_client, secret_namespace);
+        let secret = secret_api
+            .get(&secret_ref.name)
+            .await
+            .map_err(|e| {
+                error!("Failed to fetch Secret {} in namespace {}: {}", secret_ref.name, secret_namespace, e);
+                ControllerError::TokenResolution(crate::token_resolver::TokenResolutionError::SecretFetchError(
+                    format!("{}: {}", secret_ref.name, e)
+                ))
+            })?;
+        
+        // Extract token from Secret
+        let token_key = secret_ref.key();
+        let token_data = secret
+            .data
+            .as_ref()
+            .and_then(|data| data.get(token_key))
+            .ok_or_else(|| {
+                error!("Token key '{}' not found in Secret {}", token_key, secret_ref.name);
+                ControllerError::TokenResolution(crate::token_resolver::TokenResolutionError::TokenKeyNotFound(
+                    token_key.to_string()
+                ))
+            })?;
+        
+        // Decode token (base64 encoded in Kubernetes Secrets)
+        let token = String::from_utf8(token_data.0.clone())
+            .map_err(|e| {
+                error!("Failed to decode token from Secret {}: {}", secret_ref.name, e);
+                ControllerError::TokenResolution(crate::token_resolver::TokenResolutionError::TokenDecodeError(
+                    format!("{}: {}", secret_ref.name, e)
+                ))
+            })?;
+        
+        // Trim whitespace (common issue with secrets)
+        let token = token.trim().to_string();
+        
+        if token.is_empty() {
+            return Err(ControllerError::TokenResolution(
+                crate::token_resolver::TokenResolutionError::TokenDecodeError(
+                    format!("Token in Secret {} is empty", secret_ref.name)
+                )
+            ));
+        }
         
         // Create client with the resolved token
         let netbox_client = netbox_client::NetBoxClient::new(
@@ -71,7 +120,7 @@ impl Reconciler {
                 "NetBoxTenant",
                 namespace,
                 name,
-                |netbox_id| async move {
+                |netbox_id: u64| async move {
                     netbox_client_ref.get_tenant(TenantId(netbox_id)).await
                 },
             ).await?
@@ -109,41 +158,114 @@ impl Reconciler {
         // Handle existing tenant (from helper) or create new
         let netbox_tenant = match netbox_tenant {
             Some(tenant) => {
-                // Resource exists and is up-to-date - only update status if it changed
-                use crate::reconcile_helpers::status_needs_update;
-                let needs_status_update = status_needs_update(
-                    tenant_crd.status.as_ref(),
-                    tenant.id,
-                    &tenant.url,
-                    "Created",
-                    None,
-                );
+                // Resource exists - check for drift between spec and NetBox
+                let needs_update = {
+                    // Compare name
+                    let name_changed = tenant_crd.spec.name != tenant.name;
+                    if name_changed {
+                        debug!("Tenant name changed: '{}' -> '{}'", tenant.name, tenant_crd.spec.name);
+                    }
+                    
+                    // Compare slug
+                    let slug_changed = if let Some(slug) = &tenant_crd.spec.slug {
+                        slug != &tenant.slug
+                    } else {
+                        // No slug in spec, but NetBox has one - check if it matches auto-generated
+                        let auto_slug = tenant_crd.spec.name.to_lowercase().replace(' ', "-");
+                        auto_slug != tenant.slug
+                    };
+                    if slug_changed {
+                        debug!("Tenant slug changed: '{}' -> '{}'", tenant.slug, tenant_crd.spec.slug.as_deref().unwrap_or(&tenant_crd.spec.name.to_lowercase().replace(' ', "-")));
+                    }
+                    
+                    // Compare description
+                    let description_changed = tenant_crd.spec.description.as_deref() != tenant.description.as_deref();
+                    if description_changed {
+                        debug!("Tenant description changed");
+                    }
+                    
+                    // Compare comments
+                    let comments_changed = tenant_crd.spec.comments.as_deref() != tenant.comments.as_deref();
+                    if comments_changed {
+                        debug!("Tenant comments changed");
+                    }
+                    
+                    name_changed || slug_changed || description_changed || comments_changed
+                };
                 
-                if needs_status_update {
-                    let status_patch = Self::create_resource_status_patch(
-                        tenant.id,
-                        tenant.url.clone(),
-                        ResourceState::Created,
-                        None,
-                    );
-                    let pp = kube::api::PatchParams::default();
-                    match self.netbox_tenant_api
-                        .patch_status(name, &pp, &kube::api::Patch::Merge(status_patch.clone()))
-                        .await
-                    {
-                        Ok(_) => {
-                            debug!("Updated NetBoxTenant {}/{} status: NetBox ID {}", namespace, name, tenant.id);
-                            return Ok(());
+                if needs_update {
+                    info!("Tenant {}/{} has drift, updating in NetBox", namespace, name);
+                    // Update tenant in NetBox
+                    let slug = tenant_crd.spec.slug.as_deref().map(|s| s.to_string())
+                        .unwrap_or_else(|| tenant_crd.spec.name.to_lowercase().replace(' ', "-"));
+                    
+                    // Resolve tenant group ID if group reference provided
+                    let group_id = if let Some(group_ref) = &tenant_crd.spec.group {
+                        match netbox_client.get_tenant_group_by_name(&group_ref.name).await {
+                            Ok(Some(group)) => Some(group.id),
+                            _ => None,
+                        }
+                    } else {
+                        None
+                    };
+                    
+                    match netbox_client.update_tenant(
+                        TenantId(tenant.id),
+                        Some(&tenant_crd.spec.name),
+                        Some(&slug),
+                        tenant_crd.spec.description.clone(),
+                        tenant_crd.spec.comments.clone(),
+                        group_id.map(TenantGroupId),
+                    ).await {
+                        Ok(updated) => {
+                            info!("Updated tenant {} in NetBox (ID: {})", updated.name, updated.id);
+                            updated
                         }
                         Err(e) => {
-                            let error_msg = format!("Failed to update NetBoxTenant status: {}", e);
+                            let error_msg = format!("Failed to update tenant in NetBox: {}", e);
                             error!("{}", error_msg);
-                            return Err(ControllerError::Kube(e.into()));
+                            update_status_error(&*self.netbox_tenant_api, name, namespace, error_msg.clone(), tenant_crd.status.as_ref()).await;
+                            return Err(ControllerError::NetBox(e));
                         }
                     }
                 } else {
-                    debug!("NetBoxTenant {}/{} already has correct status (ID: {}), skipping update", namespace, name, tenant.id);
-                    return Ok(());
+                    debug!("Tenant {}/{} is up-to-date (ID: {}), no changes needed", namespace, name, tenant.id);
+                    // Update status if needed
+                    use crate::reconcile_helpers::status_needs_update;
+                    let needs_status_update = status_needs_update(
+                        tenant_crd.status.as_ref(),
+                        tenant.id,
+                        &tenant.url,
+                        "Created",
+                        None,
+                    );
+                    
+                    if needs_status_update {
+                        let status_patch = Self::create_resource_status_patch(
+                            tenant.id,
+                            tenant.url.clone(),
+                            ResourceState::Created,
+                            None,
+                        );
+                        let pp = kube::api::PatchParams::default();
+                        match self.netbox_tenant_api
+                            .patch_status(name, &pp, &kube::api::Patch::Merge(status_patch.clone()))
+                            .await
+                        {
+                            Ok(_) => {
+                                debug!("Updated NetBoxTenant {}/{} status: NetBox ID {}", namespace, name, tenant.id);
+                                return Ok(());
+                            }
+                            Err(e) => {
+                                let error_msg = format!("Failed to update NetBoxTenant status: {}", e);
+                                error!("{}", error_msg);
+                                return Err(ControllerError::Kube(e.into()));
+                            }
+                        }
+                    } else {
+                        debug!("NetBoxTenant {}/{} already has correct status (ID: {}), skipping update", namespace, name, tenant.id);
+                        return Ok(());
+                    }
                 }
             }
             None => {
@@ -198,7 +320,7 @@ impl Reconciler {
                         }
                         _ => {
                             // Create a default tenant group
-                            info!("No tenant groups found, creating default tenant group 'Default'");
+                            debug!("No tenant groups found, attempting to create default tenant group 'Default'");
                             match netbox_client.create_tenant_group(
                                 "Default",
                                 Some("default"), // Slug is required
@@ -224,7 +346,7 @@ impl Reconciler {
                     existing
                 } else {
                     // Create tenant
-                    info!("Creating tenant {} in NetBox", tenant_crd.spec.name);
+                    debug!("Attempting to create tenant {} in NetBox", tenant_crd.spec.name);
                     let slug = tenant_crd.spec.slug.as_deref().map(|s| s.to_string())
                         .unwrap_or_else(|| tenant_crd.spec.name.to_lowercase().replace(' ', "-"));
                     match netbox_client.create_tenant(
@@ -239,10 +361,81 @@ impl Reconciler {
                             created
                         }
                         Err(e) => {
-                            let error_msg = format!("Failed to create tenant in NetBox: {}", e);
-                            error!("{}", error_msg);
-                            update_status_error(&*self.netbox_tenant_api, name, namespace, error_msg.clone(), tenant_crd.status.as_ref()).await;
-                            return Err(ControllerError::NetBox(e));
+                            // Handle CREATE conflicts using shared helper (GitOps idempotency)
+                            use crate::reconcile_helpers::is_conflict_error;
+                            
+                            if is_conflict_error(&e) {
+                                warn!("Tenant {} creation failed with conflict, attempting to retrieve existing tenant (idempotency)", tenant_crd.spec.name);
+                                
+                                // Try multiple query strategies
+                                let mut found_tenant = None;
+                                let slug_fallback = tenant_crd
+                                    .spec
+                                    .slug
+                                    .clone()
+                                    .unwrap_or_else(|| tenant_crd.spec.name.to_lowercase().replace(' ', "-"));
+                                
+                                // Strategy 1: Query by name
+                                match netbox_client.query_tenants(
+                                    &[("name", &tenant_crd.spec.name)],
+                                    false,
+                                ).await {
+                                    Ok(tenants) => {
+                                        if let Some(tenant) = tenants.first() {
+                                            info!("Found existing tenant by name '{}' in NetBox (ID: {}) after conflict", tenant_crd.spec.name, tenant.id);
+                                            found_tenant = Some(tenant.clone());
+                                        }
+                                    }
+                                    Err(_) => {}
+                                }
+                                
+                                // Strategy 2: Query by slug if not found
+                                if found_tenant.is_none() {
+                                    match netbox_client.query_tenants(
+                                        &[("slug", slug_fallback.as_str())],
+                                        false,
+                                    ).await {
+                                        Ok(tenants) => {
+                                            if let Some(tenant) = tenants.first() {
+                                                info!("Found existing tenant by slug '{}' in NetBox (ID: {}) after conflict", slug_fallback, tenant.id);
+                                                found_tenant = Some(tenant.clone());
+                                            }
+                                        }
+                                        Err(_) => {}
+                                    }
+                                }
+                                
+                                // Strategy 3: Fallback - query all tenants and filter
+                                if found_tenant.is_none() {
+                                    match netbox_client.query_tenants(&[], true).await {
+                                        Ok(all_tenants) => {
+                                            if let Some(tenant) = all_tenants.iter().find(|t| {
+                                                t.name == tenant_crd.spec.name || t.slug == slug_fallback
+                                            }) {
+                                                info!("Found existing tenant in NetBox (ID: {}) via fallback query", tenant.id);
+                                                found_tenant = Some(tenant.clone());
+                                            }
+                                        }
+                                        Err(_) => {}
+                                    }
+                                }
+                                
+                                if let Some(found) = found_tenant {
+                                    info!("Found existing tenant {} in NetBox (ID: {}) via conflict resolution (idempotency)", found.name, found.id);
+                                    found
+                                } else {
+                                    let error_msg = format!("Tenant {} already exists in NetBox but could not retrieve it: {}", tenant_crd.spec.name, e);
+                                    error!("{}", error_msg);
+                                    update_status_error(&*self.netbox_tenant_api, name, namespace, error_msg.clone(), tenant_crd.status.as_ref()).await;
+                                    return Err(ControllerError::NetBox(netbox_client::NetBoxError::Api(error_msg)));
+                                }
+                            } else {
+                                // Not a conflict, return original error
+                                let error_msg = format!("Failed to create tenant in NetBox: {}", e);
+                                error!("{}", error_msg);
+                                update_status_error(&*self.netbox_tenant_api, name, namespace, error_msg.clone(), tenant_crd.status.as_ref()).await;
+                                return Err(ControllerError::NetBox(e));
+                            }
                         }
                     }
                 };

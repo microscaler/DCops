@@ -59,11 +59,30 @@ pub async fn get_site(core: &NetBoxClientCore, id: SiteId) -> Result<Site, NetBo
         .header("Authorization", format!("Token {}", core.token))
         .header("Accept", "application/json")
         .send()
-        .await?;
+        .await
+        .map_err(|e| {
+            // Convert reqwest errors to appropriate NetBoxError types
+            if e.is_timeout() {
+                NetBoxError::Api(format!("Request timeout: {}", e))
+            } else if e.is_connect() {
+                NetBoxError::Api(format!("Connection error: {}", e))
+            } else {
+                NetBoxError::Http(e)
+            }
+        })?;
     
     if !response.status().is_success() {
         let status = response.status();
         let body = response.text().await.unwrap_or_default();
+        
+        // Handle 404 specifically as NotFound
+        if status == 404 {
+            return Err(NetBoxError::NotFound(format!(
+                "Site {} not found: {}",
+                id_value, body
+            )));
+        }
+        
         return Err(NetBoxError::Api(format!(
             "Failed to get site {}: {} - {}",
             id_value, status, body
@@ -106,8 +125,9 @@ pub async fn create_site(
     helpers::add_optional_number_field(&mut body, "latitude", latitude.map(|l| serde_json::Number::from_f64(l).unwrap()));
     helpers::add_optional_number_field(&mut body, "longitude", longitude.map(|l| serde_json::Number::from_f64(l).unwrap()));
     
-    // For CREATE operations, NetBox requires just the tenant ID reference
-    helpers::add_nested_reference(&mut body, "tenant", tenant_id.map(|id| id.into()));
+    // For CREATE operations, NetBox requires the full tenant object (id, name, slug)
+    // Use add_tenant_for_create which fetches the tenant and adds the full object
+    helpers::add_tenant_for_create(&mut body, core, tenant_id).await;
     
     // Region and site_group can use just ID for CREATE
     helpers::add_nested_reference(&mut body, "region", region_id.map(|id| id.into()));

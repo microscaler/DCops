@@ -43,6 +43,14 @@ pub struct NetBoxTenantSpec {
     /// If namespace is not specified, the Secret is expected to be in the same namespace
     /// as the Tenant CRD.
     pub token_secret: SecretReference,
+    
+    /// Reconcile interval in seconds
+    /// 
+    /// How often to check for drift between the CRD spec and NetBox, even when no changes occur.
+    /// Defaults to 300 seconds (5 minutes) if not specified.
+    /// Set to 0 to disable periodic reconciliation (only reconcile on changes).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reconcile_interval: Option<u64>,
 }
 
 /// NetBoxTenantStatus defines the observed state of a NetBox tenant

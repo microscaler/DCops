@@ -69,11 +69,30 @@ pub async fn get_location(core: &NetBoxClientCore, id: LocationId) -> Result<Loc
         .header("Authorization", format!("Token {}", core.token))
         .header("Accept", "application/json")
         .send()
-        .await?;
+        .await
+        .map_err(|e| {
+            // Convert reqwest errors to appropriate NetBoxError types
+            if e.is_timeout() {
+                NetBoxError::Api(format!("Request timeout: {}", e))
+            } else if e.is_connect() {
+                NetBoxError::Api(format!("Connection error: {}", e))
+            } else {
+                NetBoxError::Http(e)
+            }
+        })?;
     
     if !response.status().is_success() {
         let status = response.status();
         let body = response.text().await.unwrap_or_default();
+        
+        // Handle 404 specifically as NotFound
+        if status == 404 {
+            return Err(NetBoxError::NotFound(format!(
+                "Location {} not found: {}",
+                id_value, body
+            )));
+        }
+        
         return Err(NetBoxError::Api(format!(
             "Failed to get location {}: {} - {}",
             id_value, status, body

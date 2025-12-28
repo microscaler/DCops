@@ -40,26 +40,54 @@ impl Reconciler {
             .create_client_for_tenant(namespace, tenant_ref)
             .await?;
         
-        // Resolve device ID and interface ID
+        // Resolve device ID to ensure device has been created in NetBox
         // If device hasn't been created yet, return early and let controller requeue when device is ready
         use crate::reconcile_helpers::resolve_dependency_id;
-        let device_id = match resolve_dependency_id(
+        let _device_id: u64 = match resolve_dependency_id(
             device_crd.status.as_ref(),
             "Device",
             device_name,
         ) {
             Some(id) => id,
-            None => return Ok(()), // Return early - controller will requeue when device status updates
+            None => {
+                debug!("NetBoxMACAddress {}/{}: Device '{}' has not been created in NetBox yet (no netbox_id in status). Will requeue when device is ready.", namespace, name, device_name);
+                return Ok(()); // Return early - controller will requeue when device status updates
+            }
         };
         
-        // Find interface by querying
-        let interface = match netbox_client.query_interfaces(&[("device_id", &device_id.to_string()), ("name", interface_name)], false).await {
-            Ok(mut interfaces) => {
-                interfaces.pop().ok_or_else(|| ControllerError::InvalidConfig(
-                    format!("Interface '{}' not found on device '{}'", interface_name, device_name)
-                ))?
-            }
+        // Check if interface CRD exists and has been created in NetBox
+        // Interface CRD name format: "<device-name>-<interface-name>"
+        let interface_crd_name = format!("{}-{}", device_name, interface_name);
+        let interface_crd = match self.netbox_interface_api.get(&interface_crd_name).await {
+            Ok(interface) => interface,
             Err(e) => {
+                let error_msg = format!("Interface CRD '{}' not found for MAC address {}: {}", interface_crd_name, name, e);
+                error!("{}", error_msg);
+                return Err(ControllerError::InvalidConfig(error_msg));
+            }
+        };
+        
+        // Resolve interface ID from interface CRD status
+        // If interface hasn't been created yet, return early and let controller requeue when interface is ready
+        let interface_id: u64 = match resolve_dependency_id(
+            interface_crd.status.as_ref(),
+            "Interface",
+            &interface_crd_name,
+        ) {
+            Some(id) => id,
+            None => {
+                debug!("NetBoxMACAddress {}/{}: Interface '{}' (CRD: {}) has not been created in NetBox yet (no netbox_id in status). Will requeue when interface is ready.", namespace, name, interface_name, interface_crd_name);
+                return Ok(()); // Return early - controller will requeue when interface status updates
+            }
+        };
+        
+        // Get interface from NetBox using the resolved ID
+        use netbox_client::InterfaceId;
+        let interface = match netbox_client.get_interface(InterfaceId(interface_id)).await {
+            Ok(interface) => interface,
+            Err(e) => {
+                let error_msg = format!("Failed to get interface {} (ID: {}) from NetBox: {}", interface_name, interface_id, e);
+                error!("{}", error_msg);
                 return Err(ControllerError::NetBox(e));
             }
         };
@@ -153,7 +181,7 @@ impl Reconciler {
                 if let Some(existing) = existing_mac_address {
                     existing
                 } else {
-                    info!("Creating MAC address {} in NetBox", mac_address_crd.spec.mac_address);
+                    debug!("Attempting to create MAC address {} in NetBox", mac_address_crd.spec.mac_address);
                     match netbox_client.create_mac_address(
                         &mac_address_crd.spec.mac_address,
                         "dcim.interface", // assigned_object_type

@@ -399,6 +399,10 @@ impl NetBoxClientTrait for MockNetBoxClient {
         tenancy::create_tenant(self, name, slug, description, comments, group.map(|id| id.into())).await
     }
 
+    async fn update_tenant(&self, id: TenantId, name: Option<&str>, slug: Option<&str>, description: Option<String>, comments: Option<String>, group: Option<TenantGroupId>) -> Result<Tenant, NetBoxError> {
+        tenancy::update_tenant(self, id.into(), name, slug, description, comments, group.map(|id| id.into())).await
+    }
+
     async fn query_tenant_groups(&self, filters: &[(&str, &str)], fetch_all: bool) -> Result<Vec<TenantGroup>, NetBoxError> {
         tenancy::query_tenant_groups(self, filters, fetch_all).await
     }

@@ -31,7 +31,7 @@ impl Reconciler {
                 "NetBoxRole",
                 namespace,
                 name,
-                |netbox_id| async move {
+                |netbox_id: u64| async move {
                     let id_str = netbox_id.to_string();
                     netbox_client_ref.query_roles(&[("id", &id_str)], false)
                         .await
@@ -113,7 +113,7 @@ impl Reconciler {
                 if let Some(existing) = existing_role {
                     existing
                 } else {
-                    info!("Creating role {} in NetBox", role_crd.spec.name);
+                    debug!("Attempting to create role {} in NetBox", role_crd.spec.name);
                     match netbox_client.create_role(
                         &role_crd.spec.name,
                         role_crd.spec.slug.as_deref(),
@@ -126,9 +126,59 @@ impl Reconciler {
                             created
                         }
                         Err(e) => {
-                            let error_msg = format!("Failed to create role in NetBox: {}", e);
-                            error!("{}", error_msg);
-                            return Err(ControllerError::NetBox(e));
+                            use crate::reconcile_helpers::is_conflict_error;
+
+                            if is_conflict_error(&e) {
+                                warn!("Role {} creation conflicted, attempting idempotent lookup", role_crd.spec.name);
+
+                                // Strategy 1: by name
+                                let mut found_role = match netbox_client.query_roles(&[("name", &role_crd.spec.name)], false).await {
+                                    Ok(mut roles) => roles.pop(),
+                                    _ => None,
+                                };
+
+                                // Strategy 2: by slug if provided
+                                if found_role.is_none() {
+                                    if let Some(slug) = &role_crd.spec.slug {
+                                        if let Ok(roles) = netbox_client.query_roles(&[("slug", slug)], false).await {
+                                            if let Some(role) = roles.first() {
+                                                info!("Found existing role by slug '{}' in NetBox (ID: {}) after conflict", slug, role.id);
+                                                found_role = Some(role.clone());
+                                            }
+                                        }
+                                    }
+                                }
+
+                                // Strategy 3: fallback query all and filter
+                                if found_role.is_none() {
+                                    if let Ok(all_roles) = netbox_client.query_roles(&[], true).await {
+                                        if let Some(role) = all_roles.iter().find(|r| {
+                                            let slug_match = role_crd
+                                                .spec
+                                                .slug
+                                                .as_ref()
+                                                .map(|spec_slug| r.slug == *spec_slug)
+                                                .unwrap_or(false);
+                                            r.name == role_crd.spec.name || slug_match
+                                        }) {
+                                            info!("Found existing role in NetBox (ID: {}) via fallback query", role.id);
+                                            found_role = Some(role.clone());
+                                        }
+                                    }
+                                }
+
+                                if let Some(found) = found_role {
+                                    found
+                                } else {
+                                    let error_msg = format!("Role {} already exists in NetBox but could not retrieve it: {}", role_crd.spec.name, e);
+                                    error!("{}", error_msg);
+                                    return Err(ControllerError::NetBox(netbox_client::NetBoxError::Api(error_msg)));
+                                }
+                            } else {
+                                let error_msg = format!("Failed to create role in NetBox: {}", e);
+                                error!("{}", error_msg);
+                                return Err(ControllerError::NetBox(e));
+                            }
                         }
                     }
                 }
@@ -178,7 +228,7 @@ impl Reconciler {
                 "NetBoxTag",
                 namespace,
                 name,
-                |netbox_id| async move {
+                |netbox_id: u64| async move {
                     let id_str = netbox_id.to_string();
                     netbox_client_ref.query_tags(&[("id", &id_str)], false)
                         .await
@@ -260,7 +310,7 @@ impl Reconciler {
                 if let Some(existing) = existing_tag {
                     existing
                 } else {
-                    info!("Creating tag {} in NetBox", tag_crd.spec.name);
+                    debug!("Attempting to create tag {} in NetBox", tag_crd.spec.name);
                     match netbox_client.create_tag(
                         &tag_crd.spec.name,
                         tag_crd.spec.slug.as_deref(),
@@ -273,9 +323,59 @@ impl Reconciler {
                             created
                         }
                         Err(e) => {
-                            let error_msg = format!("Failed to create tag in NetBox: {}", e);
-                            error!("{}", error_msg);
-                            return Err(ControllerError::NetBox(e));
+                            use crate::reconcile_helpers::is_conflict_error;
+
+                            if is_conflict_error(&e) {
+                                warn!("Tag {} creation conflicted, attempting idempotent lookup", tag_crd.spec.name);
+
+                                // Strategy 1: by name
+                                let mut found_tag = match netbox_client.query_tags(&[("name", &tag_crd.spec.name)], false).await {
+                                    Ok(mut tags) => tags.pop(),
+                                    _ => None,
+                                };
+
+                                // Strategy 2: by slug if provided
+                                if found_tag.is_none() {
+                                    if let Some(slug) = &tag_crd.spec.slug {
+                                        if let Ok(tags) = netbox_client.query_tags(&[("slug", slug)], false).await {
+                                            if let Some(tag) = tags.first() {
+                                                info!("Found existing tag by slug '{}' in NetBox (ID: {}) after conflict", slug, tag.id);
+                                                found_tag = Some(tag.clone());
+                                            }
+                                        }
+                                    }
+                                }
+
+                                // Strategy 3: fallback query all and filter
+                                if found_tag.is_none() {
+                                    if let Ok(all_tags) = netbox_client.query_tags(&[], true).await {
+                                        if let Some(tag) = all_tags.iter().find(|t| {
+                                            let slug_match = tag_crd
+                                                .spec
+                                                .slug
+                                                .as_ref()
+                                                .map(|spec_slug| t.slug == *spec_slug)
+                                                .unwrap_or(false);
+                                            t.name == tag_crd.spec.name || slug_match
+                                        }) {
+                                            info!("Found existing tag in NetBox (ID: {}) via fallback query", tag.id);
+                                            found_tag = Some(tag.clone());
+                                        }
+                                    }
+                                }
+
+                                if let Some(found) = found_tag {
+                                    found
+                                } else {
+                                    let error_msg = format!("Tag {} already exists in NetBox but could not retrieve it: {}", tag_crd.spec.name, e);
+                                    error!("{}", error_msg);
+                                    return Err(ControllerError::NetBox(netbox_client::NetBoxError::Api(error_msg)));
+                                }
+                            } else {
+                                let error_msg = format!("Failed to create tag in NetBox: {}", e);
+                                error!("{}", error_msg);
+                                return Err(ControllerError::NetBox(e));
+                            }
                         }
                     }
                 }

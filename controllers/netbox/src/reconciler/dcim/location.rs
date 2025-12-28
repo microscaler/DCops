@@ -30,7 +30,7 @@ impl Reconciler {
                 "NetBoxLocation",
                 namespace,
                 name,
-                |netbox_id| async move {
+                |netbox_id: u64| async move {
                     netbox_client_ref.get_location(LocationId(netbox_id)).await
                 },
             ).await?
@@ -107,7 +107,7 @@ impl Reconciler {
                 
                 // Validate and resolve site ID (required)
                 validate_reference_kind(&location_crd.spec.site, "NetBoxSite", "site", name)?;
-                let site_id = resolve_required_dependency_id(
+                let site_id: u64 = resolve_required_dependency_id(
                     &*self.netbox_site_api,
                     &location_crd.spec.site.name,
                     "Site",
@@ -116,7 +116,7 @@ impl Reconciler {
                 ).await?;
                 
                 // Resolve optional parent location ID
-                let parent_id = resolve_optional_dependency_id(
+                let parent_id: Option<u64> = resolve_optional_dependency_id(
                     &*self.netbox_location_api,
                     location_crd.spec.parent.as_ref(),
                     "NetBoxLocation",
@@ -163,9 +163,77 @@ impl Reconciler {
                             created
                         }
                         Err(e) => {
-                            let error_msg = format!("Failed to create location in NetBox: {}", e);
-                            error!("{}", error_msg);
-                            return Err(ControllerError::NetBox(e));
+                            // Handle CREATE conflicts using shared helper (GitOps idempotency)
+                            use crate::reconcile_helpers::is_conflict_error;
+                            
+                            if is_conflict_error(&e) {
+                                warn!("Location {} creation failed with conflict, attempting to retrieve existing location (idempotency)", location_crd.spec.name);
+                                
+                                // Try multiple query strategies
+                                let mut found_location = None;
+                                
+                                // Strategy 1: Query by site_id and name
+                                match netbox_client.query_locations(
+                                    &[("site_id", &site_id.to_string()), ("name", &location_crd.spec.name)],
+                                    false,
+                                ).await {
+                                    Ok(locations) => {
+                                        if let Some(loc) = locations.first() {
+                                            info!("Found existing location by name '{}' in NetBox (ID: {}) after conflict", location_crd.spec.name, loc.id);
+                                            found_location = Some(loc.clone());
+                                        }
+                                    }
+                                    Err(_) => {}
+                                }
+                                
+                                // Strategy 2: Query by slug if not found
+                                if found_location.is_none() {
+                                    if let Some(slug) = &location_crd.spec.slug {
+                                        match netbox_client.query_locations(
+                                            &[("site_id", &site_id.to_string()), ("slug", slug)],
+                                            false,
+                                        ).await {
+                                            Ok(locations) => {
+                                                if let Some(loc) = locations.first() {
+                                                    info!("Found existing location by slug '{}' in NetBox (ID: {}) after conflict", slug, loc.id);
+                                                    found_location = Some(loc.clone());
+                                                }
+                                            }
+                                            Err(_) => {}
+                                        }
+                                    }
+                                }
+                                
+                                // Strategy 3: Fallback - query all locations for this site and filter
+                                if found_location.is_none() {
+                                    match netbox_client.query_locations(&[("site_id", &site_id.to_string())], true).await {
+                                        Ok(all_locations) => {
+                                            if let Some(loc) = all_locations.iter().find(|l| {
+                                                l.name == location_crd.spec.name ||
+                                                location_crd.spec.slug.as_ref().map(|slug| l.slug == *slug).unwrap_or(false)
+                                            }) {
+                                                info!("Found existing location in NetBox (ID: {}) via fallback query", loc.id);
+                                                found_location = Some(loc.clone());
+                                            }
+                                        }
+                                        Err(_) => {}
+                                    }
+                                }
+                                
+                                if let Some(found) = found_location {
+                                    info!("Found existing location {} in NetBox (ID: {}) via conflict resolution (idempotency)", found.name, found.id);
+                                    found
+                                } else {
+                                    let error_msg = format!("Location {} already exists in NetBox but could not retrieve it: {}", location_crd.spec.name, e);
+                                    error!("{}", error_msg);
+                                    return Err(ControllerError::NetBox(netbox_client::NetBoxError::Api(error_msg)));
+                                }
+                            } else {
+                                // Not a conflict, return original error
+                                let error_msg = format!("Failed to create location in NetBox: {}", e);
+                                error!("{}", error_msg);
+                                return Err(ControllerError::NetBox(e));
+                            }
                         }
                     }
                 };

@@ -499,6 +499,17 @@ spec:
               name:
                 description: Tenant name
                 type: string
+              reconcileInterval:
+                description: |-
+                  Reconcile interval in seconds
+
+                  How often to check for drift between the CRD spec and NetBox, even when no changes occur.
+                  Defaults to 300 seconds (5 minutes) if not specified.
+                  Set to 0 to disable periodic reconciliation (only reconcile on changes).
+                format: uint64
+                minimum: 0.0
+                nullable: true
+                type: integer
               slug:
                 description: Tenant slug (optional, auto-generated from name if not provided)
                 nullable: true
@@ -1563,6 +1574,90 @@ spec:
         required:
         - spec
         title: NetBoxVLAN
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: netboxrirs.dcops.microscaler.io
+spec:
+  group: dcops.microscaler.io
+  names:
+    categories: []
+    kind: NetBoxRIR
+    plural: netboxrirs
+    shortNames: []
+    singular: netboxrir
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns: []
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: Auto-generated derived type for NetBoxRIRSpec via `CustomResource`
+        properties:
+          spec:
+            description: NetBoxRIRSpec defines the desired state of a NetBox RIR
+            properties:
+              description:
+                description: Description of the RIR
+                nullable: true
+                type: string
+              isPrivate:
+                description: 'Whether this is a private RIR (default: false)'
+                nullable: true
+                type: boolean
+              name:
+                description: RIR name (e.g., "ARIN", "RIPE", "APNIC")
+                type: string
+              slug:
+                description: RIR slug (optional, auto-generated from name if not provided)
+                nullable: true
+                type: string
+            required:
+            - name
+            type: object
+          status:
+            description: NetBoxRIRStatus defines the observed state of a NetBox RIR
+            nullable: true
+            properties:
+              error:
+                description: Error message if reconciliation failed
+                nullable: true
+                type: string
+              lastReconciled:
+                description: Last reconciliation timestamp
+                format: date-time
+                nullable: true
+                type: string
+              netboxId:
+                description: NetBox RIR ID (set after creation)
+                format: uint64
+                minimum: 0.0
+                nullable: true
+                type: integer
+              netboxUrl:
+                description: NetBox RIR URL
+                nullable: true
+                type: string
+              state:
+                description: Current state of the RIR
+                enum:
+                - Pending
+                - Created
+                - Updated
+                - Failed
+                type: string
+            required:
+            - state
+            type: object
+        required:
+        - spec
+        title: NetBoxRIR
         type: object
     served: true
     storage: true

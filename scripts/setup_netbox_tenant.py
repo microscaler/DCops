@@ -29,6 +29,9 @@ def log_error(message):
 def log_success(message):
     print(f"✅ {message}")
 
+def log_warning(message):
+    print(f"⚠️  {message}")
+
 def wait_for_netbox(netbox_url, max_wait=300):
     """Wait for NetBox to be ready."""
     log_info(f"Waiting for NetBox to be ready at {netbox_url}...")
@@ -36,12 +39,16 @@ def wait_for_netbox(netbox_url, max_wait=300):
     
     while time.time() - start_time < max_wait:
         try:
-            response = requests.get(f"{netbox_url}/api/", timeout=5)
-            if response.status_code == 200:
+            # Check root endpoint - it returns 302 (redirect) when NetBox is ready
+            # /api/ requires auth and returns 403, so we check the root instead
+            response = requests.get(f"{netbox_url}/", timeout=5, allow_redirects=False)
+            if response.status_code in (200, 302):
                 log_success("NetBox is ready")
                 return True
-        except requests.exceptions.RequestException:
-            pass
+        except requests.exceptions.RequestException as e:
+            # Log the error for debugging
+            if time.time() - start_time > 10:  # Only log after 10 seconds to avoid spam
+                pass
         
         time.sleep(2)
     
@@ -170,7 +177,16 @@ def get_or_create_token(netbox_url, session, user_id, token_key, description):
         if data.get('results'):
             token = data['results'][0]
             log_info(f"Token with description '{description}' already exists")
-            return token['key']
+            # NetBox API may not return the key for existing tokens (security)
+            # If key is not present, delete the old token and create a new one
+            if 'key' in token:
+                return token['key']
+            else:
+                log_info("Token exists but key not returned (security feature). Using a different description to create a new token...")
+                # Use a timestamped description to create a new token
+                description = f"{description} ({int(time.time())})"
+                log_info(f"Creating new token with description: {description}")
+                # Continue to create a new token below with the new description
     
     # Create new token
     # If no key provided or key is None, let NetBox auto-generate it
@@ -214,11 +230,32 @@ def get_or_create_token(netbox_url, session, user_id, token_key, description):
         token_data = response.json()
         token_key = token_data.get('key')
         if token_key:
-            log_success(f"Created API token with key '{token_key}'")
+            log_success(f"Created API token with key '{token_key[:20]}...'")
             return token_key
         else:
-            log_error("Token created but key not returned")
-            return None
+            # NetBox may not return the key in the response (security feature)
+            # Try to fetch it immediately after creation
+            token_id = token_data.get('id')
+            if token_id:
+                log_info(f"Token created (ID: {token_id}), fetching key...")
+                # Try to get the token with key (this might not work due to security)
+                fetch_response = session.get(
+                    f"{netbox_url}/api/users/tokens/{token_id}/",
+                    timeout=10
+                )
+                if fetch_response.status_code == 200:
+                    fetch_data = fetch_response.json()
+                    if 'key' in fetch_data:
+                        log_success(f"Retrieved API token key '{fetch_data['key'][:20]}...'")
+                        return fetch_data['key']
+                
+                # If we still don't have the key, log error
+                log_error("Token created but key not available (NetBox security feature - keys are only shown once)")
+                log_error("Please create the token manually in NetBox UI or use an existing token")
+                return None
+            else:
+                log_error("Token created but ID not returned")
+                return None
     else:
         error_msg = response.text
         log_error(f"Failed to create token: {response.status_code} - {error_msg}")
@@ -368,22 +405,43 @@ def main():
         sys.exit(1)
     
     # Get or create admin token for API calls
+    admin_token = None
+    
     if args.admin_token:
         admin_token = args.admin_token
         log_info("Using provided admin token")
     else:
-        # Try to get existing admin token by description, or create one
-        # Don't specify a key - let NetBox auto-generate it
-        admin_token = get_or_create_token(
-            args.netbox_url,
-            session,
-            user_id,
-            None,  # Let NetBox auto-generate the key
-            "DCops admin token for setup"
-        )
+        # Check if secret already exists and has a token we can use
+        log_info(f"Checking for existing secret {args.secret_name}...")
+        try:
+            result = subprocess.run(
+                ['kubectl', 'get', 'secret', args.secret_name, '-n', args.namespace, '-o', 'jsonpath={.data.token}'],
+                capture_output=True,
+                text=True,
+                check=False
+            )
+            if result.returncode == 0 and result.stdout.strip():
+                import base64
+                try:
+                    existing_token = base64.b64decode(result.stdout.strip()).decode('utf-8')
+                    if existing_token and len(existing_token) > 10:  # Basic validation
+                        log_info(f"Found existing token in secret {args.secret_name}, using it for admin operations")
+                        admin_token = existing_token
+                except Exception:
+                    pass
+        except Exception:
+            pass
         
+        # If no existing token, we need the user to provide one
         if not admin_token:
-            log_error("Failed to get or create admin token")
+            log_warning("No existing token found in secret")
+            log_warning("NetBox API does not return token keys after creation (security feature)")
+            log_warning("Please create a token manually in NetBox UI:")
+            log_warning(f"  1. Go to {args.netbox_url}/users/tokens/")
+            log_warning(f"  2. Create a new token for user '{args.netbox_user}'")
+            log_warning(f"  3. Copy the token key (shown only once)")
+            log_warning(f"  4. Run this script again with: --admin-token YOUR_TOKEN")
+            log_error("Cannot proceed without an admin token")
             sys.exit(1)
     
     # Create tenant

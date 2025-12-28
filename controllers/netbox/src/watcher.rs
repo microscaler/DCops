@@ -10,7 +10,7 @@ use crate::reconciler::Reconciler;
 use crate::error::ControllerError;
 use crds::{
     IPClaim, IPPool, NetBoxPrefix, NetBoxTenant, NetBoxSite, NetBoxRole, NetBoxTag, NetBoxAggregate,
-    NetBoxVLAN, NetBoxDeviceRole, NetBoxManufacturer, NetBoxPlatform, NetBoxDeviceType,
+    NetBoxVLAN, NetBoxRIR, NetBoxDeviceRole, NetBoxManufacturer, NetBoxPlatform, NetBoxDeviceType,
     NetBoxDevice, NetBoxInterface, NetBoxMACAddress, NetBoxRegion, NetBoxSiteGroup, NetBoxLocation,
 };
 use kube::Api;
@@ -81,7 +81,7 @@ where
             debug!("Reconciling {} {:?}", resource_name, obj);
             
             match reconcile_fn(ctx.clone(), obj.clone()).await {
-                Ok(action) => {
+                Ok(_action) => {
                     // Reset error count on successful reconciliation
                     let resource_key = format!(
                         "{}/{}",
@@ -89,7 +89,13 @@ where
                         obj.meta().name.as_deref().unwrap_or("unknown")
                     );
                     ctx.reset_error(&resource_key);
-                    Ok(action)
+                    
+                    // Always requeue with a short delay to ensure continuous reconciliation
+                    // This is critical for resources waiting for dependencies - when a dependency
+                    // becomes ready, the dependent resource will be reconciled within 10 seconds
+                    // instead of waiting indefinitely for watch events that may never come
+                    // (e.g., MAC addresses waiting for interfaces, interfaces waiting for devices)
+                    Ok(Action::requeue(Duration::from_secs(10)))
                 }
                 Err(e) => {
                     error!("Reconciliation failed for {}: {}", resource_name, e);
@@ -131,6 +137,7 @@ pub struct Watcher {
     netbox_tag_api: Api<NetBoxTag>,
     netbox_aggregate_api: Api<NetBoxAggregate>,
     netbox_vlan_api: Api<NetBoxVLAN>,
+    netbox_rir_api: Api<NetBoxRIR>,
     // Tenancy APIs
     netbox_tenant_api: Api<NetBoxTenant>,
     // DCIM APIs
@@ -160,6 +167,7 @@ impl Watcher {
         netbox_tag_api: Api<NetBoxTag>,
         netbox_aggregate_api: Api<NetBoxAggregate>,
         netbox_vlan_api: Api<NetBoxVLAN>,
+        netbox_rir_api: Api<NetBoxRIR>,
         // Tenancy APIs
         netbox_tenant_api: Api<NetBoxTenant>,
         // DCIM APIs
@@ -186,6 +194,7 @@ impl Watcher {
             netbox_tag_api,
             netbox_aggregate_api,
             netbox_vlan_api,
+            netbox_rir_api,
             // Tenancy
             netbox_tenant_api,
             // DCIM
@@ -258,6 +267,8 @@ impl Watcher {
     }
     
     /// Watches NetBoxTenant resources for changes.
+    /// 
+    /// Supports periodic reconciliation based on reconcile_interval in the CRD spec.
     pub async fn watch_netbox_tenants(&self) -> Result<(), ControllerError> {
         watch_resource(
             self.netbox_tenant_api.clone(),
@@ -265,7 +276,18 @@ impl Watcher {
             |reconciler, resource| {
                 Box::pin(async move {
                     match reconciler.reconcile_netbox_tenant(&*resource).await {
-                        Ok(()) => Ok(Action::await_change()),
+                        Ok(()) => {
+                            // Check if reconcile_interval is set in the spec
+                            let reconcile_interval = resource.spec.reconcile_interval.unwrap_or(300); // Default: 5 minutes
+                            
+                            if reconcile_interval == 0 {
+                                // Interval of 0 means only reconcile on changes
+                                Ok(Action::await_change())
+                            } else {
+                                // Requeue after the specified interval to check for drift
+                                Ok(Action::requeue(Duration::from_secs(reconcile_interval)))
+                            }
+                        }
                         Err(e) => Err(e),
                     }
                 })
@@ -424,6 +446,23 @@ impl Watcher {
                 })
             },
             "NetBoxVLAN",
+        ).await
+    }
+    
+    /// Starts watching NetBoxRIR resources.
+    pub async fn watch_netbox_rirs(&self) -> Result<(), ControllerError> {
+        watch_resource(
+            self.netbox_rir_api.clone(),
+            self.reconciler.clone(),
+            |reconciler, resource| {
+                Box::pin(async move {
+                    match reconciler.reconcile_netbox_rir(&*resource).await {
+                        Ok(()) => Ok(Action::await_change()),
+                        Err(e) => Err(e),
+                    }
+                })
+            },
+            "NetBoxRIR",
         ).await
     }
     

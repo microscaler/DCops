@@ -59,11 +59,30 @@ pub async fn get_aggregate(core: &NetBoxClientCore, id: AggregateId) -> Result<A
         .header("Authorization", format!("Token {}", core.token))
         .header("Accept", "application/json")
         .send()
-        .await?;
+        .await
+        .map_err(|e| {
+            // Convert reqwest errors to appropriate NetBoxError types
+            if e.is_timeout() {
+                NetBoxError::Api(format!("Request timeout: {}", e))
+            } else if e.is_connect() {
+                NetBoxError::Api(format!("Connection error: {}", e))
+            } else {
+                NetBoxError::Http(e)
+            }
+        })?;
     
     if !response.status().is_success() {
         let status = response.status();
         let body = response.text().await.unwrap_or_default();
+        
+        // Handle 404 specifically as NotFound
+        if status == 404 {
+            return Err(NetBoxError::NotFound(format!(
+                "Aggregate {} not found: {}",
+                id_value, body
+            )));
+        }
+        
         return Err(NetBoxError::Api(format!(
             "Failed to get aggregate {}: {} - {}",
             id_value, status, body
@@ -89,11 +108,13 @@ pub async fn create_aggregate(
         "prefix": prefix,
     });
     
-    // RIR is required for aggregates - must be provided
-    let rir_id_value: u64 = rir_id.map(|id| id.into()).ok_or_else(|| NetBoxError::Api(
-        "RIR is required for aggregates but was not provided".to_string()
-    ))?;
-    helpers::add_required_nested_reference(&mut body, "rir", rir_id_value);
+    // RIR may be optional depending on deployment; if missing, proceed and let NetBox validation decide.
+    // Explicitly log the absence for visibility during reconciliation.
+    let rir_id_value: Option<u64> = rir_id.map(|id| id.into());
+    if rir_id_value.is_none() {
+        debug!("Creating aggregate {} without RIR (none provided/found)", prefix);
+    }
+    helpers::add_nested_reference(&mut body, "rir", rir_id_value);
     
     helpers::add_optional_string_field(&mut body, "date_allocated", date_allocated);
     helpers::add_optional_string_field_owned(&mut body, "description", description);

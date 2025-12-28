@@ -1,0 +1,10 @@
+apiVersion: dcops.microscaler.io/v1alpha1
+kind: NetBoxRIR
+metadata:
+  name: arin
+  namespace: default
+spec:
+  name: "ARIN"
+  slug: "arin"
+  description: "Seeded Regional Internet Registry for private network aggregate examples"
+

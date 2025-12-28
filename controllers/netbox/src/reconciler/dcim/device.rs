@@ -30,7 +30,7 @@ impl Reconciler {
                 "NetBoxDevice",
                 namespace,
                 name,
-                |netbox_id| async move {
+                |netbox_id: u64| async move {
                     netbox_client_ref.get_device(DeviceId(netbox_id)).await
                 },
             ).await?
@@ -148,7 +148,7 @@ impl Reconciler {
                 ).await?;
                 
                 // Resolve optional dependencies using helper
-                let platform_id = resolve_optional_dependency_id(
+                let platform_id: Option<u64> = resolve_optional_dependency_id(
                     &*self.netbox_platform_api,
                     device_crd.spec.platform.as_ref(),
                     "NetBoxPlatform",
@@ -157,7 +157,7 @@ impl Reconciler {
                     |crd| crd.status.as_ref(),
                 ).await;
                 
-                let location_id = resolve_optional_dependency_id(
+                let location_id: Option<u64> = resolve_optional_dependency_id(
                     &*self.netbox_location_api,
                     device_crd.spec.location.as_ref(),
                     "NetBoxLocation",

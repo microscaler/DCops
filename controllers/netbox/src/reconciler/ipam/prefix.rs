@@ -127,7 +127,7 @@ impl Reconciler {
         use crate::reconcile_helpers::{validate_reference_kind, resolve_required_dependency_id, resolve_optional_dependency_id};
         
         // Resolve optional Site reference
-        let site_id = resolve_optional_dependency_id(
+        let site_id: Option<u64> = resolve_optional_dependency_id(
             &*self.netbox_site_api,
             prefix_crd.spec.site.as_ref(),
             "NetBoxSite",
@@ -137,7 +137,7 @@ impl Reconciler {
         ).await;
         
         // Resolve optional VLAN reference (convert to u32 for VlanId)
-        let vlan_id = resolve_optional_dependency_id(
+        let vlan_id: Option<u32> = resolve_optional_dependency_id(
             &*self.netbox_vlan_api,
             prefix_crd.spec.vlan.as_ref(),
             "NetBoxVLAN",
@@ -157,7 +157,7 @@ impl Reconciler {
         ).await?;
         
         // Resolve optional Role reference
-        let role_id = resolve_optional_dependency_id(
+        let role_id: Option<u64> = resolve_optional_dependency_id(
             &*self.netbox_role_api,
             prefix_crd.spec.role.as_ref(),
             "NetBoxRole",
@@ -313,7 +313,7 @@ impl Reconciler {
                 };
                 
                 // Resolve optional VLAN reference (convert to u32 for VlanId) using helper
-                let vlan_id = resolve_optional_dependency_id(
+                let vlan_id: Option<u32> = resolve_optional_dependency_id(
                     &*self.netbox_vlan_api,
                     prefix_crd.spec.vlan.as_ref(),
                     "NetBoxVLAN",
@@ -323,7 +323,7 @@ impl Reconciler {
                 ).await.map(|id| id as u32);
                 
                 // Resolve optional Site reference using helper
-                let site_id = resolve_optional_dependency_id(
+                let site_id: Option<u64> = resolve_optional_dependency_id(
                     &*self.netbox_site_api,
                     prefix_crd.spec.site.as_ref(),
                     "NetBoxSite",
@@ -343,7 +343,7 @@ impl Reconciler {
                 ).await?;
                 
                 // Resolve optional Role reference using helper
-                let role_id = resolve_optional_dependency_id(
+                let role_id: Option<u64> = resolve_optional_dependency_id(
                     &*self.netbox_role_api,
                     prefix_crd.spec.role.as_ref(),
                     "NetBoxRole",
@@ -410,7 +410,7 @@ impl Reconciler {
                     }
                 } else {
                     // Prefix doesn't exist, create it
-                    info!("Creating prefix {} in NetBox", prefix_crd.spec.prefix);
+                    debug!("Attempting to create prefix {} in NetBox", prefix_crd.spec.prefix);
                     
                     // NetBox API requires site and role to be numeric IDs
                     // Tags must be numeric IDs or tag slugs

@@ -17,7 +17,7 @@ spec:
     spec:
       initContainers:
       - name: migrate
-        image: microscaler/netbox:v4.0.0-fix11
+        image: netboxcommunity/netbox:v4.4.9
         command:
         - /opt/netbox/venv/bin/python
         - /opt/netbox/netbox/manage.py
@@ -40,7 +40,7 @@ spec:
         - name: ALLOWED_HOSTS
           value: "*"
       - name: create-superuser
-        image: microscaler/netbox:v4.0.0-fix11
+        image: netboxcommunity/netbox:v4.4.9
         command:
         - /bin/bash
         - -c
@@ -72,7 +72,7 @@ spec:
           value: admin
       containers:
       - name: netbox
-        image: microscaler/netbox:v4.0.0-fix11
+        image: netboxcommunity/netbox:v4.4.9
         ports:
         - containerPort: 8080
           name: http
@@ -95,13 +95,13 @@ spec:
           value: "*"
         livenessProbe:
           httpGet:
-            path: /api/
+            path: /
             port: 8080
           initialDelaySeconds: 60
           periodSeconds: 30
         readinessProbe:
           httpGet:
-            path: /api/
+            path: /
             port: 8080
           initialDelaySeconds: 30
           periodSeconds: 10

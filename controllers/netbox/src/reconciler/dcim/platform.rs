@@ -21,7 +21,7 @@ impl Reconciler {
             .map_err(|e| ControllerError::TokenResolution(e))?;
         
         // Resolve optional manufacturer ID using helper
-        let manufacturer_id = resolve_optional_dependency_id(
+        let manufacturer_id: Option<u64> = resolve_optional_dependency_id(
             &*self.netbox_manufacturer_api,
             platform_crd.spec.manufacturer.as_ref(),
             "NetBoxManufacturer",
@@ -40,7 +40,7 @@ impl Reconciler {
                 "NetBoxPlatform",
                 namespace,
                 name,
-                |netbox_id| async move {
+                |netbox_id: u64| async move {
                     let id_str = netbox_id.to_string();
                     netbox_client_ref.query_platforms(&[("id", &id_str)], false)
                         .await
@@ -120,7 +120,7 @@ impl Reconciler {
                 if let Some(existing) = existing_platform {
                     existing
                 } else {
-                    info!("Creating platform {} in NetBox", platform_crd.spec.name);
+                    debug!("Attempting to create platform {} in NetBox", platform_crd.spec.name);
                     match netbox_client.create_platform(
                         &platform_crd.spec.name,
                         platform_crd.spec.slug.as_deref(),
@@ -135,9 +135,59 @@ impl Reconciler {
                             created
                         }
                         Err(e) => {
-                            let error_msg = format!("Failed to create platform in NetBox: {}", e);
-                            error!("{}", error_msg);
-                            return Err(ControllerError::NetBox(e));
+                            use crate::reconcile_helpers::is_conflict_error;
+
+                            if is_conflict_error(&e) {
+                                warn!("Platform {} creation conflicted, attempting idempotent lookup", platform_crd.spec.name);
+
+                                // Strategy 1: by name
+                                let mut found_platform = match netbox_client.get_platform_by_name(&platform_crd.spec.name).await {
+                                    Ok(Some(p)) => Some(p),
+                                    _ => None,
+                                };
+
+                                // Strategy 2: by slug if not found
+                                if found_platform.is_none() {
+                                    if let Some(slug) = &platform_crd.spec.slug {
+                                        if let Ok(platforms) = netbox_client.query_platforms(&[("slug", slug)], false).await {
+                                            if let Some(p) = platforms.first() {
+                                                info!("Found existing platform by slug '{}' in NetBox (ID: {}) after conflict", slug, p.id);
+                                                found_platform = Some(p.clone());
+                                            }
+                                        }
+                                    }
+                                }
+
+                                // Strategy 3: fallback query all and filter
+                                if found_platform.is_none() {
+                                    if let Ok(all_platforms) = netbox_client.query_platforms(&[], true).await {
+                                        if let Some(p) = all_platforms.iter().find(|p| {
+                                            let slug_match = platform_crd
+                                                .spec
+                                                .slug
+                                                .as_ref()
+                                                .map(|spec_slug| p.slug == *spec_slug)
+                                                .unwrap_or(false);
+                                            p.name == platform_crd.spec.name || slug_match
+                                        }) {
+                                            info!("Found existing platform in NetBox (ID: {}) via fallback query", p.id);
+                                            found_platform = Some(p.clone());
+                                        }
+                                    }
+                                }
+
+                                if let Some(found) = found_platform {
+                                    found
+                                } else {
+                                    let error_msg = format!("Platform {} already exists in NetBox but could not retrieve it: {}", platform_crd.spec.name, e);
+                                    error!("{}", error_msg);
+                                    return Err(ControllerError::NetBox(netbox_client::NetBoxError::Api(error_msg)));
+                                }
+                            } else {
+                                let error_msg = format!("Failed to create platform in NetBox: {}", e);
+                                error!("{}", error_msg);
+                                return Err(ControllerError::NetBox(e));
+                            }
                         }
                     }
                 }

@@ -109,6 +109,7 @@ pub trait NetBoxClientTrait: Send + Sync {
     async fn query_tenants(&self, filters: &[(&str, &str)], fetch_all: bool) -> Result<Vec<Tenant>, NetBoxError>;
     async fn get_tenant(&self, id: TenantId) -> Result<Tenant, NetBoxError>;
     async fn create_tenant(&self, name: &str, slug: Option<&str>, description: Option<String>, comments: Option<String>, group: Option<TenantGroupId>) -> Result<Tenant, NetBoxError>;
+    async fn update_tenant(&self, id: TenantId, name: Option<&str>, slug: Option<&str>, description: Option<String>, comments: Option<String>, group: Option<TenantGroupId>) -> Result<Tenant, NetBoxError>;
     
     async fn query_tenant_groups(&self, filters: &[(&str, &str)], fetch_all: bool) -> Result<Vec<TenantGroup>, NetBoxError>;
     async fn get_tenant_group_by_name(&self, name: &str) -> Result<Option<TenantGroup>, NetBoxError>;

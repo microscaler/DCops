@@ -30,7 +30,7 @@ impl Reconciler {
                 "NetBoxVLAN",
                 namespace,
                 name,
-                |netbox_id| async move {
+                |netbox_id: u64| async move {
                     netbox_client_ref.get_vlan(VlanId(netbox_id as u32)).await
                 },
             ).await?
@@ -107,8 +107,8 @@ impl Reconciler {
                 
                 // Resolve optional site ID
                 // If site is specified in spec but not ready yet, return early to allow requeueing
-                let site_id = if vlan_crd.spec.site.is_some() {
-                    let resolved_site_id = resolve_optional_dependency_id(
+                let site_id: Option<u64> = if vlan_crd.spec.site.is_some() {
+                    let resolved_site_id: Option<u64> = resolve_optional_dependency_id(
                         &*self.netbox_site_api,
                         vlan_crd.spec.site.as_ref(),
                         "NetBoxSite",
@@ -188,9 +188,74 @@ impl Reconciler {
                             created
                         }
                         Err(e) => {
-                            let error_msg = format!("Failed to create VLAN in NetBox: {}", e);
-                            error!("{}", error_msg);
-                            return Err(ControllerError::NetBox(netbox_client::NetBoxError::Api(error_msg)));
+                            // Handle CREATE conflicts using shared helper (GitOps idempotency)
+                            use crate::reconcile_helpers::is_conflict_error;
+                            
+                            if is_conflict_error(&e) {
+                                warn!("VLAN {} creation failed with conflict, attempting to retrieve existing VLAN (idempotency)", vlan_crd.spec.vid);
+                                
+                                // Try multiple query strategies
+                                let mut found_vlan = None;
+                                
+                                // Strategy 1: Query by VID
+                                match netbox_client.query_vlans(
+                                    &[("vid", &vlan_crd.spec.vid.to_string())],
+                                    false,
+                                ).await {
+                                    Ok(vlans) => {
+                                        if let Some(vlan) = vlans.first() {
+                                            info!("Found existing VLAN by VID {} in NetBox (ID: {}) after conflict", vlan_crd.spec.vid, vlan.id);
+                                            found_vlan = Some(vlan.clone());
+                                        }
+                                    }
+                                    Err(_) => {}
+                                }
+                                
+                                // Strategy 2: Query by name if not found
+                                if found_vlan.is_none() {
+                                    match netbox_client.query_vlans(
+                                        &[("name", &vlan_crd.spec.name)],
+                                        false,
+                                    ).await {
+                                        Ok(vlans) => {
+                                            if let Some(vlan) = vlans.first() {
+                                                info!("Found existing VLAN by name '{}' in NetBox (ID: {}) after conflict", vlan_crd.spec.name, vlan.id);
+                                                found_vlan = Some(vlan.clone());
+                                            }
+                                        }
+                                        Err(_) => {}
+                                    }
+                                }
+                                
+                                // Strategy 3: Fallback - query all VLANs and filter
+                                if found_vlan.is_none() {
+                                    match netbox_client.query_vlans(&[], true).await {
+                                        Ok(all_vlans) => {
+                                            if let Some(vlan) = all_vlans.iter().find(|v| {
+                                                v.vid == vlan_crd.spec.vid as u16 || v.name == vlan_crd.spec.name
+                                            }) {
+                                                info!("Found existing VLAN in NetBox (ID: {}) via fallback query", vlan.id);
+                                                found_vlan = Some(vlan.clone());
+                                            }
+                                        }
+                                        Err(_) => {}
+                                    }
+                                }
+                                
+                                if let Some(found) = found_vlan {
+                                    info!("Found existing VLAN {} (VID: {}) in NetBox (ID: {}) via conflict resolution (idempotency)", found.name, found.vid, found.id);
+                                    found
+                                } else {
+                                    let error_msg = format!("VLAN {} already exists in NetBox but could not retrieve it: {}", vlan_crd.spec.vid, e);
+                                    error!("{}", error_msg);
+                                    return Err(ControllerError::NetBox(netbox_client::NetBoxError::Api(error_msg)));
+                                }
+                            } else {
+                                // Not a conflict, return original error
+                                let error_msg = format!("Failed to create VLAN in NetBox: {}", e);
+                                error!("{}", error_msg);
+                                return Err(ControllerError::NetBox(netbox_client::NetBoxError::Api(error_msg)));
+                            }
                         }
                     }
                 };

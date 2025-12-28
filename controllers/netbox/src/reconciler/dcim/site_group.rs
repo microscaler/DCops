@@ -21,7 +21,7 @@ impl Reconciler {
             .map_err(|e| ControllerError::TokenResolution(e))?;
         
         // Resolve optional parent site group ID using helper
-        let parent_id = resolve_optional_dependency_id(
+        let parent_id: Option<u64> = resolve_optional_dependency_id(
             &*self.netbox_site_group_api,
             site_group_crd.spec.parent.as_ref(),
             "NetBoxSiteGroup",
@@ -40,7 +40,7 @@ impl Reconciler {
                 "NetBoxSiteGroup",
                 namespace,
                 name,
-                |netbox_id| async move {
+                |netbox_id: u64| async move {
                     netbox_client_ref.get_site_group(SiteGroupId(netbox_id)).await
                 },
             ).await?
@@ -129,7 +129,7 @@ impl Reconciler {
                     existing
                 } else {
                     // Create site group
-                    info!("Creating site group {} in NetBox", site_group_crd.spec.name);
+                    debug!("Attempting to create site group {} in NetBox", site_group_crd.spec.name);
                     match netbox_client.create_site_group(
                         &site_group_crd.spec.name,
                         site_group_crd.spec.slug.as_deref(),
@@ -142,9 +142,59 @@ impl Reconciler {
                             created
                         }
                         Err(e) => {
-                            let error_msg = format!("Failed to create site group in NetBox: {}", e);
-                            error!("{}", error_msg);
-                            return Err(ControllerError::NetBox(e));
+                            use crate::reconcile_helpers::is_conflict_error;
+
+                            if is_conflict_error(&e) {
+                                warn!("SiteGroup {} creation conflicted, attempting idempotent lookup", site_group_crd.spec.name);
+
+                                // Strategy 1: by name
+                                let mut found_site_group = match netbox_client.get_site_group_by_name(&site_group_crd.spec.name).await {
+                                    Ok(Some(sg)) => Some(sg),
+                                    _ => None,
+                                };
+
+                                // Strategy 2: by slug if provided
+                                if found_site_group.is_none() {
+                                    if let Some(slug) = &site_group_crd.spec.slug {
+                                        if let Ok(site_groups) = netbox_client.query_site_groups(&[("slug", slug)], false).await {
+                                            if let Some(sg) = site_groups.first() {
+                                                info!("Found existing site group by slug '{}' in NetBox (ID: {}) after conflict", slug, sg.id);
+                                                found_site_group = Some(sg.clone());
+                                            }
+                                        }
+                                    }
+                                }
+
+                                // Strategy 3: fallback query all and filter
+                                if found_site_group.is_none() {
+                                    if let Ok(all_site_groups) = netbox_client.query_site_groups(&[], true).await {
+                                        if let Some(sg) = all_site_groups.iter().find(|sg| {
+                                            let slug_match = site_group_crd
+                                                .spec
+                                                .slug
+                                                .as_ref()
+                                                .map(|spec_slug| sg.slug == *spec_slug)
+                                                .unwrap_or(false);
+                                            sg.name == site_group_crd.spec.name || slug_match
+                                        }) {
+                                            info!("Found existing site group in NetBox (ID: {}) via fallback query", sg.id);
+                                            found_site_group = Some(sg.clone());
+                                        }
+                                    }
+                                }
+
+                                if let Some(found) = found_site_group {
+                                    found
+                                } else {
+                                    let error_msg = format!("SiteGroup {} already exists in NetBox but could not retrieve it: {}", site_group_crd.spec.name, e);
+                                    error!("{}", error_msg);
+                                    return Err(ControllerError::NetBox(netbox_client::NetBoxError::Api(error_msg)));
+                                }
+                            } else {
+                                let error_msg = format!("Failed to create site group in NetBox: {}", e);
+                                error!("{}", error_msg);
+                                return Err(ControllerError::NetBox(e));
+                            }
                         }
                     }
                 }

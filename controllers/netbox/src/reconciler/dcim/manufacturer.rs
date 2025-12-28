@@ -30,7 +30,7 @@ impl Reconciler {
                 "NetBoxManufacturer",
                 namespace,
                 name,
-                |netbox_id| async move {
+                |netbox_id: u64| async move {
                     let id_str = netbox_id.to_string();
                     netbox_client_ref.query_manufacturers(&[("id", &id_str)], false)
                         .await
@@ -110,7 +110,7 @@ impl Reconciler {
                 if let Some(existing) = existing_manufacturer {
                     existing
                 } else {
-                    info!("Creating manufacturer {} in NetBox", manufacturer_crd.spec.name);
+                    debug!("Attempting to create manufacturer {} in NetBox", manufacturer_crd.spec.name);
                     match netbox_client.create_manufacturer(
                         &manufacturer_crd.spec.name,
                         manufacturer_crd.spec.slug.as_deref(),
@@ -121,9 +121,59 @@ impl Reconciler {
                             created
                         }
                         Err(e) => {
-                            let error_msg = format!("Failed to create manufacturer in NetBox: {}", e);
-                            error!("{}", error_msg);
-                            return Err(ControllerError::NetBox(e));
+                            use crate::reconcile_helpers::is_conflict_error;
+
+                            if is_conflict_error(&e) {
+                                warn!("Manufacturer {} creation conflicted, attempting idempotent lookup", manufacturer_crd.spec.name);
+
+                                // Strategy 1: by name
+                                let mut found_manufacturer = match netbox_client.get_manufacturer_by_name(&manufacturer_crd.spec.name).await {
+                                    Ok(Some(m)) => Some(m),
+                                    _ => None,
+                                };
+
+                                // Strategy 2: by slug if not found
+                                if found_manufacturer.is_none() {
+                                    if let Some(slug) = &manufacturer_crd.spec.slug {
+                                        if let Ok(manufacturers) = netbox_client.query_manufacturers(&[("slug", slug)], false).await {
+                                            if let Some(m) = manufacturers.first() {
+                                                info!("Found existing manufacturer by slug '{}' in NetBox (ID: {}) after conflict", slug, m.id);
+                                                found_manufacturer = Some(m.clone());
+                                            }
+                                        }
+                                    }
+                                }
+
+                                // Strategy 3: fallback query all and filter
+                                if found_manufacturer.is_none() {
+                                    if let Ok(all_manufacturers) = netbox_client.query_manufacturers(&[], true).await {
+                                        if let Some(m) = all_manufacturers.iter().find(|m| {
+                                            let slug_match = manufacturer_crd
+                                                .spec
+                                                .slug
+                                                .as_ref()
+                                                .map(|spec_slug| m.slug == *spec_slug)
+                                                .unwrap_or(false);
+                                            m.name == manufacturer_crd.spec.name || slug_match
+                                        }) {
+                                            info!("Found existing manufacturer in NetBox (ID: {}) via fallback query", m.id);
+                                            found_manufacturer = Some(m.clone());
+                                        }
+                                    }
+                                }
+
+                                if let Some(found) = found_manufacturer {
+                                    found
+                                } else {
+                                    let error_msg = format!("Manufacturer {} already exists in NetBox but could not retrieve it: {}", manufacturer_crd.spec.name, e);
+                                    error!("{}", error_msg);
+                                    return Err(ControllerError::NetBox(netbox_client::NetBoxError::Api(error_msg)));
+                                }
+                            } else {
+                                let error_msg = format!("Failed to create manufacturer in NetBox: {}", e);
+                                error!("{}", error_msg);
+                                return Err(ControllerError::NetBox(e));
+                            }
                         }
                     }
                 }

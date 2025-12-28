@@ -1,6 +1,6 @@
 //! IPAM (IP Address Management) reconcilers
 //! 
-//! Handles: IPClaim, IPPool, NetBoxPrefix, NetBoxAggregate
+//! Handles: IPClaim, IPPool, NetBoxPrefix, NetBoxAggregate, NetBoxRIR
 
 pub mod ip_claim;
 #[cfg(test)]
@@ -12,3 +12,4 @@ pub mod prefix;
 #[cfg(test)]
 pub mod prefix_test;
 pub mod aggregate;
+pub mod rir;

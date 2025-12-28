@@ -30,7 +30,7 @@ impl Reconciler {
                 "NetBoxDeviceRole",
                 namespace,
                 name,
-                |netbox_id| async move {
+                |netbox_id: u64| async move {
                     let id_str = netbox_id.to_string();
                     netbox_client_ref.query_device_roles(&[("id", &id_str)], false)
                         .await
@@ -113,7 +113,7 @@ impl Reconciler {
                 if let Some(existing) = existing_device_role {
                     existing
                 } else {
-                    info!("Creating device role {} in NetBox", device_role_crd.spec.name);
+                    debug!("Attempting to create device role {} in NetBox", device_role_crd.spec.name);
                     match netbox_client.create_device_role(
                         &device_role_crd.spec.name,
                         device_role_crd.spec.slug.as_deref(),

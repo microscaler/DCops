@@ -22,7 +22,7 @@ impl Reconciler {
         
         // Validate and resolve manufacturer ID (required) using helper
         validate_reference_kind(&device_type_crd.spec.manufacturer, "NetBoxManufacturer", "manufacturer", name)?;
-        let manufacturer_id = resolve_required_dependency_id(
+        let manufacturer_id: u64 = resolve_required_dependency_id(
             &*self.netbox_manufacturer_api,
             &device_type_crd.spec.manufacturer.name,
             "Manufacturer",
@@ -40,7 +40,7 @@ impl Reconciler {
                 "NetBoxDeviceType",
                 namespace,
                 name,
-                |netbox_id| async move {
+                |netbox_id: u64| async move {
                     let id_str = netbox_id.to_string();
                     netbox_client_ref.query_device_types(&[("id", &id_str)], false)
                         .await
@@ -124,7 +124,7 @@ impl Reconciler {
                 if let Some(existing) = existing_device_type {
                     existing
                 } else {
-                    info!("Creating device type {} in NetBox", device_type_crd.spec.model);
+                    debug!("Attempting to create device type {} in NetBox", device_type_crd.spec.model);
                     match netbox_client.create_device_type(
                         ManufacturerId(manufacturer_id),
                         &device_type_crd.spec.model,
@@ -140,9 +140,66 @@ impl Reconciler {
                             created
                         }
                         Err(e) => {
-                            let error_msg = format!("Failed to create device type in NetBox: {}", e);
-                            error!("{}", error_msg);
-                            return Err(ControllerError::NetBox(e));
+                            use crate::reconcile_helpers::is_conflict_error;
+
+                            if is_conflict_error(&e) {
+                                warn!("DeviceType {} creation conflicted, attempting idempotent lookup", device_type_crd.spec.model);
+
+                                // Strategy 1: by manufacturer+model
+                                let mut found_device_type = match netbox_client
+                                    .get_device_type_by_model(ManufacturerId(manufacturer_id), &device_type_crd.spec.model)
+                                    .await
+                                {
+                                    Ok(Some(dt)) => Some(dt),
+                                    _ => None,
+                                };
+
+                                // Strategy 2: query by slug if provided
+                                if found_device_type.is_none() {
+                                    if let Some(slug) = &device_type_crd.spec.slug {
+                                        if let Ok(device_types) = netbox_client
+                                            .query_device_types(&[("slug", slug)], false)
+                                            .await
+                                        {
+                                            if let Some(dt) = device_types.first() {
+                                                info!("Found existing device type by slug '{}' in NetBox (ID: {}) after conflict", slug, dt.id);
+                                                found_device_type = Some(dt.clone());
+                                            }
+                                        }
+                                    }
+                                }
+
+                                // Strategy 3: fallback query all and filter
+                                if found_device_type.is_none() {
+                                    if let Ok(all_device_types) = netbox_client.query_device_types(&[], true).await {
+                                        if let Some(dt) = all_device_types.iter().find(|dt| {
+                                            (dt.model == device_type_crd.spec.model
+                                                && dt.manufacturer.id == manufacturer_id)
+                                                || device_type_crd
+                                                    .spec
+                                                    .slug
+                                                    .as_ref()
+                                                    .map(|spec_slug| dt.slug == *spec_slug)
+                                                    .unwrap_or(false)
+                                        }) {
+                                            info!("Found existing device type in NetBox (ID: {}) via fallback query", dt.id);
+                                            found_device_type = Some(dt.clone());
+                                        }
+                                    }
+                                }
+
+                                if let Some(found) = found_device_type {
+                                    found
+                                } else {
+                                    let error_msg = format!("DeviceType {} already exists in NetBox but could not retrieve it: {}", device_type_crd.spec.model, e);
+                                    error!("{}", error_msg);
+                                    return Err(ControllerError::NetBox(netbox_client::NetBoxError::Api(error_msg)));
+                                }
+                            } else {
+                                let error_msg = format!("Failed to create device type in NetBox: {}", e);
+                                error!("{}", error_msg);
+                                return Err(ControllerError::NetBox(e));
+                            }
                         }
                     }
                 }

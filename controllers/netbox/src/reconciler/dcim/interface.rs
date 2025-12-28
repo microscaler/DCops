@@ -34,7 +34,7 @@ impl Reconciler {
         // Resolve device ID (required)
         // If device hasn't been created yet, return early and let controller requeue when device is ready
         use crate::reconcile_helpers::resolve_dependency_id;
-        let device_id = match resolve_dependency_id(
+        let device_id: u64 = match resolve_dependency_id(
             device_crd.status.as_ref(),
             "Device",
             device_name,
@@ -53,7 +53,7 @@ impl Reconciler {
                 "NetBoxInterface",
                 namespace,
                 name,
-                |netbox_id| async move {
+                |netbox_id: u64| async move {
                     netbox_client_ref.get_interface(InterfaceId(netbox_id)).await
                 },
             ).await?
@@ -136,7 +136,7 @@ impl Reconciler {
                     info!("Interface {} on device {} already exists in NetBox (ID: {}), acknowledging existence (idempotency)", interface_crd.spec.name, device_name, existing.id);
                     existing
                 } else {
-                    info!("Creating interface {} on device {} in NetBox", interface_crd.spec.name, device_name);
+                    debug!("Attempting to create interface {} on device {} in NetBox", interface_crd.spec.name, device_name);
                     match netbox_client.create_interface(
                         DeviceId(device_id),
                         &interface_crd.spec.name,

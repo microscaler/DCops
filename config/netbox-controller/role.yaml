@@ -14,6 +14,7 @@ rules:
   - netboxtags
   - netboxaggregates
   - netboxvlans
+  - netboxrirs
   # Tenancy resources
   - netboxtenants
   # DCIM resources - Sites
@@ -49,6 +50,7 @@ rules:
   - netboxtags/status
   - netboxaggregates/status
   - netboxvlans/status
+  - netboxrirs/status
   # Tenancy resources
   - netboxtenants/status
   # DCIM resources - Sites

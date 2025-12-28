@@ -574,6 +574,20 @@ impl NetBoxStatusCheck for crds::NetBoxAggregateStatus {
     fn error(&self) -> Option<&str> { self.error.as_deref() }
 }
 
+impl NetBoxStatusCheck for crds::NetBoxRIRStatus {
+    fn netbox_id(&self) -> Option<u64> { self.netbox_id }
+    fn netbox_url(&self) -> Option<&str> { self.netbox_url.as_deref() }
+    fn state_str(&self) -> &str {
+        match self.state {
+            crds::ResourceState::Pending => "Pending",
+            crds::ResourceState::Created => "Created",
+            crds::ResourceState::Updated => "Updated",
+            crds::ResourceState::Failed => "Failed",
+        }
+    }
+    fn error(&self) -> Option<&str> { self.error.as_deref() }
+}
+
 /// Check if status needs updating by comparing current status with desired values
 /// 
 /// Returns true if status should be updated (values changed), false if status is already correct.
@@ -1220,22 +1234,20 @@ pub fn is_conflict_error(error: &netbox_client::NetBoxError) -> bool {
     error_str.contains("asset tag")
 }
 
-/// Handle CREATE conflict errors by trying multiple query strategies (GitOps idempotency)
-/// 
-/// **NOTE**: This helper is currently unused due to Rust closure/async complexity.
-/// Reconcilers use `is_conflict_error` to check for conflicts, then implement the
-/// query pattern inline. This is still WET code that should be refactored.
-/// 
-/// Future improvement: Create a macro or simpler helper pattern to eliminate
-/// the duplicated query logic across reconcilers.
-/// 
-/// Current pattern used in reconcilers:
-/// ```rust
-/// if is_conflict_error(&e) {
-///     // Try query strategy 1
-///     // Try query strategy 2
-///     // Try fallback query
-///     // Use found resource or error
-/// }
-/// ```
+// Handle CREATE conflict errors by trying multiple query strategies (GitOps idempotency)
+//
+// NOTE: This helper is currently unused due to Rust closure/async complexity.
+// Reconcilers use `is_conflict_error` to check for conflicts, then implement the
+// query pattern inline. This is still WET code that should be refactored.
+//
+// Future improvement: Create a macro or simpler helper pattern to eliminate
+// the duplicated query logic across reconcilers.
+//
+// Current pattern used in reconcilers:
+// if is_conflict_error(&e) {
+//     // Try query strategy 1
+//     // Try query strategy 2
+//     // Try fallback query
+//     // Use found resource or error
+// }
 

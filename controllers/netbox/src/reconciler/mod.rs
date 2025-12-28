@@ -22,7 +22,7 @@ use crds::{
     IPClaim, IPPool, NetBoxPrefix, NetBoxTenant, NetBoxSite, NetBoxRole, NetBoxTag, NetBoxAggregate,
     NetBoxDeviceRole, NetBoxManufacturer, NetBoxPlatform, NetBoxDeviceType, NetBoxDevice,
     NetBoxInterface, NetBoxMACAddress, NetBoxVLAN, NetBoxRegion, NetBoxSiteGroup, NetBoxLocation,
-    PrefixState, ResourceState,
+    NetBoxRIR, PrefixState, ResourceState,
 };
 use tracing::{info, error, debug, warn};
 use std::collections::HashMap;
@@ -62,6 +62,7 @@ pub struct Reconciler {
     pub(crate) netbox_tag_api: Box<dyn KubeApiTrait<NetBoxTag> + Send + Sync>,
     pub(crate) netbox_aggregate_api: Box<dyn KubeApiTrait<NetBoxAggregate> + Send + Sync>,
     pub(crate) netbox_vlan_api: Box<dyn KubeApiTrait<NetBoxVLAN> + Send + Sync>,
+    pub(crate) netbox_rir_api: Box<dyn KubeApiTrait<NetBoxRIR> + Send + Sync>,
     // Tenancy APIs
     pub(crate) netbox_tenant_api: Box<dyn KubeApiTrait<NetBoxTenant> + Send + Sync>,
     // DCIM APIs
@@ -346,6 +347,22 @@ impl Reconciler {
         serde_json::json!({ "status": status })
     }
     
+    pub(crate) fn create_typed_rir_status_patch(
+        netbox_id: u64,
+        netbox_url: String,
+        state: ResourceState,
+        error: Option<String>,
+    ) -> serde_json::Value {
+        let status = crds::NetBoxRIRStatus {
+            netbox_id: Some(netbox_id),
+            netbox_url: Some(netbox_url),
+            state,
+            error,
+            last_reconciled: None,
+        };
+        serde_json::json!({ "status": status })
+    }
+    
     /// Creates a new reconciler instance.
     pub fn new(
         token_resolver: Arc<TokenResolver>,
@@ -355,6 +372,7 @@ impl Reconciler {
         netbox_tag_api: impl KubeApiTrait<NetBoxTag> + Send + Sync + 'static,
         netbox_aggregate_api: impl KubeApiTrait<NetBoxAggregate> + Send + Sync + 'static,
         netbox_vlan_api: impl KubeApiTrait<NetBoxVLAN> + Send + Sync + 'static,
+        netbox_rir_api: impl KubeApiTrait<NetBoxRIR> + Send + Sync + 'static,
         // Tenancy APIs
         netbox_tenant_api: impl KubeApiTrait<NetBoxTenant> + Send + Sync + 'static,
         // DCIM APIs
@@ -381,6 +399,7 @@ impl Reconciler {
             netbox_tag_api: Box::new(netbox_tag_api),
             netbox_aggregate_api: Box::new(netbox_aggregate_api),
             netbox_vlan_api: Box::new(netbox_vlan_api),
+            netbox_rir_api: Box::new(netbox_rir_api),
             // Tenancy
             netbox_tenant_api: Box::new(netbox_tenant_api),
             // DCIM

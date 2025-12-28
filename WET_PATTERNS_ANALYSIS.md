@@ -49,8 +49,8 @@ where
 - [x] `dcim/device_type.rs:30` - Manufacturer ID resolution ✅
 - [x] `dcim/location.rs:118` - Site ID resolution ✅
 - [x] `dcim/location.rs:162` - Tenant ID resolution ✅
-- [ ] `ipam/prefix.rs:179` - Tenant ID resolution (first occurrence)
-- [ ] `ipam/prefix.rs:417` - Tenant ID resolution (second occurrence in update path)
+- [x] `ipam/prefix.rs:179` - Tenant ID resolution (first occurrence) ✅
+- [x] `ipam/prefix.rs:417` - Tenant ID resolution (second occurrence in update path) ✅
 
 ---
 
@@ -108,12 +108,12 @@ where
 - [x] `dcim/location.rs:136` - Parent Location ID resolution (optional) ✅
 - [ ] `dcim/region.rs:26` - Parent Region ID resolution (optional)
 - [ ] `tenancy.rs:168` - TenantGroup ID resolution (optional)
-- [ ] `ipam/prefix.rs:134` - Site ID resolution (optional, first occurrence)
-- [ ] `ipam/prefix.rs:156` - VLAN ID resolution (optional, first occurrence)
-- [ ] `ipam/prefix.rs:201` - Role ID resolution (optional, first occurrence)
-- [ ] `ipam/prefix.rs:395` - Site ID resolution (optional, second occurrence in update path)
-- [ ] `ipam/prefix.rs:366` - VLAN ID resolution (optional, second occurrence in update path)
-- [ ] `ipam/prefix.rs:436` - Role ID resolution (optional, second occurrence in update path)
+- [x] `ipam/prefix.rs:134` - Site ID resolution (optional, first occurrence) ✅
+- [x] `ipam/prefix.rs:156` - VLAN ID resolution (optional, first occurrence) ✅
+- [x] `ipam/prefix.rs:201` - Role ID resolution (optional, first occurrence) ✅
+- [x] `ipam/prefix.rs:395` - Site ID resolution (optional, second occurrence in update path) ✅
+- [x] `ipam/prefix.rs:366` - VLAN ID resolution (optional, second occurrence in update path) ✅
+- [x] `ipam/prefix.rs:436` - Role ID resolution (optional, second occurrence in update path) ✅
 
 ---
 
@@ -153,7 +153,7 @@ where
 - [ ] `dcim/device_role.rs` - Name/namespace extraction
 - [ ] `dcim/region.rs` - Name/namespace extraction
 - [ ] `tenancy.rs:45-48` - Name/namespace extraction
-- [ ] `ipam/prefix.rs:71-74` - Name/namespace extraction
+- [x] `ipam/prefix.rs:71-74` - Name/namespace extraction ✅
 - [ ] `ipam/aggregate.rs:11-14` - Name/namespace extraction
 - [ ] `ipam/ip_claim.rs` - Name/namespace extraction
 - [ ] `ipam/ip_pool.rs` - Name/namespace extraction
@@ -195,8 +195,8 @@ fn validate_reference_kind(
 - [x] `dcim/device_type.rs:26` - Manufacturer kind validation (required) ✅
 - [x] `dcim/location.rs:114` - Site kind validation (required) ✅
 - [x] `dcim/location.rs:158` - Tenant kind validation (required) ✅
-- [ ] `ipam/prefix.rs:175` - Tenant kind validation (required, first occurrence)
-- [ ] `ipam/prefix.rs:413` - Tenant kind validation (required, second occurrence in update path)
+- [x] `ipam/prefix.rs:175` - Tenant kind validation (required, first occurrence) ✅
+- [x] `ipam/prefix.rs:413` - Tenant kind validation (required, second occurrence in update path) ✅
 
 **Locations to Refactor** (Optional - warn and return None):
 - [x] `dcim/site.rs:188` - Region kind validation (optional) ✅
@@ -212,12 +212,12 @@ fn validate_reference_kind(
 - [x] `dcim/location.rs:136` - Parent Location kind validation (optional) ✅
 - [ ] `dcim/region.rs:26` - Parent Region kind validation (optional)
 - [ ] `tenancy.rs:168` - TenantGroup kind validation (optional)
-- [ ] `ipam/prefix.rs:130` - Site kind validation (optional)
-- [ ] `ipam/prefix.rs:152` - VLAN kind validation (optional)
-- [ ] `ipam/prefix.rs:197` - Role kind validation (optional)
-- [ ] `ipam/prefix.rs:366` - VLAN kind validation (optional, second occurrence)
-- [ ] `ipam/prefix.rs:390` - Site kind validation (optional, second occurrence)
-- [ ] `ipam/prefix.rs:436` - Role kind validation (optional, second occurrence)
+- [x] `ipam/prefix.rs:130` - Site kind validation (optional) ✅
+- [x] `ipam/prefix.rs:152` - VLAN kind validation (optional) ✅
+- [x] `ipam/prefix.rs:197` - Role kind validation (optional) ✅
+- [x] `ipam/prefix.rs:366` - VLAN kind validation (optional, second occurrence) ✅
+- [x] `ipam/prefix.rs:390` - Site kind validation (optional, second occurrence) ✅
+- [x] `ipam/prefix.rs:436` - Role kind validation (optional, second occurrence) ✅
 - [ ] `ipam/ip_claim.rs:355` - NetBoxPrefix kind validation
 - [ ] `ipam/ip_pool.rs:24` - NetBoxPrefix kind validation
 

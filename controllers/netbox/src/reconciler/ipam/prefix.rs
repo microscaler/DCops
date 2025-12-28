@@ -68,10 +68,9 @@ impl Reconciler {
     }
 
     pub async fn reconcile_netbox_prefix(&self, prefix_crd: &NetBoxPrefix) -> Result<(), ControllerError> {
-        let name = prefix_crd.metadata.name.as_ref()
-            .ok_or_else(|| ControllerError::InvalidConfig("NetBoxPrefix missing name".to_string()))?;
-        let namespace = prefix_crd.metadata.namespace.as_deref()
-            .unwrap_or("default");
+        // Extract name and namespace using helper
+        use crate::reconcile_helpers::extract_name_and_namespace;
+        let (name, namespace) = extract_name_and_namespace(prefix_crd, "NetBoxPrefix")?;
         
         info!("Reconciling NetBoxPrefix {}/{}", namespace, name);
         
@@ -124,95 +123,48 @@ impl Reconciler {
             crds::PrefixStatus::Container => "container",
         };
         
-        // Resolve all references first (needed for both update detection and creation)
-        // Resolve Site reference if provided
-        let site_id = if let Some(site_ref) = &prefix_crd.spec.site {
-            if site_ref.kind != "NetBoxSite" {
-                warn!("Invalid kind '{}' for site reference in prefix {}, expected 'NetBoxSite'", site_ref.kind, name);
-                None
-            } else {
-                match self.netbox_site_api.get(&site_ref.name).await {
-                    Ok(site_crd) => {
-                        site_crd.status
-                            .as_ref()
-                            .and_then(|s| s.netbox_id)
-                    }
-                    Err(_) => {
-                        warn!("Site CRD '{}' not found for prefix {}, skipping site reference", site_ref.name, name);
-                        None
-                    }
-                }
-            }
-        } else {
-            None
-        };
+        // Resolve all references first (needed for both update detection and creation) using helpers
+        use crate::reconcile_helpers::{validate_reference_kind, resolve_required_dependency_id, resolve_optional_dependency_id};
         
-        // Resolve VLAN reference if provided
-        let vlan_id = if let Some(vlan_ref) = &prefix_crd.spec.vlan {
-            if vlan_ref.kind != "NetBoxVLAN" {
-                warn!("Invalid kind '{}' for VLAN reference in prefix {}, expected 'NetBoxVLAN'", vlan_ref.kind, name);
-                None
-            } else {
-                match self.netbox_vlan_api.get(&vlan_ref.name).await {
-                    Ok(vlan_crd) => {
-                        vlan_crd.status
-                            .as_ref()
-                            .and_then(|s| s.netbox_id)
-                            .map(|id| id as u32)
-                    }
-                    Err(_) => {
-                        warn!("VLAN CRD '{}' not found for prefix {}, skipping VLAN reference", vlan_ref.name, name);
-                        None
-                    }
-                }
-            }
-        } else {
-            None
-        };
+        // Resolve optional Site reference
+        let site_id = resolve_optional_dependency_id(
+            &*self.netbox_site_api,
+            prefix_crd.spec.site.as_ref(),
+            "NetBoxSite",
+            "site",
+            name,
+            |crd| crd.status.as_ref(),
+        ).await;
         
-        // Resolve Tenant reference (required)
-        if prefix_crd.spec.tenant.kind != "NetBoxTenant" {
-            return Err(ControllerError::InvalidConfig(
-                format!("Invalid kind '{}' for tenant reference in prefix {}, expected 'NetBoxTenant'", prefix_crd.spec.tenant.kind, name)
-            ));
-        }
-        let tenant_id = match self.netbox_tenant_api.get(&prefix_crd.spec.tenant.name).await {
-            Ok(tenant_crd) => {
-                tenant_crd.status
-                    .as_ref()
-                    .and_then(|s| s.netbox_id)
-                    .ok_or_else(|| ControllerError::InvalidConfig(
-                        format!("Tenant '{}' has not been created in NetBox yet (no netbox_id in status)", prefix_crd.spec.tenant.name)
-                    ))?
-            }
-            Err(_) => {
-                return Err(ControllerError::InvalidConfig(
-                    format!("Tenant CRD '{}' not found for prefix {}", prefix_crd.spec.tenant.name, name)
-                ));
-            }
-        };
+        // Resolve optional VLAN reference (convert to u32 for VlanId)
+        let vlan_id = resolve_optional_dependency_id(
+            &*self.netbox_vlan_api,
+            prefix_crd.spec.vlan.as_ref(),
+            "NetBoxVLAN",
+            "vlan",
+            name,
+            |crd| crd.status.as_ref(),
+        ).await.map(|id| id as u32);
         
-        // Resolve Role reference if provided
-        let role_id = if let Some(role_ref) = &prefix_crd.spec.role {
-            if role_ref.kind != "NetBoxRole" {
-                warn!("Invalid kind '{}' for role reference in prefix {}, expected 'NetBoxRole'", role_ref.kind, name);
-                None
-            } else {
-                match self.netbox_role_api.get(&role_ref.name).await {
-                    Ok(role_crd) => {
-                        role_crd.status
-                            .as_ref()
-                            .and_then(|s| s.netbox_id)
-                    }
-                    Err(_) => {
-                        warn!("Role CRD '{}' not found for prefix {}, skipping role reference", role_ref.name, name);
-                        None
-                    }
-                }
-            }
-        } else {
-            None
-        };
+        // Validate and resolve Tenant reference (required)
+        validate_reference_kind(&prefix_crd.spec.tenant, "NetBoxTenant", "tenant", name)?;
+        let tenant_id = resolve_required_dependency_id(
+            &*self.netbox_tenant_api,
+            &prefix_crd.spec.tenant.name,
+            "Tenant",
+            name,
+            |crd| crd.status.as_ref(),
+        ).await?;
+        
+        // Resolve optional Role reference
+        let role_id = resolve_optional_dependency_id(
+            &*self.netbox_role_api,
+            prefix_crd.spec.role.as_ref(),
+            "NetBoxRole",
+            "role",
+            name,
+            |crd| crd.status.as_ref(),
+        ).await;
         
         // Check if already created - use helper for drift detection and updates
         let netbox_prefix = if let Some(status) = &prefix_crd.status {
@@ -408,51 +360,25 @@ impl Reconciler {
                     None
                 };
                 
-                // Resolve Tenant reference (required) - need ID for NetBox API
-                if prefix_crd.spec.tenant.kind != "NetBoxTenant" {
-                    return Err(ControllerError::InvalidConfig(
-                        format!("Invalid kind '{}' for tenant reference in prefix {}, expected 'NetBoxTenant'", prefix_crd.spec.tenant.kind, name)
-                    ));
-                }
-                let tenant_id = match self.netbox_tenant_api.get(&prefix_crd.spec.tenant.name).await {
-                    Ok(tenant_crd) => {
-                        tenant_crd.status
-                            .as_ref()
-                            .and_then(|s| s.netbox_id)
-                            .ok_or_else(|| ControllerError::InvalidConfig(
-                                format!("Tenant '{}' has not been created in NetBox yet (no netbox_id in status)", prefix_crd.spec.tenant.name)
-                            ))?
-                    }
-                    Err(_) => {
-                        return Err(ControllerError::InvalidConfig(
-                            format!("Tenant CRD '{}' not found for prefix {}", prefix_crd.spec.tenant.name, name)
-                        ));
-                    }
-                };
+                // Resolve Tenant reference (required) - need ID for NetBox API using helper
+                validate_reference_kind(&prefix_crd.spec.tenant, "NetBoxTenant", "tenant", name)?;
+                let tenant_id = resolve_required_dependency_id(
+                    &*self.netbox_tenant_api,
+                    &prefix_crd.spec.tenant.name,
+                    "Tenant",
+                    name,
+                    |crd| crd.status.as_ref(),
+                ).await?;
                 
-                // Resolve Role reference if provided - need ID for NetBox API
-                let role_id = if let Some(role_ref) = &prefix_crd.spec.role {
-                    // Validate kind
-                    if role_ref.kind != "NetBoxRole" {
-                        warn!("Invalid kind '{}' for role reference in prefix {}, expected 'NetBoxRole'", role_ref.kind, name);
-                        None
-                    } else {
-                        // Resolve to NetBox ID
-                        match self.netbox_role_api.get(&role_ref.name).await {
-                            Ok(role_crd) => {
-                                role_crd.status
-                                    .as_ref()
-                                    .and_then(|s| s.netbox_id)
-                            }
-                            Err(_) => {
-                                warn!("Role CRD '{}' not found for prefix {}, skipping role reference", role_ref.name, name);
-                                None
-                            }
-                        }
-                    }
-                } else {
-                    None
-                };
+                // Resolve optional Role reference using helper
+                let role_id = resolve_optional_dependency_id(
+                    &*self.netbox_role_api,
+                    prefix_crd.spec.role.as_ref(),
+                    "NetBoxRole",
+                    "role",
+                    name,
+                    |crd| crd.status.as_ref(),
+                ).await;
         
                 // Try to find existing prefix by querying NetBox (idempotency fallback)
                 let existing_prefix = match netbox_client.query_prefixes(

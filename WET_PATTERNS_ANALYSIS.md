@@ -103,10 +103,10 @@ where
 - [x] `dcim/device.rs:218` - Location ID resolution (optional) ✅
 - [x] `dcim/vlan.rs:118` - Site ID resolution (optional) ✅
 - [x] `dcim/vlan.rs:155` - Role ID resolution (optional) ✅
-- [ ] `dcim/platform.rs:30` - Manufacturer ID resolution (optional)
-- [ ] `dcim/site_group.rs:26` - Parent SiteGroup ID resolution (optional)
+- [x] `dcim/platform.rs:30` - Manufacturer ID resolution (optional) ✅
+- [x] `dcim/site_group.rs:26` - Parent SiteGroup ID resolution (optional) ✅
 - [x] `dcim/location.rs:136` - Parent Location ID resolution (optional) ✅
-- [ ] `dcim/region.rs:26` - Parent Region ID resolution (optional)
+- [x] `dcim/region.rs:26` - Parent Region ID resolution (optional) ✅
 - [ ] `tenancy.rs:168` - TenantGroup ID resolution (optional)
 - [x] `ipam/prefix.rs:134` - Site ID resolution (optional, first occurrence) ✅
 - [x] `ipam/prefix.rs:156` - VLAN ID resolution (optional, first occurrence) ✅

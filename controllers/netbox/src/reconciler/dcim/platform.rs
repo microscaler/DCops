@@ -8,10 +8,9 @@ use netbox_client::{NetBoxClientTrait, ManufacturerId};
 
 impl Reconciler {
     pub async fn reconcile_netbox_platform(&self, platform_crd: &NetBoxPlatform) -> Result<(), ControllerError> {
-        let name = platform_crd.metadata.name.as_ref()
-            .ok_or_else(|| ControllerError::InvalidConfig("NetBoxPlatform missing name".to_string()))?;
-        let namespace = platform_crd.metadata.namespace.as_deref()
-            .unwrap_or("default");
+        // Extract name and namespace using helper
+        use crate::reconcile_helpers::{extract_name_and_namespace, resolve_optional_dependency_id};
+        let (name, namespace) = extract_name_and_namespace(platform_crd, "NetBoxPlatform")?;
         
         info!("Reconciling NetBoxPlatform {}/{}", namespace, name);
         
@@ -21,27 +20,15 @@ impl Reconciler {
             .await
             .map_err(|e| ControllerError::TokenResolution(e))?;
         
-        // Resolve manufacturer ID if provided
-        let manufacturer_id = if let Some(manufacturer_ref) = &platform_crd.spec.manufacturer {
-            if manufacturer_ref.kind != "NetBoxManufacturer" {
-                warn!("Invalid kind '{}' for manufacturer reference in platform {}, expected 'NetBoxManufacturer'", manufacturer_ref.kind, name);
-                None
-            } else {
-                match self.netbox_manufacturer_api.get(&manufacturer_ref.name).await {
-                    Ok(manufacturer_crd) => {
-                        manufacturer_crd.status
-                            .as_ref()
-                            .and_then(|s| s.netbox_id)
-                    }
-                    Err(_) => {
-                        warn!("Manufacturer CRD '{}' not found for platform {}, skipping manufacturer reference", manufacturer_ref.name, name);
-                        None
-                    }
-                }
-            }
-        } else {
-            None
-        };
+        // Resolve optional manufacturer ID using helper
+        let manufacturer_id = resolve_optional_dependency_id(
+            &*self.netbox_manufacturer_api,
+            platform_crd.spec.manufacturer.as_ref(),
+            "NetBoxManufacturer",
+            "manufacturer",
+            name,
+            |crd| crd.status.as_ref(),
+        ).await;
         
         // Check if already created - use shared helper for drift detection and status validation
         use crate::reconcile_helpers::{validate_status_and_drift, DriftCheckResult};

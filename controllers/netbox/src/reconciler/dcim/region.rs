@@ -8,10 +8,9 @@ use netbox_client::{NetBoxClientTrait, RegionId};
 
 impl Reconciler {
     pub async fn reconcile_netbox_region(&self, region_crd: &NetBoxRegion) -> Result<(), ControllerError> {
-        let name = region_crd.metadata.name.as_ref()
-            .ok_or_else(|| ControllerError::InvalidConfig("NetBoxRegion missing name".to_string()))?;
-        let namespace = region_crd.metadata.namespace.as_deref()
-            .unwrap_or("default");
+        // Extract name and namespace using helper
+        use crate::reconcile_helpers::{extract_name_and_namespace, resolve_optional_dependency_id};
+        let (name, namespace) = extract_name_and_namespace(region_crd, "NetBoxRegion")?;
         
         info!("Reconciling NetBoxRegion {}/{}", namespace, name);
         
@@ -21,27 +20,15 @@ impl Reconciler {
             .await
             .map_err(|e| ControllerError::TokenResolution(e))?;
         
-        // Resolve parent region ID if parent reference provided
-        let parent_id = if let Some(parent_ref) = &region_crd.spec.parent {
-            if parent_ref.kind != "NetBoxRegion" {
-                warn!("Invalid kind '{}' for parent reference in region {}, expected 'NetBoxRegion'", parent_ref.kind, name);
-                None
-            } else {
-                match self.netbox_region_api.get(&parent_ref.name).await {
-                    Ok(parent_crd) => {
-                        parent_crd.status
-                            .as_ref()
-                            .and_then(|s| s.netbox_id)
-                    }
-                    Err(_) => {
-                        warn!("Parent Region CRD '{}' not found for region {}, skipping parent reference", parent_ref.name, name);
-                        None
-                    }
-                }
-            }
-        } else {
-            None
-        };
+        // Resolve optional parent region ID using helper
+        let parent_id = resolve_optional_dependency_id(
+            &*self.netbox_region_api,
+            region_crd.spec.parent.as_ref(),
+            "NetBoxRegion",
+            "parent",
+            name,
+            |crd| crd.status.as_ref(),
+        ).await;
         
         // Check if already created - use shared helper for drift detection and status validation
         use crate::reconcile_helpers::{validate_status_and_drift, DriftCheckResult};

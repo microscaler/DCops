@@ -387,27 +387,23 @@ impl Reconciler {
             }
         };
         
-        // Update status (use lowercase state to match CRD validation schema)
+        // Update status using helper
+        use crate::reconcile_helpers::update_resource_status;
         let status_patch = Self::create_resource_status_patch(
             netbox_site.id,
             netbox_site.url.clone(),
             ResourceState::Created,
             None,
         );
-        let pp = kube::api::PatchParams::default();
-        match self.netbox_site_api
-            .patch_status(name, &pp, &kube::api::Patch::Merge(status_patch.clone()))
-            .await
-        {
-            Ok(_) => {
-                info!("Updated NetBoxSite {}/{} status: NetBox ID {}", namespace, name, netbox_site.id);
-                Ok(())
-            }
-            Err(e) => {
-                let error_msg = format!("Failed to update NetBoxSite status: {}", e);
-                error!("{}", error_msg);
-                Err(ControllerError::Kube(e.into()))
-            }
-        }
+        update_resource_status(
+            &*self.netbox_site_api,
+            name,
+            namespace,
+            &status_patch,
+            "NetBoxSite",
+            netbox_site.id,
+        ).await?;
+        info!("Updated NetBoxSite {}/{} status: NetBox ID {}", namespace, name, netbox_site.id);
+        Ok(())
     }
 }

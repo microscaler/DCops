@@ -80,27 +80,23 @@ impl Reconciler {
                 );
                 
                 if needs_status_update {
+                    use crate::reconcile_helpers::update_resource_status;
                     let status_patch = Self::create_resource_status_patch(
                         device.id,
                         device.url.clone(),
                         ResourceState::Created,
                         None,
                     );
-                    let pp = kube::api::PatchParams::default();
-                    match self.netbox_device_api
-                        .patch_status(name, &pp, &kube::api::Patch::Merge(status_patch.clone()))
-                        .await
-                    {
-                        Ok(_) => {
-                            debug!("Updated NetBoxDevice {}/{} status: NetBox ID {}", namespace, name, device.id);
-                            return Ok(());
-                        }
-                        Err(e) => {
-                            let error_msg = format!("Failed to update NetBoxDevice status: {}", e);
-                            error!("{}", error_msg);
-                            return Err(ControllerError::Kube(e.into()));
-                        }
-                    }
+                    update_resource_status(
+                        &*self.netbox_device_api,
+                        name,
+                        namespace,
+                        &status_patch,
+                        "NetBoxDevice",
+                        device.id,
+                    ).await?;
+                    debug!("Updated NetBoxDevice {}/{} status: NetBox ID {}", namespace, name, device.id);
+                    return Ok(());
                 } else {
                     // Status is already correct - no update needed, skip reconciliation
                     debug!("NetBoxDevice {}/{} already has correct status (ID: {}), skipping update", namespace, name, device.id);

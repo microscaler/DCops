@@ -970,6 +970,76 @@ where
     }
 }
 
+/// Update resource status with consistent error handling.
+/// 
+/// This helper centralizes the pattern of patching resource status with proper
+/// error handling and logging. It works with any status patch created by the
+/// reconciler's status patch creation methods.
+/// 
+/// # Arguments
+/// - `api`: Kubernetes API for the CRD type
+/// - `name`: Resource name
+/// - `namespace`: Resource namespace
+/// - `status_patch`: Pre-created status patch JSON (from `create_resource_status_patch`, `create_typed_*_status_patch`, etc.)
+/// - `resource_name`: Human-readable resource name for logging (e.g., "NetBoxSite")
+/// - `netbox_id`: Optional NetBox ID for logging (use 0 if not available)
+/// 
+/// # Returns
+/// - `Ok(())` if status was updated successfully
+/// - `Err(ControllerError::Kube)` if the patch failed
+/// 
+/// # Example
+/// ```rust
+/// let status_patch = Self::create_resource_status_patch(
+///     netbox_id,
+///     netbox_url,
+///     ResourceState::Created,
+///     None,
+/// );
+/// update_resource_status(
+///     &*self.netbox_site_api,
+///     name,
+///     namespace,
+///     status_patch,
+///     "NetBoxSite",
+///     netbox_id,
+/// ).await?;
+/// ```
+pub async fn update_resource_status<API, CRD>(
+    api: &API,
+    name: &str,
+    namespace: &str,
+    status_patch: serde_json::Value,
+    resource_name: &str,
+    netbox_id: u64,
+) -> Result<(), ControllerError>
+where
+    API: crate::kube_api_trait::KubeApiTrait<CRD> + ?Sized,
+    CRD: kube::Resource + Clone + Send + Sync + 'static,
+    CRD: std::fmt::Debug + serde::de::DeserializeOwned,
+    <CRD as kube::Resource>::DynamicType: Send + Sync,
+{
+    let pp = kube::api::PatchParams::default();
+    match api
+        .patch_status(name, &pp, &kube::api::Patch::Merge(status_patch))
+        .await
+    {
+        Ok(_) => {
+            if netbox_id > 0 {
+                debug!("Updated {} {}/{} status: NetBox ID {}", resource_name, namespace, name, netbox_id);
+            } else {
+                debug!("Updated {} {}/{} status", resource_name, namespace, name);
+            }
+            Ok(())
+        }
+        Err(e) => {
+            let error_msg = format!("Failed to update {} status: {}", resource_name, e);
+            error!("{}", error_msg);
+            Err(ControllerError::Kube(e.into()))
+        }
+    }
+}
+
 /// Validate status and handle drift detection for Failed/Created states
 /// 
 /// This helper centralizes the common pattern of:

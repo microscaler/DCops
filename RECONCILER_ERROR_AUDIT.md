@@ -193,11 +193,15 @@ pub async fn add_tenant_for_create(
 - **Operation**: CREATE
 
 **NetBoxVLAN** (`default/control-plane-vlan`):
-- **Error**: `400 Bad Request - {"site":["Related object not found using the provided attributes: {'id': 0}"]}`
-- **Root Cause**: Site `datacenter-1` doesn't exist in NetBox (netboxId: 0)
+- **Error**: `Invalid configuration: Site ID is required for VLAN`
+- **Root Cause**: 
+  1. Site `datacenter-1` doesn't exist in NetBox (netboxId: 0)
+  2. **BUG**: Reconciler treats site as required and throws error when `resolve_optional_dependency_id` returns `None` (after our fix)
+  3. Should return early with `Ok(())` to allow requeueing when dependency isn't ready
 - **Dependency**: Requires NetBoxSite `datacenter-1` to be created first
 - **Status**: No status (resource never created)
 - **Operation**: CREATE
+- **Fix**: Check if site is specified but not ready, return early for requeueing (similar to MAC address/interface pattern)
 
 **NetBoxPrefix** (`default/control-plane-prefix`):
 - **Error**: `Failed to update prefix 1: 400 Bad Request - {"site":["Related object not found using the provided attributes: {'id': 0}"]}`
@@ -576,6 +580,7 @@ status:
 | `create_vlan` tenant fix | 🟡 In Progress | 2025-12-28 | ⬜ No | Code change applied ✅, compiles ✅, awaiting deployment |
 | `create_location` tenant fix | 🟡 In Progress | 2025-12-28 | ⬜ No | Code change applied ✅, compiles ✅, awaiting deployment |
 | `resolve_optional_dependency_id` bug fix | ✅ Complete | 2025-12-28 | ⬜ No | Fixed to filter out `netboxId: 0` values ✅, compiles ✅ |
+| NetBoxVLAN site dependency handling | ✅ Complete | 2025-12-28 | ⬜ No | Fixed to return early when site not ready ✅, compiles ✅ |
 | NetBoxAggregate RIR fix | ⬜ Not Started | - | ⬜ No | Separate issue - needs investigation |
 
 ### Failure Analysis: Current State
@@ -682,6 +687,60 @@ extract_status(&dependency_crd)
 - Prevents UPDATE operations from sending invalid `{"id": 0}` references
 - Resources will skip optional dependencies that aren't ready yet
 - Once the dependency is created, the next reconciliation will include it
+
+**Status**: ✅ **FIXED** - Code change applied, compiles successfully
+
+---
+
+## Additional Error: NetBoxVLAN Site Dependency Handling
+
+### Error Details
+
+**Resource**: `NetBoxVLAN` CRD `default/control-plane-vlan`  
+**Error**: `Invalid configuration: Site ID is required for VLAN`  
+**Location**: `controllers/netbox/src/reconciler/dcim/vlan.rs:158-160`  
+**Status**: No status (resource never created)
+
+### Root Cause
+
+**BUG**: After fixing `resolve_optional_dependency_id` to filter out `netboxId: 0` values, the VLAN reconciler was throwing an error when the site dependency wasn't ready. The reconciler was treating the site as required (line 158-160) even though it's specified in the spec but not created yet.
+
+**Code Flow**:
+1. VLAN reconciler calls `resolve_optional_dependency_id` for site reference
+2. Site CRD has `netboxId: 0` (not created yet)
+3. Helper returns `None` (after our fix to filter out 0 values)
+4. Reconciler throws error: `"Site ID is required for VLAN"` instead of returning early
+5. This prevents natural requeueing when the dependency becomes ready
+
+### Fix Applied
+
+**File**: `controllers/netbox/src/reconciler/dcim/vlan.rs:108-130`
+
+**Change**: Check if site is specified in spec but not ready, and return early with `Ok(())` to allow requeueing (following the pattern used in MAC address and interface reconcilers):
+
+```rust
+// Resolve optional site ID
+// If site is specified in spec but not ready yet, return early to allow requeueing
+let site_id = if vlan_crd.spec.site.is_some() {
+    let resolved_site_id = resolve_optional_dependency_id(...).await;
+    
+    // If site is specified but not ready (None), return early for requeueing
+    if resolved_site_id.is_none() {
+        debug!("NetBoxVLAN {}/{}: Site '{}' has not been created in NetBox yet (no netbox_id in status). Will requeue when site is ready.", 
+            namespace, name, vlan_crd.spec.site.as_ref().unwrap().name);
+        return Ok(()); // Return early - controller will requeue when site status updates
+    }
+    resolved_site_id
+} else {
+    None // Site is truly optional
+};
+```
+
+**Impact**: 
+- VLAN reconciler now properly handles dependencies that aren't ready yet
+- Returns early with `Ok(())` to allow natural requeueing when site is created
+- Follows the same pattern as MAC address and interface reconcilers
+- Once the site is created, the next reconciliation will proceed
 
 **Status**: ✅ **FIXED** - Code change applied, compiles successfully
 

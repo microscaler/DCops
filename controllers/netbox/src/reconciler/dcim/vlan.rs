@@ -106,14 +106,27 @@ impl Reconciler {
                 use crate::reconcile_helpers::{validate_reference_kind, resolve_required_dependency_id, resolve_optional_dependency_id};
                 
                 // Resolve optional site ID
-                let site_id = resolve_optional_dependency_id(
-                    &*self.netbox_site_api,
-                    vlan_crd.spec.site.as_ref(),
-                    "NetBoxSite",
-                    "site",
-                    name,
-                    |crd| crd.status.as_ref(),
-                ).await;
+                // If site is specified in spec but not ready yet, return early to allow requeueing
+                let site_id = if vlan_crd.spec.site.is_some() {
+                    let resolved_site_id = resolve_optional_dependency_id(
+                        &*self.netbox_site_api,
+                        vlan_crd.spec.site.as_ref(),
+                        "NetBoxSite",
+                        "site",
+                        name,
+                        |crd| crd.status.as_ref(),
+                    ).await;
+                    
+                    // If site is specified but not ready (None), return early for requeueing
+                    if resolved_site_id.is_none() {
+                        debug!("NetBoxVLAN {}/{}: Site '{}' has not been created in NetBox yet (no netbox_id in status). Will requeue when site is ready.", 
+                            namespace, name, vlan_crd.spec.site.as_ref().unwrap().name);
+                        return Ok(()); // Return early - controller will requeue when site status updates
+                    }
+                    resolved_site_id
+                } else {
+                    None // Site is truly optional
+                };
                 
                 // Validate and resolve tenant ID (required)
                 validate_reference_kind(&vlan_crd.spec.tenant, "NetBoxTenant", "tenant", name)?;
@@ -155,8 +168,9 @@ impl Reconciler {
                     info!("VLAN {} already exists in NetBox (ID: {})", vlan_crd.spec.vid, existing.id);
                     existing
                 } else {
+                    // Site is required if specified in spec, but we've already checked it's ready above
                     let site_id_value = site_id.ok_or_else(|| {
-                        ControllerError::InvalidConfig("Site ID is required for VLAN".to_string())
+                        ControllerError::InvalidConfig("Site ID is required for VLAN when site is specified in spec".to_string())
                     })?;
                     match netbox_client.create_vlan(
                         vlan_crd.spec.vid,

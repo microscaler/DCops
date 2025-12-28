@@ -52,7 +52,7 @@ impl Reconciler {
         // We can't use TokenResolver here because it would create a circular dependency
         // Instead, we resolve the token directly from the tenant's token_secret
         let token = self.token_resolver
-            .resolve_token(namespace, &crds::NetBoxResourceReference::netbox("NetBoxTenant", name.clone()))
+            .resolve_token(namespace, &crds::NetBoxResourceReference::netbox("NetBoxTenant", name.to_string()))
             .await?;
         
         // Create client with the resolved token
@@ -166,7 +166,7 @@ impl Reconciler {
                 use crate::reconcile_helpers::validate_reference_kind;
                 let group_id = if let Some(group_ref) = &tenant_crd.spec.group {
                     // Validate kind (NetBoxTenantGroup CRD not yet implemented, but we can validate)
-                    if let Err(_) = validate_reference_kind(group_ref, "NetBoxTenantGroup", "group", name) {
+                    if validate_reference_kind(group_ref, "NetBoxTenantGroup", "group", name).is_err() {
                         // Helper already logged the warning, just return None
                         None
                     } else {

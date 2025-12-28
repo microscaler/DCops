@@ -42,10 +42,9 @@ impl Reconciler {
             }
         }
         
-        let name = tenant_crd.metadata.name.as_ref()
-            .ok_or_else(|| ControllerError::InvalidConfig("NetBoxTenant missing name".to_string()))?;
-        let namespace = tenant_crd.metadata.namespace.as_deref()
-            .unwrap_or("default");
+        // Extract name and namespace using helper
+        use crate::reconcile_helpers::extract_name_and_namespace;
+        let (name, namespace) = extract_name_and_namespace(tenant_crd, "NetBoxTenant")?;
         
         info!("Reconciling NetBoxTenant {}/{}", namespace, name);
         
@@ -163,10 +162,12 @@ impl Reconciler {
                 // Resolve tenant group ID if group reference provided
                 // If no group is specified and NetBox requires one, create a default group
                 info!("Resolving tenant group for tenant {}/{}", namespace, name);
+                // Validate tenant group kind using helper
+                use crate::reconcile_helpers::validate_reference_kind;
                 let group_id = if let Some(group_ref) = &tenant_crd.spec.group {
                     // Validate kind (NetBoxTenantGroup CRD not yet implemented, but we can validate)
-                    if group_ref.kind != "NetBoxTenantGroup" {
-                        warn!("Invalid kind '{}' for group reference in tenant {}, expected 'NetBoxTenantGroup'", group_ref.kind, name);
+                    if let Err(_) = validate_reference_kind(group_ref, "NetBoxTenantGroup", "group", name) {
+                        // Helper already logged the warning, just return None
                         None
                     } else {
                         info!("Tenant group specified in CRD: '{}'", group_ref.name);

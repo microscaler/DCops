@@ -147,12 +147,12 @@ where
 - [x] `dcim/vlan.rs` - Name/namespace extraction ✅
 - [ ] `dcim/device_type.rs` - Name/namespace extraction
 - [ ] `dcim/manufacturer.rs` - Name/namespace extraction
-- [ ] `dcim/platform.rs` - Name/namespace extraction
-- [ ] `dcim/site_group.rs` - Name/namespace extraction
-- [ ] `dcim/location.rs` - Name/namespace extraction
+- [x] `dcim/platform.rs` - Name/namespace extraction ✅
+- [x] `dcim/site_group.rs` - Name/namespace extraction ✅
+- [x] `dcim/location.rs` - Name/namespace extraction ✅
 - [ ] `dcim/device_role.rs` - Name/namespace extraction
-- [ ] `dcim/region.rs` - Name/namespace extraction
-- [ ] `tenancy.rs:45-48` - Name/namespace extraction
+- [x] `dcim/region.rs` - Name/namespace extraction ✅
+- [x] `tenancy.rs:45-48` - Name/namespace extraction ✅
 - [x] `ipam/prefix.rs:71-74` - Name/namespace extraction ✅
 - [ ] `ipam/aggregate.rs:11-14` - Name/namespace extraction
 - [ ] `ipam/ip_claim.rs` - Name/namespace extraction
@@ -207,11 +207,11 @@ fn validate_reference_kind(
 - [ ] `dcim/device.rs:306` - IPClaim kind validation (optional, primary_ip6)
 - [x] `dcim/vlan.rs:114` - Site kind validation (optional) ✅
 - [x] `dcim/vlan.rs:155` - Role kind validation (optional) ✅
-- [ ] `dcim/platform.rs:26` - Manufacturer kind validation (optional)
-- [ ] `dcim/site_group.rs:26` - Parent SiteGroup kind validation (optional)
+- [x] `dcim/platform.rs:26` - Manufacturer kind validation (optional) ✅
+- [x] `dcim/site_group.rs:26` - Parent SiteGroup kind validation (optional) ✅
 - [x] `dcim/location.rs:136` - Parent Location kind validation (optional) ✅
-- [ ] `dcim/region.rs:26` - Parent Region kind validation (optional)
-- [ ] `tenancy.rs:168` - TenantGroup kind validation (optional)
+- [x] `dcim/region.rs:26` - Parent Region kind validation (optional) ✅
+- [x] `tenancy.rs:168` - TenantGroup kind validation (optional) ✅
 - [x] `ipam/prefix.rs:130` - Site kind validation (optional) ✅
 - [x] `ipam/prefix.rs:152` - VLAN kind validation (optional) ✅
 - [x] `ipam/prefix.rs:197` - Role kind validation (optional) ✅

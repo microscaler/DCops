@@ -312,53 +312,25 @@ impl Reconciler {
                     crds::PrefixStatus::Container => "container",
                 };
                 
-                // Resolve VLAN reference if provided
-                let vlan_id = if let Some(vlan_ref) = &prefix_crd.spec.vlan {
-                    // Validate kind
-                    if vlan_ref.kind != "NetBoxVLAN" {
-                        warn!("Invalid kind '{}' for VLAN reference in prefix {}, expected 'NetBoxVLAN'", vlan_ref.kind, name);
-                        None
-                    } else {
-                        match self.netbox_vlan_api.get(&vlan_ref.name).await {
-                            Ok(vlan_crd) => {
-                                vlan_crd.status
-                                    .as_ref()
-                                    .and_then(|s| s.netbox_id)
-                                    .map(|id| id as u32)
-                            }
-                            Err(_) => {
-                                warn!("VLAN CRD '{}' not found for prefix {}, skipping VLAN reference", vlan_ref.name, name);
-                                None
-                            }
-                        }
-                    }
-                } else {
-                    None
-                };
+                // Resolve optional VLAN reference (convert to u32 for VlanId) using helper
+                let vlan_id = resolve_optional_dependency_id(
+                    &*self.netbox_vlan_api,
+                    prefix_crd.spec.vlan.as_ref(),
+                    "NetBoxVLAN",
+                    "vlan",
+                    name,
+                    |crd| crd.status.as_ref(),
+                ).await.map(|id| id as u32);
                 
-                // Resolve Site reference if provided - need ID for NetBox API
-                let site_id = if let Some(site_ref) = &prefix_crd.spec.site {
-                    // Validate kind
-                    if site_ref.kind != "NetBoxSite" {
-                        warn!("Invalid kind '{}' for site reference in prefix {}, expected 'NetBoxSite'", site_ref.kind, name);
-                        None
-                    } else {
-                        // Resolve to NetBox ID
-                        match self.netbox_site_api.get(&site_ref.name).await {
-                            Ok(site_crd) => {
-                                site_crd.status
-                                    .as_ref()
-                                    .and_then(|s| s.netbox_id)
-                            }
-                            Err(_) => {
-                                warn!("Site CRD '{}' not found for prefix {}, skipping site reference", site_ref.name, name);
-                                None
-                            }
-                        }
-                    }
-                } else {
-                    None
-                };
+                // Resolve optional Site reference using helper
+                let site_id = resolve_optional_dependency_id(
+                    &*self.netbox_site_api,
+                    prefix_crd.spec.site.as_ref(),
+                    "NetBoxSite",
+                    "site",
+                    name,
+                    |crd| crd.status.as_ref(),
+                ).await;
                 
                 // Resolve Tenant reference (required) - need ID for NetBox API using helper
                 validate_reference_kind(&prefix_crd.spec.tenant, "NetBoxTenant", "tenant", name)?;

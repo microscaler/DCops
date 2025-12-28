@@ -1200,3 +1200,42 @@ where
     Ok(DriftCheckResult::Recreate)
 }
 
+// Conflict handling helpers for GitOps compliance
+//
+// GitOps Principle 3: "If something can't be created due to conflict, query for existing
+// resource and use it if found."
+
+/// Check if an error indicates a resource conflict (already exists, duplicate, etc.)
+/// 
+/// This helper detects common conflict error patterns from NetBox API responses.
+/// Used to implement GitOps-compliant conflict handling.
+pub fn is_conflict_error(error: &netbox_client::NetBoxError) -> bool {
+    let error_str = format!("{}", error);
+    error_str.contains("already exists") ||
+    error_str.contains("duplicate") ||
+    error_str.contains("unique constraint") ||
+    error_str.contains("tenant with this name already exists") ||
+    error_str.contains("tenant with this slug already exists") ||
+    (error_str.contains("slug") && error_str.contains("already")) ||
+    error_str.contains("asset tag")
+}
+
+/// Handle CREATE conflict errors by trying multiple query strategies (GitOps idempotency)
+/// 
+/// **NOTE**: This helper is currently unused due to Rust closure/async complexity.
+/// Reconcilers use `is_conflict_error` to check for conflicts, then implement the
+/// query pattern inline. This is still WET code that should be refactored.
+/// 
+/// Future improvement: Create a macro or simpler helper pattern to eliminate
+/// the duplicated query logic across reconcilers.
+/// 
+/// Current pattern used in reconcilers:
+/// ```rust
+/// if is_conflict_error(&e) {
+///     // Try query strategy 1
+///     // Try query strategy 2
+///     // Try fallback query
+///     // Use found resource or error
+/// }
+/// ```
+

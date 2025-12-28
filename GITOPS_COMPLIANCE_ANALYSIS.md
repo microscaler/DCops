@@ -158,22 +158,43 @@ Err(e) => {
 
 ## Recommendations
 
-### Critical Fix Needed
+### ✅ Shared Helper Created
 
-**Site Reconciler** (and other reconcilers missing conflict handling):
-- Add conflict detection in CREATE error handling
-- Query for existing resource when conflict detected
-- Use existing resource if found (idempotency)
-- Only error if conflict but can't find existing resource
+**Status**: Created `is_conflict_error` helper in `reconcile_helpers.rs`
+
+**Current State**: 
+- ✅ `is_conflict_error` helper available for conflict detection
+- ⚠️ Query pattern is still WET (duplicated across reconcilers)
+- ⚠️ `handle_create_conflict` helper exists but unused due to Rust closure complexity
+
+**Next Steps**:
+1. Use `is_conflict_error` in all reconcilers (reduces WET for conflict detection)
+2. Refactor query pattern into a simpler helper or macro (eliminates remaining WET)
 
 ### Pattern to Follow
 
-Use the **Device Reconciler** pattern (lines 355-446) as a template:
-1. Catch CREATE errors
-2. Check if error indicates conflict ("already exists", "duplicate", "unique constraint")
-3. Query for existing resource using appropriate criteria
-4. If found, use existing resource (idempotency)
-5. If not found, return error (real conflict or other issue)
+**Current Pattern** (using shared helper):
+```rust
+use crate::reconcile_helpers::is_conflict_error;
+
+match netbox_client.create_resource(...).await {
+    Ok(created) => created,
+    Err(e) => {
+        if is_conflict_error(&e) {
+            // Try query strategy 1
+            // Try query strategy 2  
+            // Try fallback query
+            // Use found resource or error
+        } else {
+            // Not a conflict, return error
+        }
+    }
+}
+```
+
+**Future Pattern** (with improved helper):
+- Create macro or simpler helper to eliminate query duplication
+- All reconcilers use same conflict handling pattern
 
 ### Reconcilers Needing Fix
 

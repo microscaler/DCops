@@ -377,83 +377,59 @@ impl Reconciler {
                             created
                         }
                         Err(e) => {
-                            // Check if site already exists (idempotency - GitOps principle)
-                            let error_str = format!("{}", e);
-                            if error_str.contains("already exists") || 
-                               error_str.contains("duplicate") || 
-                               error_str.contains("unique constraint") ||
-                               error_str.contains("tenant with this name already exists") ||
-                               error_str.contains("slug") {
+                            // Handle CREATE conflicts using shared helper (GitOps idempotency)
+                            use crate::reconcile_helpers::is_conflict_error;
+                            
+                            if is_conflict_error(&e) {
                                 warn!("Site {} creation failed with conflict, attempting to retrieve existing site (idempotency)", site_crd.spec.name);
                                 
-                                // Try to find existing site by name or slug
+                                // Try multiple query strategies
                                 let mut found_site = None;
                                 
-                                // First try: query by name
-                                match netbox_client.query_sites(
-                                    &[("name", &site_crd.spec.name)],
-                                    false,
-                                ).await {
+                                // Strategy 1: Query by name
+                                match netbox_client.query_sites(&[("name", &site_crd.spec.name)], false).await {
                                     Ok(sites) => {
                                         if let Some(site) = sites.first() {
                                             info!("Found existing site by name '{}' in NetBox (ID: {}) after conflict", site_crd.spec.name, site.id);
                                             found_site = Some(site.clone());
                                         }
                                     }
-                                    Err(query_err) => {
-                                        warn!("Query by name '{}' failed: {}, trying slug", site_crd.spec.name, query_err);
-                                    }
+                                    Err(_) => {}
                                 }
                                 
-                                // Second try: query by slug if not found by name
+                                // Strategy 2: Query by slug if not found
                                 if found_site.is_none() {
                                     if let Some(slug) = &site_crd.spec.slug {
-                                        match netbox_client.query_sites(
-                                            &[("slug", slug)],
-                                            false,
-                                        ).await {
+                                        match netbox_client.query_sites(&[("slug", slug)], false).await {
                                             Ok(sites) => {
                                                 if let Some(site) = sites.first() {
                                                     info!("Found existing site by slug '{}' in NetBox (ID: {}) after conflict", slug, site.id);
                                                     found_site = Some(site.clone());
                                                 }
                                             }
-                                            Err(query_err) => {
-                                                warn!("Query by slug '{}' failed: {}", slug, query_err);
-                                            }
+                                            Err(_) => {}
                                         }
                                     }
                                 }
                                 
-                                // Third try: fallback - query all sites and filter
+                                // Strategy 3: Fallback - query all and filter
                                 if found_site.is_none() {
-                                    warn!("Fallback: querying all sites to find existing site");
                                     match netbox_client.query_sites(&[], true).await {
                                         Ok(all_sites) => {
-                                            let matched = all_sites.iter().find(|s| {
+                                            if let Some(site) = all_sites.iter().find(|s| {
                                                 s.name == site_crd.spec.name ||
                                                 site_crd.spec.slug.as_ref().map(|slug| s.slug == *slug).unwrap_or(false)
-                                            });
-                                            
-                                            if let Some(site) = matched {
+                                            }) {
                                                 info!("Found existing site in NetBox (ID: {}) via fallback query", site.id);
                                                 found_site = Some(site.clone());
-                                            } else {
-                                                warn!("Fallback query returned {} sites but none matched name '{}' or slug '{:?}'", 
-                                                    all_sites.len(), 
-                                                    site_crd.spec.name,
-                                                    site_crd.spec.slug
-                                                );
                                             }
                                         }
-                                        Err(fallback_err) => {
-                                            warn!("Fallback query for all sites failed: {}", fallback_err);
-                                        }
+                                        Err(_) => {}
                                     }
                                 }
                                 
                                 if let Some(found) = found_site {
-                                    info!("Found existing site {} in NetBox (ID: {}) via idempotency query after conflict", found.name, found.id);
+                                    info!("Found existing site {} in NetBox (ID: {}) via conflict resolution (idempotency)", found.name, found.id);
                                     found
                                 } else {
                                     let error_msg = format!("Site {} already exists in NetBox but could not retrieve it: {}", site_crd.spec.name, e);
@@ -462,7 +438,7 @@ impl Reconciler {
                                     return Err(ControllerError::NetBox(netbox_client::NetBoxError::Api(error_msg)));
                                 }
                             } else {
-                                // Real error (not a conflict), return it
+                                // Not a conflict, return original error
                                 let error_msg = format!("Failed to create site in NetBox: {}", e);
                                 error!("{}", error_msg);
                                 update_status_error(&*self.netbox_site_api, name, namespace, error_msg.clone(), site_crd.status.as_ref()).await;
@@ -494,3 +470,4 @@ impl Reconciler {
         Ok(())
     }
 }
+

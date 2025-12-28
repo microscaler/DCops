@@ -41,10 +41,10 @@ where
 
 **Locations to Refactor**:
 - [x] `dcim/site.rs:170` - Tenant ID resolution ✅
-- [ ] `dcim/device.rs:120` - DeviceType ID resolution
-- [ ] `dcim/device.rs:141` - DeviceRole ID resolution
-- [ ] `dcim/device.rs:162` - Site ID resolution
-- [ ] `dcim/device.rs:184` - Tenant ID resolution
+- [x] `dcim/device.rs:120` - DeviceType ID resolution ✅
+- [x] `dcim/device.rs:141` - DeviceRole ID resolution ✅
+- [x] `dcim/device.rs:162` - Site ID resolution ✅
+- [x] `dcim/device.rs:184` - Tenant ID resolution ✅
 - [ ] `dcim/vlan.rs:137` - Tenant ID resolution
 - [ ] `dcim/device_type.rs:30` - Manufacturer ID resolution
 - [ ] `dcim/location.rs:118` - Site ID resolution
@@ -99,8 +99,8 @@ where
 **Locations to Refactor**:
 - [x] `dcim/site.rs:187` - Region ID resolution (optional) ✅
 - [x] `dcim/site.rs:209` - SiteGroup ID resolution (optional) ✅
-- [ ] `dcim/device.rs:201` - Platform ID resolution (optional)
-- [ ] `dcim/device.rs:218` - Location ID resolution (optional)
+- [x] `dcim/device.rs:201` - Platform ID resolution (optional) ✅
+- [x] `dcim/device.rs:218` - Location ID resolution (optional) ✅
 - [ ] `dcim/vlan.rs:118` - Site ID resolution (optional)
 - [ ] `dcim/vlan.rs:155` - Role ID resolution (optional)
 - [ ] `dcim/platform.rs:30` - Manufacturer ID resolution (optional)
@@ -187,10 +187,10 @@ fn validate_reference_kind(
 
 **Locations to Refactor** (Required - return error):
 - [x] `dcim/site.rs:158` - Tenant kind validation (required) ✅
-- [ ] `dcim/device.rs:116` - DeviceType kind validation (required)
-- [ ] `dcim/device.rs:137` - DeviceRole kind validation (required)
-- [ ] `dcim/device.rs:157` - Site kind validation (required)
-- [ ] `dcim/device.rs:179` - Tenant kind validation (required)
+- [x] `dcim/device.rs:116` - DeviceType kind validation (required) ✅
+- [x] `dcim/device.rs:137` - DeviceRole kind validation (required) ✅
+- [x] `dcim/device.rs:157` - Site kind validation (required) ✅
+- [x] `dcim/device.rs:179` - Tenant kind validation (required) ✅
 - [ ] `dcim/vlan.rs:133` - Tenant kind validation (required)
 - [ ] `dcim/device_type.rs:26` - Manufacturer kind validation (required)
 - [ ] `dcim/location.rs:114` - Site kind validation (required)
@@ -201,8 +201,8 @@ fn validate_reference_kind(
 **Locations to Refactor** (Optional - warn and return None):
 - [x] `dcim/site.rs:188` - Region kind validation (optional) ✅
 - [x] `dcim/site.rs:210` - SiteGroup kind validation (optional) ✅
-- [ ] `dcim/device.rs:201` - Platform kind validation (optional)
-- [ ] `dcim/device.rs:218` - Location kind validation (optional)
+- [x] `dcim/device.rs:201` - Platform kind validation (optional) ✅
+- [x] `dcim/device.rs:218` - Location kind validation (optional) ✅
 - [ ] `dcim/device.rs:238` - IPClaim kind validation (optional, primary_ip4)
 - [ ] `dcim/device.rs:306` - IPClaim kind validation (optional, primary_ip6)
 - [ ] `dcim/vlan.rs:114` - Site kind validation (optional)

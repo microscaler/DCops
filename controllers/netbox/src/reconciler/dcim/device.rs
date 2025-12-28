@@ -8,17 +8,15 @@ use netbox_client::{NetBoxClientTrait, DeviceId, DeviceTypeId, DeviceRoleId, Sit
 
 impl Reconciler {
     pub async fn reconcile_netbox_device(&self, device_crd: &NetBoxDevice) -> Result<(), ControllerError> {
-        // Extract namespace and tenant reference
-        let namespace = device_crd.metadata.namespace.as_deref().unwrap_or("default");
+        // Extract name and namespace using helper
+        use crate::reconcile_helpers::extract_name_and_namespace;
+        let (name, namespace) = extract_name_and_namespace(device_crd, "NetBoxDevice")?;
         let tenant_ref = &device_crd.spec.tenant;
         
         // SINGLE POINT: Get tenant-specific client
         let netbox_client = self.token_resolver
             .create_client_for_tenant(namespace, tenant_ref)
             .await?;
-        
-        let name = device_crd.metadata.name.as_ref()
-            .ok_or_else(|| ControllerError::InvalidConfig("NetBoxDevice missing name".to_string()))?;
         
         info!("Reconciling NetBoxDevice {}/{}", namespace, name);
         
@@ -110,126 +108,67 @@ impl Reconciler {
                 }
             }
             None => {
-                // Need to create device - resolve dependencies first
-                // Validate and resolve dependencies
-                if device_crd.spec.device_type.kind != "NetBoxDeviceType" {
-                    return Err(ControllerError::InvalidConfig(
-                        format!("Invalid kind '{}' for device_type reference in device {}, expected 'NetBoxDeviceType'", device_crd.spec.device_type.kind, name)
-                    ));
-                }
-                let device_type_id = match self.netbox_device_type_api.get(&device_crd.spec.device_type.name).await {
-                    Ok(device_type_crd) => {
-                        device_type_crd.status
-                            .as_ref()
-                            .and_then(|s| s.netbox_id)
-                            .ok_or_else(|| ControllerError::InvalidConfig(
-                                format!("DeviceType '{}' has not been created in NetBox yet (no netbox_id in status)", device_crd.spec.device_type.name)
-                            ))?
-                    }
-                    Err(_) => {
-                        return Err(ControllerError::InvalidConfig(
-                            format!("DeviceType CRD '{}' not found for device {}", device_crd.spec.device_type.name, name)
-                        ));
-                    }
-                };
+                // Need to create device - resolve dependencies first using helpers
+                use crate::reconcile_helpers::{validate_reference_kind, resolve_required_dependency_id, resolve_optional_dependency_id};
                 
-                if device_crd.spec.device_role.kind != "NetBoxDeviceRole" {
-                    return Err(ControllerError::InvalidConfig(
-                        format!("Invalid kind '{}' for device_role reference in device {}, expected 'NetBoxDeviceRole'", device_crd.spec.device_role.kind, name)
-                    ));
-                }
-                let device_role_id = match self.netbox_device_role_api.get(&device_crd.spec.device_role.name).await {
-                    Ok(role_crd) => {
-                        role_crd.status
-                            .as_ref()
-                            .and_then(|s| s.netbox_id)
-                            .ok_or_else(|| ControllerError::InvalidConfig(
-                                format!("DeviceRole '{}' has not been created in NetBox yet (no netbox_id in status)", device_crd.spec.device_role.name)
-                            ))?
-                    }
-                    Err(_) => {
-                        return Err(ControllerError::InvalidConfig(
-                            format!("DeviceRole CRD '{}' not found for device {}", device_crd.spec.device_role.name, name)
-                        ));
-                    }
-                };
+                // Validate and resolve DeviceType (required)
+                validate_reference_kind(&device_crd.spec.device_type, "NetBoxDeviceType", "device_type", name)?;
+                let device_type_id = resolve_required_dependency_id(
+                    &*self.netbox_device_type_api,
+                    &device_crd.spec.device_type.name,
+                    "DeviceType",
+                    name,
+                    |crd| crd.status.as_ref(),
+                ).await?;
                 
-                if device_crd.spec.site.kind != "NetBoxSite" {
-                    return Err(ControllerError::InvalidConfig(
-                        format!("Invalid kind '{}' for site reference in device {}, expected 'NetBoxSite'", device_crd.spec.site.kind, name)
-                    ));
-                }
-                let site_id = match self.netbox_site_api.get(&device_crd.spec.site.name).await {
-                    Ok(site_crd) => {
-                        site_crd.status
-                            .as_ref()
-                            .and_then(|s| s.netbox_id)
-                            .ok_or_else(|| ControllerError::InvalidConfig(
-                                format!("Site '{}' has not been created in NetBox yet (no netbox_id in status)", device_crd.spec.site.name)
-                            ))?
-                    }
-                    Err(_) => {
-                        return Err(ControllerError::InvalidConfig(
-                            format!("Site CRD '{}' not found for device {}", device_crd.spec.site.name, name)
-                        ));
-                    }
-                };
+                // Validate and resolve DeviceRole (required)
+                validate_reference_kind(&device_crd.spec.device_role, "NetBoxDeviceRole", "device_role", name)?;
+                let device_role_id = resolve_required_dependency_id(
+                    &*self.netbox_device_role_api,
+                    &device_crd.spec.device_role.name,
+                    "DeviceRole",
+                    name,
+                    |crd| crd.status.as_ref(),
+                ).await?;
                 
-                // Resolve tenant ID (required)
-                if device_crd.spec.tenant.kind != "NetBoxTenant" {
-                    return Err(ControllerError::InvalidConfig(
-                        format!("Invalid kind '{}' for tenant reference in device {}, expected 'NetBoxTenant'", device_crd.spec.tenant.kind, name)
-                    ));
-                }
-                let tenant_id = match self.netbox_tenant_api.get(&device_crd.spec.tenant.name).await {
-                    Ok(tenant_crd) => {
-                        tenant_crd.status
-                            .as_ref()
-                            .and_then(|s| s.netbox_id)
-                            .ok_or_else(|| ControllerError::InvalidConfig(
-                                format!("Tenant '{}' has not been created in NetBox yet (no netbox_id in status)", device_crd.spec.tenant.name)
-                            ))?
-                    }
-                    Err(_) => {
-                        return Err(ControllerError::InvalidConfig(
-                            format!("Tenant CRD '{}' not found for device {}", device_crd.spec.tenant.name, name)
-                        ));
-                    }
-                };
+                // Validate and resolve Site (required)
+                validate_reference_kind(&device_crd.spec.site, "NetBoxSite", "site", name)?;
+                let site_id = resolve_required_dependency_id(
+                    &*self.netbox_site_api,
+                    &device_crd.spec.site.name,
+                    "Site",
+                    name,
+                    |crd| crd.status.as_ref(),
+                ).await?;
                 
-                let platform_id = if let Some(platform_ref) = &device_crd.spec.platform {
-                    if platform_ref.kind != "NetBoxPlatform" {
-                        warn!("Invalid kind '{}' for platform reference in device {}, expected 'NetBoxPlatform'", platform_ref.kind, name);
-                        None
-                    } else {
-                        match self.netbox_platform_api.get(&platform_ref.name).await {
-                            Ok(platform_crd) => platform_crd.status.as_ref().and_then(|s| s.netbox_id),
-                            Err(_) => {
-                                warn!("Platform CRD '{}' not found for device {}", platform_ref.name, name);
-                                None
-                            }
-                        }
-                    }
-                } else {
-                    None
-                };
+                // Validate and resolve Tenant (required)
+                validate_reference_kind(&device_crd.spec.tenant, "NetBoxTenant", "tenant", name)?;
+                let tenant_id = resolve_required_dependency_id(
+                    &*self.netbox_tenant_api,
+                    &device_crd.spec.tenant.name,
+                    "Tenant",
+                    name,
+                    |crd| crd.status.as_ref(),
+                ).await?;
                 
-                let location_id = if let Some(location_ref) = &device_crd.spec.location {
-                    if location_ref.kind != "NetBoxLocation" {
-                        warn!("Invalid kind '{}' for location reference in device {}, expected 'NetBoxLocation'", location_ref.kind, name);
-                        None
-                    } else {
-                        match self.netbox_location_api.get(&location_ref.name).await {
-                            Ok(location_crd) => location_crd.status.as_ref().and_then(|s| s.netbox_id),
-                            Err(_) => {
-                                warn!("Location CRD '{}' not found for device {}", location_ref.name, name);
-                                None
-                            }
-                        }
-                    }
-                } else {
-                    None
-                };
+                // Resolve optional dependencies using helper
+                let platform_id = resolve_optional_dependency_id(
+                    &*self.netbox_platform_api,
+                    device_crd.spec.platform.as_ref(),
+                    "NetBoxPlatform",
+                    "platform",
+                    name,
+                    |crd| crd.status.as_ref(),
+                ).await;
+                
+                let location_id = resolve_optional_dependency_id(
+                    &*self.netbox_location_api,
+                    device_crd.spec.location.as_ref(),
+                    "NetBoxLocation",
+                    "location",
+                    name,
+                    |crd| crd.status.as_ref(),
+                ).await;
                 
                 // Resolve primary IP addresses (if specified)
                 let primary_ip4_id = if let Some(ip_ref) = &device_crd.spec.primary_ip4 {

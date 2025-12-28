@@ -163,10 +163,9 @@ impl Reconciler {
     
     /// Reconciles a NetBoxTag resource.
     pub async fn reconcile_netbox_tag(&self, tag_crd: &NetBoxTag) -> Result<(), ControllerError> {
-        let name = tag_crd.metadata.name.as_ref()
-            .ok_or_else(|| ControllerError::InvalidConfig("NetBoxTag missing name".to_string()))?;
-        let namespace = tag_crd.metadata.namespace.as_deref()
-            .unwrap_or("default");
+        // Extract name and namespace using helper
+        use crate::reconcile_helpers::extract_name_and_namespace;
+        let (name, namespace) = extract_name_and_namespace(tag_crd, "NetBoxTag")?;
         
         info!("Reconciling NetBoxTag {}/{}", namespace, name);
         

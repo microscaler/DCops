@@ -349,15 +349,9 @@ impl Reconciler {
         claim_namespace: &str,
         resource_key: &str,
     ) -> Result<u64, ControllerError> {
-        // Validate that the reference is to a NetBoxPrefix CRD
-        if prefix_ref.kind != "NetBoxPrefix" {
-            let error_msg = format!(
-                "Invalid kind '{}' for netbox_prefix_ref in IPPool {}/{}, expected 'NetBoxPrefix'",
-                prefix_ref.kind, pool_namespace, prefix_ref.name
-            );
-            error!("{}", error_msg);
-            return Err(ControllerError::InvalidConfig(error_msg));
-        }
+        // Validate that the reference is to a NetBoxPrefix CRD using helper
+        use crate::reconcile_helpers::validate_reference_kind;
+        validate_reference_kind(prefix_ref, "NetBoxPrefix", "netbox_prefix_ref", &format!("{}/{}", pool_namespace, prefix_ref.name))?;
         
         // Resolve the NetBoxPrefix CRD to get the NetBox prefix ID
         let prefix_crd_name = &prefix_ref.name;

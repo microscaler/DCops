@@ -45,7 +45,7 @@ where
 - [x] `dcim/device.rs:141` - DeviceRole ID resolution ✅
 - [x] `dcim/device.rs:162` - Site ID resolution ✅
 - [x] `dcim/device.rs:184` - Tenant ID resolution ✅
-- [ ] `dcim/vlan.rs:137` - Tenant ID resolution
+- [x] `dcim/vlan.rs:137` - Tenant ID resolution ✅
 - [ ] `dcim/device_type.rs:30` - Manufacturer ID resolution
 - [ ] `dcim/location.rs:118` - Site ID resolution
 - [ ] `dcim/location.rs:162` - Tenant ID resolution
@@ -101,8 +101,8 @@ where
 - [x] `dcim/site.rs:209` - SiteGroup ID resolution (optional) ✅
 - [x] `dcim/device.rs:201` - Platform ID resolution (optional) ✅
 - [x] `dcim/device.rs:218` - Location ID resolution (optional) ✅
-- [ ] `dcim/vlan.rs:118` - Site ID resolution (optional)
-- [ ] `dcim/vlan.rs:155` - Role ID resolution (optional)
+- [x] `dcim/vlan.rs:118` - Site ID resolution (optional) ✅
+- [x] `dcim/vlan.rs:155` - Role ID resolution (optional) ✅
 - [ ] `dcim/platform.rs:30` - Manufacturer ID resolution (optional)
 - [ ] `dcim/site_group.rs:26` - Parent SiteGroup ID resolution (optional)
 - [ ] `dcim/location.rs:136` - Parent Location ID resolution (optional)
@@ -143,8 +143,8 @@ where
 - [ ] `dcim/mac_address.rs:11-14` - Name/namespace extraction
 - [ ] `dcim/interface.rs:11-14` - Name/namespace extraction
 - [x] `dcim/site.rs:150-153` - Name/namespace extraction ✅
-- [ ] `dcim/device.rs:20-21` - Name/namespace extraction
-- [ ] `dcim/vlan.rs` - Name/namespace extraction
+- [x] `dcim/device.rs:20-21` - Name/namespace extraction ✅
+- [x] `dcim/vlan.rs` - Name/namespace extraction ✅
 - [ ] `dcim/device_type.rs` - Name/namespace extraction
 - [ ] `dcim/manufacturer.rs` - Name/namespace extraction
 - [ ] `dcim/platform.rs` - Name/namespace extraction
@@ -191,7 +191,7 @@ fn validate_reference_kind(
 - [x] `dcim/device.rs:137` - DeviceRole kind validation (required) ✅
 - [x] `dcim/device.rs:157` - Site kind validation (required) ✅
 - [x] `dcim/device.rs:179` - Tenant kind validation (required) ✅
-- [ ] `dcim/vlan.rs:133` - Tenant kind validation (required)
+- [x] `dcim/vlan.rs:133` - Tenant kind validation (required) ✅
 - [ ] `dcim/device_type.rs:26` - Manufacturer kind validation (required)
 - [ ] `dcim/location.rs:114` - Site kind validation (required)
 - [ ] `dcim/location.rs:158` - Tenant kind validation (required)
@@ -205,8 +205,8 @@ fn validate_reference_kind(
 - [x] `dcim/device.rs:218` - Location kind validation (optional) ✅
 - [ ] `dcim/device.rs:238` - IPClaim kind validation (optional, primary_ip4)
 - [ ] `dcim/device.rs:306` - IPClaim kind validation (optional, primary_ip6)
-- [ ] `dcim/vlan.rs:114` - Site kind validation (optional)
-- [ ] `dcim/vlan.rs:155` - Role kind validation (optional)
+- [x] `dcim/vlan.rs:114` - Site kind validation (optional) ✅
+- [x] `dcim/vlan.rs:155` - Role kind validation (optional) ✅
 - [ ] `dcim/platform.rs:26` - Manufacturer kind validation (optional)
 - [ ] `dcim/site_group.rs:26` - Parent SiteGroup kind validation (optional)
 - [ ] `dcim/location.rs:136` - Parent Location kind validation (optional)

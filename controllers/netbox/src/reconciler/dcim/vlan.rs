@@ -8,17 +8,15 @@ use netbox_client::{NetBoxClientTrait, VlanId, SiteId, TenantId};
 
 impl Reconciler {
     pub async fn reconcile_netbox_vlan(&self, vlan_crd: &NetBoxVLAN) -> Result<(), ControllerError> {
-        // Extract namespace and tenant reference
-        let namespace = vlan_crd.metadata.namespace.as_deref().unwrap_or("default");
+        // Extract name and namespace using helper
+        use crate::reconcile_helpers::extract_name_and_namespace;
+        let (name, namespace) = extract_name_and_namespace(vlan_crd, "NetBoxVLAN")?;
         let tenant_ref = &vlan_crd.spec.tenant;
         
         // SINGLE POINT: Get tenant-specific client
         let netbox_client = self.token_resolver
             .create_client_for_tenant(namespace, tenant_ref)
             .await?;
-        
-        let name = vlan_crd.metadata.name.as_ref()
-            .ok_or_else(|| ControllerError::InvalidConfig("NetBoxVLAN missing name".to_string()))?;
         
         info!("Reconciling NetBoxVLAN {}/{}", namespace, name);
         
@@ -108,47 +106,28 @@ impl Reconciler {
                 }
             }
             None => {
-                // Need to create VLAN - resolve dependencies first
-                // Resolve site ID if site reference provided
-                let site_id = if let Some(site_ref) = &vlan_crd.spec.site {
-                    if site_ref.kind != "NetBoxSite" {
-                        warn!("Invalid kind '{}' for site reference in VLAN {}, expected 'NetBoxSite'", site_ref.kind, name);
-                        None
-                    } else {
-                        match self.netbox_site_api.get(&site_ref.name).await {
-                            Ok(site_crd) => {
-                                site_crd.status
-                                    .as_ref()
-                                    .and_then(|s| s.netbox_id)
-                            }
-                            Err(_) => None
-                        }
-                    }
-                } else {
-                    None
-                };
+                // Need to create VLAN - resolve dependencies first using helpers
+                use crate::reconcile_helpers::{validate_reference_kind, resolve_required_dependency_id, resolve_optional_dependency_id};
                 
-                // Resolve tenant ID (required)
-                if vlan_crd.spec.tenant.kind != "NetBoxTenant" {
-                    return Err(ControllerError::InvalidConfig(
-                        format!("Invalid kind '{}' for tenant reference in VLAN {}, expected 'NetBoxTenant'", vlan_crd.spec.tenant.kind, name)
-                    ));
-                }
-                let tenant_id = match self.netbox_tenant_api.get(&vlan_crd.spec.tenant.name).await {
-                    Ok(tenant_crd) => {
-                        tenant_crd.status
-                            .as_ref()
-                            .and_then(|s| s.netbox_id)
-                            .ok_or_else(|| ControllerError::InvalidConfig(
-                                format!("Tenant '{}' has not been created in NetBox yet (no netbox_id in status)", vlan_crd.spec.tenant.name)
-                            ))?
-                    }
-                    Err(_) => {
-                        return Err(ControllerError::InvalidConfig(
-                            format!("Tenant CRD '{}' not found for VLAN {}", vlan_crd.spec.tenant.name, name)
-                        ));
-                    }
-                };
+                // Resolve optional site ID
+                let site_id = resolve_optional_dependency_id(
+                    &*self.netbox_site_api,
+                    vlan_crd.spec.site.as_ref(),
+                    "NetBoxSite",
+                    "site",
+                    name,
+                    |crd| crd.status.as_ref(),
+                ).await;
+                
+                // Validate and resolve tenant ID (required)
+                validate_reference_kind(&vlan_crd.spec.tenant, "NetBoxTenant", "tenant", name)?;
+                let tenant_id = resolve_required_dependency_id(
+                    &*self.netbox_tenant_api,
+                    &vlan_crd.spec.tenant.name,
+                    "Tenant",
+                    name,
+                    |crd| crd.status.as_ref(),
+                ).await?;
                 
                 // Resolve role ID if role reference provided
                 let _role_id = if let Some(role_ref) = &vlan_crd.spec.role {

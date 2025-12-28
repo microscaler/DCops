@@ -713,6 +713,56 @@ pub enum DriftCheckResult<Resource> {
     },
 }
 
+/// Resolve netbox_id from a dependent resource's status.
+/// 
+/// This helper centralizes the pattern of checking if a dependent resource
+/// has been created in NetBox (has a netbox_id). If the resource is not ready,
+/// returns None so the caller can return early and let the controller requeue.
+/// 
+/// # Arguments
+/// - `status`: Optional status of the dependent resource (implements `NetBoxStatusCheck`)
+/// - `resource_kind`: Human-readable resource kind for logging (e.g., "Device", "Tenant", "Site")
+/// - `resource_name`: Name of the dependent resource for logging
+/// 
+/// # Returns
+/// - `Some(u64)` if the resource has a netbox_id (ready to use)
+/// - `None` if the resource doesn't have a netbox_id (not ready yet)
+/// 
+/// # Example
+/// ```rust
+/// let device_id = resolve_dependency_id(
+///     device_crd.status.as_ref(),
+///     "Device",
+///     device_name,
+/// )?;
+/// 
+/// // If None, return early:
+/// let device_id = match resolve_dependency_id(
+///     device_crd.status.as_ref(),
+///     "Device",
+///     device_name,
+/// ) {
+///     Some(id) => id,
+///     None => {
+///         debug!("Device '{}' not ready, waiting...", device_name);
+///         return Ok(()); // Controller will requeue when device status updates
+///     }
+/// };
+/// ```
+pub fn resolve_dependency_id(
+    status: Option<&impl NetBoxStatusCheck>,
+    resource_kind: &str,
+    resource_name: &str,
+) -> Option<u64> {
+    match status.and_then(|s| s.netbox_id()) {
+        Some(id) => Some(id),
+        None => {
+            debug!("{} '{}' has not been created in NetBox yet (no netbox_id in status), waiting for {} to be created", resource_kind, resource_name, resource_kind);
+            None
+        }
+    }
+}
+
 /// Validate status and handle drift detection for Failed/Created states
 /// 
 /// This helper centralizes the common pattern of:

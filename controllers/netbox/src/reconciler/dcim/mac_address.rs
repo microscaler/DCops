@@ -42,12 +42,16 @@ impl Reconciler {
             .await?;
         
         // Resolve device ID and interface ID
-        let device_id = device_crd.status
-            .as_ref()
-            .and_then(|s| s.netbox_id)
-            .ok_or_else(|| ControllerError::InvalidConfig(
-                format!("Device '{}' has not been created in NetBox yet (no netbox_id in status)", device_name)
-            ))?;
+        // If device hasn't been created yet, return early and let controller requeue when device is ready
+        use crate::reconcile_helpers::resolve_dependency_id;
+        let device_id = match resolve_dependency_id(
+            device_crd.status.as_ref(),
+            "Device",
+            device_name,
+        ) {
+            Some(id) => id,
+            None => return Ok(()), // Return early - controller will requeue when device status updates
+        };
         
         // Find interface by querying
         let interface = match netbox_client.query_interfaces(&[("device_id", &device_id.to_string()), ("name", interface_name)], false).await {

@@ -1397,5 +1397,155 @@ mod tests {
 
             assert!(result.is_ok());
         }
+
+        // Note: Testing patch_status errors requires a mock that can return errors
+        // MockKubeApi currently always succeeds. Error paths are tested in integration tests.
+    }
+
+    // Additional tests for edge cases and error paths
+    mod edge_case_tests {
+        use super::*;
+        use crate::reconcile_helpers::{check_and_update_existing, check_existing};
+        use netbox_client::{MockNetBoxClient, NetBoxClientTrait};
+
+        #[tokio::test]
+        async fn test_check_and_update_existing_update_error() {
+            let mut mock_client = MockNetBoxClient::new("http://test-netbox".to_string());
+            
+            // Add a site that exists
+            let existing_site = netbox_client::Site {
+                id: 1,
+                url: "http://test-netbox/api/dcim/sites/1/".to_string(),
+                display: "test-site".to_string(),
+                name: "test-site".to_string(),
+                slug: "test-site".to_string(),
+                status: netbox_client::SiteStatus::Active,
+                region: None,
+                group: None,
+                tenant: None,
+                facility: None,
+                time_zone: None,
+                description: Some("Old description".to_string()),
+                physical_address: None,
+                shipping_address: None,
+                latitude: None,
+                longitude: None,
+                contact_name: None,
+                contact_phone: None,
+                contact_email: None,
+                comments: None,
+                tags: vec![],
+                custom_fields: std::collections::HashMap::new(),
+                created: "2024-01-01T00:00:00Z".to_string(),
+                last_updated: "2024-01-01T00:00:00Z".to_string(),
+            };
+            mock_client.add_site(existing_site.clone());
+            
+            // Configure update to fail
+            mock_client.set_update_site_error(netbox_client::NetBoxError::Api("Update failed".to_string()));
+
+            let result = check_and_update_existing(
+                &mock_client,
+                1,
+                "site",
+                async { mock_client.get_site(netbox_client::SiteId(1)).await },
+                |_| true, // Always needs update
+                async { mock_client.update_site(netbox_client::SiteId(1), &netbox_client::SiteUpdateRequest {
+                    name: Some("test-site".to_string()),
+                    description: Some("New description".to_string()),
+                    ..Default::default()
+                }).await },
+            ).await;
+
+            assert!(result.is_err());
+            if let Err(ControllerError::NetBox(netbox_client::NetBoxError::Api(_))) = result {
+                // Expected error type
+            } else {
+                panic!("Expected NetBox API error");
+            }
+        }
+
+        #[tokio::test]
+        async fn test_check_existing_network_error() {
+            let mut mock_client = MockNetBoxClient::new("http://test-netbox".to_string());
+            
+            // Configure get to return network error (not NotFound)
+            mock_client.set_get_site_error(netbox_client::NetBoxError::Api("Network error".to_string()));
+
+            let result = check_existing(
+                &mock_client,
+                1,
+                "site",
+                async { mock_client.get_site(netbox_client::SiteId(1)).await },
+            ).await;
+
+            assert!(result.is_err());
+            if let Err(ControllerError::NetBox(netbox_client::NetBoxError::Api(_))) = result {
+                // Expected error type - should retry, not assume deleted
+            } else {
+                panic!("Expected NetBox error for retry");
+            }
+        }
+
+        #[tokio::test]
+        async fn test_validate_status_and_drift_updated_state() {
+            use crate::reconcile_helpers::{validate_status_and_drift, DriftCheckResult};
+            use netbox_client::{MockNetBoxClient, NetBoxClientTrait};
+            
+            let mock_client = MockNetBoxClient::new("http://test-netbox".to_string());
+            let status = crds::NetBoxSiteStatus {
+                netbox_id: Some(1),
+                netbox_url: Some("http://test-netbox/api/dcim/sites/1/".to_string()),
+                state: crds::ResourceState::Updated, // Updated state
+                error: None,
+                last_reconciled: None,
+            };
+
+            let result = validate_status_and_drift(
+                Some(&status),
+                "NetBoxSite",
+                "default",
+                "test-site",
+                |id| {
+                    let client = &mock_client;
+                    async move { client.get_site(netbox_client::SiteId(id)).await }
+                },
+            ).await;
+
+            // Updated state should return Recreate (not handled specially)
+            assert!(matches!(result, Ok(DriftCheckResult::Recreate)));
+        }
+
+        #[tokio::test]
+        async fn test_validate_status_and_drift_failed_state_network_error() {
+            use crate::reconcile_helpers::{validate_status_and_drift, DriftCheckResult};
+            use netbox_client::{MockNetBoxClient, NetBoxClientTrait};
+            
+            let mut mock_client = MockNetBoxClient::new("http://test-netbox".to_string());
+            // Configure to return network error (not NotFound)
+            mock_client.set_get_site_error(netbox_client::NetBoxError::Api("Network error".to_string()));
+            
+            let status = crds::NetBoxSiteStatus {
+                netbox_id: Some(1),
+                netbox_url: Some("http://test-netbox/api/dcim/sites/1/".to_string()),
+                state: crds::ResourceState::Failed,
+                error: Some("Previous error".to_string()),
+                last_reconciled: None,
+            };
+
+            let result = validate_status_and_drift(
+                Some(&status),
+                "NetBoxSite",
+                "default",
+                "test-site",
+                |id| {
+                    let client = &mock_client;
+                    async move { client.get_site(netbox_client::SiteId(id)).await }
+                },
+            ).await;
+
+            // Network error should be propagated (retry)
+            assert!(result.is_err());
+        }
     }
 }

@@ -52,6 +52,14 @@ impl Reconciler {
                 Some(region)
             }
             DriftCheckResult::StatusCleared { message } => {
+                // Emit event for drift detection
+                use crate::events::reasons;
+                self.record_event_warning(
+                    reasons::DRIFT_DETECTED,
+                    &format!("NetBoxRegion {}/{} drift detected: {}", namespace, name, message),
+                    region_crd,
+                ).await;
+                
                 // Status was cleared - update it to Pending
                 let status_patch = Self::create_typed_region_status_patch(
                     0, // Clear netbox_id
@@ -139,6 +147,13 @@ impl Reconciler {
                     ).await {
                         Ok(created) => {
                             info!("Created region {} in NetBox (ID: {})", created.name, created.id);
+                            // Emit event for successful creation
+                            use crate::events::reasons;
+                            self.record_event_normal(
+                                reasons::CREATED,
+                                &format!("Created region {} in NetBox (ID: {})", created.name, created.id),
+                                region_crd,
+                            ).await;
                             created
                         }
                         Err(e) => {
@@ -193,6 +208,13 @@ impl Reconciler {
                             } else {
                                 let error_msg = format!("Failed to create region in NetBox: {}", e);
                                 error!("{}", error_msg);
+                                // Emit event for reconciliation failure
+                                use crate::events::reasons;
+                                self.record_event_warning(
+                                    reasons::RECONCILIATION_FAILED,
+                                    &error_msg,
+                                    region_crd,
+                                ).await;
                                 return Err(ControllerError::NetBox(e));
                             }
                         }

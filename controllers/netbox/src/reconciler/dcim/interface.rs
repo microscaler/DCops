@@ -21,6 +21,13 @@ impl Reconciler {
             Err(e) => {
                 let error_msg = format!("Device CRD '{}' not found for interface {}: {}", device_name, name, e);
                 error!("{}", error_msg);
+                // Emit event for dependency not found
+                use crate::events::reasons;
+                self.record_event_warning(
+                    reasons::DEPENDENCY_NOT_FOUND,
+                    &error_msg,
+                    interface_crd,
+                ).await;
                 return Err(ControllerError::InvalidConfig(error_msg));
             }
         };
@@ -148,11 +155,25 @@ impl Reconciler {
                     ).await {
                         Ok(created) => {
                             info!("Created interface {} on device {} in NetBox (ID: {})", created.name, device_name, created.id);
+                            // Emit event for successful creation
+                            use crate::events::reasons;
+                            self.record_event_normal(
+                                reasons::CREATED,
+                                &format!("Created interface {} on device {} in NetBox (ID: {})", created.name, device_name, created.id),
+                                interface_crd,
+                            ).await;
                             created
                         }
                         Err(e) => {
                             let error_msg = format!("Failed to create interface in NetBox: {}", e);
                             error!("{}", error_msg);
+                            // Emit event for reconciliation failure
+                            use crate::events::reasons;
+                            self.record_event_warning(
+                                reasons::RECONCILIATION_FAILED,
+                                &error_msg,
+                                interface_crd,
+                            ).await;
                             return Err(ControllerError::NetBox(e));
                         }
                     }

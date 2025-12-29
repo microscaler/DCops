@@ -52,6 +52,14 @@ impl Reconciler {
                 Some(site_group)
             }
             DriftCheckResult::StatusCleared { message } => {
+                // Emit event for drift detection
+                use crate::events::reasons;
+                self.record_event_warning(
+                    reasons::DRIFT_DETECTED,
+                    &format!("NetBoxSiteGroup {}/{} drift detected: {}", namespace, name, message),
+                    site_group_crd,
+                ).await;
+                
                 // Status was cleared - update it to Pending
                 let status_patch = Self::create_typed_site_group_status_patch(
                     0, // Clear netbox_id
@@ -139,6 +147,13 @@ impl Reconciler {
                     ).await {
                         Ok(created) => {
                             info!("Created site group {} in NetBox (ID: {})", created.name, created.id);
+                            // Emit event for successful creation
+                            use crate::events::reasons;
+                            self.record_event_normal(
+                                reasons::CREATED,
+                                &format!("Created site group {} in NetBox (ID: {})", created.name, created.id),
+                                site_group_crd,
+                            ).await;
                             created
                         }
                         Err(e) => {
@@ -193,6 +208,13 @@ impl Reconciler {
                             } else {
                                 let error_msg = format!("Failed to create site group in NetBox: {}", e);
                                 error!("{}", error_msg);
+                                // Emit event for reconciliation failure
+                                use crate::events::reasons;
+                                self.record_event_warning(
+                                    reasons::RECONCILIATION_FAILED,
+                                    &error_msg,
+                                    site_group_crd,
+                                ).await;
                                 return Err(ControllerError::NetBox(e));
                             }
                         }

@@ -42,6 +42,14 @@ impl Reconciler {
                 Some(vlan)
             }
             DriftCheckResult::StatusCleared { message } => {
+                // Emit event for drift detection
+                use crate::events::reasons;
+                self.record_event_warning(
+                    reasons::DRIFT_DETECTED,
+                    &format!("NetBoxVLAN {}/{} drift detected: {}", namespace, name, message),
+                    vlan_crd,
+                ).await;
+                
                 // Status was cleared - update it to Pending
                 let status_patch = Self::create_resource_status_patch(
                     0, // Clear netbox_id

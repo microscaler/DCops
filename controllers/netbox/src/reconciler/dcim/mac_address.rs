@@ -30,6 +30,13 @@ impl Reconciler {
             Err(e) => {
                 let error_msg = format!("Device CRD '{}' not found for MAC address {}: {}", device_name, name, e);
                 error!("{}", error_msg);
+                // Emit event for dependency not found
+                use crate::events::reasons;
+                self.record_event_warning(
+                    reasons::DEPENDENCY_NOT_FOUND,
+                    &error_msg,
+                    mac_address_crd,
+                ).await;
                 return Err(ControllerError::InvalidConfig(error_msg));
             }
         };
@@ -63,6 +70,13 @@ impl Reconciler {
             Err(e) => {
                 let error_msg = format!("Interface CRD '{}' not found for MAC address {}: {}", interface_crd_name, name, e);
                 error!("{}", error_msg);
+                // Emit event for dependency not found
+                use crate::events::reasons;
+                self.record_event_warning(
+                    reasons::DEPENDENCY_NOT_FOUND,
+                    &error_msg,
+                    mac_address_crd,
+                ).await;
                 return Err(ControllerError::InvalidConfig(error_msg));
             }
         };
@@ -114,6 +128,14 @@ impl Reconciler {
         let netbox_mac_address = match drift_result {
             DriftCheckResult::UseExisting(mac_address) => Some(mac_address),
             DriftCheckResult::StatusCleared { message } => {
+                // Emit event for drift detection
+                use crate::events::reasons;
+                self.record_event_warning(
+                    reasons::DRIFT_DETECTED,
+                    &format!("NetBoxMACAddress {}/{} drift detected: {}", namespace, name, message),
+                    mac_address_crd,
+                ).await;
+                
                 let status_patch = Self::create_typed_mac_address_status_patch(
                     0, String::new(), ResourceState::Pending,
                     Some(message),
@@ -191,11 +213,25 @@ impl Reconciler {
                     ).await {
                         Ok(created) => {
                             info!("Created MAC address {} in NetBox (ID: {})", created.mac_address, created.id);
+                            // Emit event for successful creation
+                            use crate::events::reasons;
+                            self.record_event_normal(
+                                reasons::CREATED,
+                                &format!("Created MAC address {} in NetBox (ID: {})", created.mac_address, created.id),
+                                mac_address_crd,
+                            ).await;
                             created
                         }
                         Err(e) => {
                             let error_msg = format!("Failed to create MAC address in NetBox: {}", e);
                             error!("{}", error_msg);
+                            // Emit event for reconciliation failure
+                            use crate::events::reasons;
+                            self.record_event_warning(
+                                reasons::RECONCILIATION_FAILED,
+                                &error_msg,
+                                mac_address_crd,
+                            ).await;
                             return Err(ControllerError::NetBox(e));
                         }
                     }

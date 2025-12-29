@@ -42,6 +42,14 @@ impl Reconciler {
                 Some(location)
             }
             DriftCheckResult::StatusCleared { message } => {
+                // Emit event for drift detection
+                use crate::events::reasons;
+                self.record_event_warning(
+                    reasons::DRIFT_DETECTED,
+                    &format!("NetBoxLocation {}/{} drift detected: {}", namespace, name, message),
+                    location_crd,
+                ).await;
+                
                 // Status was cleared - update it to Pending
                 let status_patch = Self::create_resource_status_patch(
                     0, // Clear netbox_id
@@ -232,6 +240,13 @@ impl Reconciler {
                                 // Not a conflict, return original error
                                 let error_msg = format!("Failed to create location in NetBox: {}", e);
                                 error!("{}", error_msg);
+                                // Emit event for reconciliation failure
+                                use crate::events::reasons;
+                                self.record_event_warning(
+                                    reasons::RECONCILIATION_FAILED,
+                                    &error_msg,
+                                    location_crd,
+                                ).await;
                                 return Err(ControllerError::NetBox(e));
                             }
                         }

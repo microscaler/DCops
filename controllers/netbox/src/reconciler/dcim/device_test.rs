@@ -43,10 +43,8 @@ mod tests {
                 model: "Test Model".to_string(),
                 slug: None,
                 part_number: None,
-                u_height: None,
-                is_full_depth: None,
-                subdevice_role: None,
-                airflow: None,
+                u_height: 1.0, // f64, not Option
+                is_full_depth: false, // bool, not Option
                 description: None,
                 comments: None,
             },

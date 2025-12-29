@@ -15,3 +15,5 @@ pub mod aggregate;
 #[cfg(test)]
 pub mod aggregate_test;
 pub mod rir;
+#[cfg(test)]
+pub mod rir_test;

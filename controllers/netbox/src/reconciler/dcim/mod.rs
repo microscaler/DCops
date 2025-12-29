@@ -26,3 +26,5 @@ pub mod device_test;
 pub mod interface;
 pub mod mac_address;
 pub mod vlan;
+#[cfg(test)]
+pub mod vlan_test;

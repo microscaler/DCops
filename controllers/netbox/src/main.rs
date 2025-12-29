@@ -18,6 +18,8 @@ mod token_resolver;
 mod secret_fetcher;
 mod events;
 #[cfg(test)]
+mod events_test;
+#[cfg(test)]
 mod test_utils;
 #[cfg(test)]
 mod reconcile_helpers_test;

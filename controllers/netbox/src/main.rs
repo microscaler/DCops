@@ -16,6 +16,8 @@ mod reconcile_helpers;
 mod kube_api_trait;
 mod token_resolver;
 mod secret_fetcher;
+#[cfg(test)]
+mod secret_fetcher_test;
 mod events;
 #[cfg(test)]
 mod events_test;

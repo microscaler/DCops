@@ -399,6 +399,39 @@ mod tests {
             .expect("Should have exactly 1 DRIFT_DETECTED event");
     }
     
+    /// Test that TOKEN_RESOLUTION_FAILED event infrastructure works
+    /// Note: Full token resolution failure testing requires simulating token resolution errors.
+    /// This test verifies the event infrastructure works for TOKEN_RESOLUTION_FAILED events.
+    #[tokio::test]
+    async fn test_token_resolution_failed_event_infrastructure() {
+        let netbox_url = "http://test-netbox".to_string();
+        let mock_token_resolver = Arc::new(MockTokenResolver::new(netbox_url.clone()));
+        let (reconciler, _, mock_event_recorder) = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
+        
+        // Create a test tenant
+        let tenant = create_test_netbox_tenant(
+            "datacenter-tenant",
+            "default",
+            Some(1),
+            Some(format!("{}/api/tenancy/tenants/1/", netbox_url)),
+        );
+        
+        // Manually record a TOKEN_RESOLUTION_FAILED event to verify the infrastructure works
+        reconciler.record_event_warning(
+            reasons::TOKEN_RESOLUTION_FAILED,
+            "Failed to resolve token for tenant datacenter-tenant: Secret not found",
+            &tenant,
+        ).await;
+        
+        // Assert: TOKEN_RESOLUTION_FAILED event was emitted
+        let event = assert_warning_event_emitted(&mock_event_recorder, reasons::TOKEN_RESOLUTION_FAILED)
+            .expect("TOKEN_RESOLUTION_FAILED event should be emitted");
+        assert_event_for_resource(&event, &tenant)
+            .expect("Event should be for the correct tenant resource");
+        assert_event_message_contains(&event, "token")
+            .expect("Event message should mention token");
+    }
+    
     use crate::test_utils::mock_token_resolver::TestReconcilerApis;
 }
 

@@ -210,6 +210,13 @@ impl Reconciler {
                     ).await {
                         Ok(created_aggregate) => {
                             debug!("Successfully created NetBoxAggregate {} with ID {}", aggregate_crd.spec.prefix, created_aggregate.id);
+                            // Emit event for successful creation
+                            use crate::events::reasons;
+                            self.record_event_normal(
+                                reasons::CREATED,
+                                &format!("Created aggregate {} in NetBox (ID: {})", aggregate_crd.spec.prefix, created_aggregate.id),
+                                aggregate_crd,
+                            ).await;
                             created_aggregate
                         }
                         Err(e) => {

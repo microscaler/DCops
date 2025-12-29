@@ -44,6 +44,14 @@ impl Reconciler {
         let netbox_device_role = match drift_result {
             DriftCheckResult::UseExisting(device_role) => Some(device_role),
             DriftCheckResult::StatusCleared { message } => {
+                // Emit event for drift detection
+                use crate::events::reasons;
+                self.record_event_warning(
+                    reasons::DRIFT_DETECTED,
+                    &format!("NetBoxDeviceRole {}/{} drift detected: {}", namespace, name, message),
+                    device_role_crd,
+                ).await;
+                
                 let status_patch = Self::create_typed_device_role_status_patch(
                     0, String::new(), ResourceState::Pending,
                     Some(message),
@@ -88,7 +96,15 @@ impl Reconciler {
                             return Ok(());
                         }
                         Err(e) => {
-                            error!("Failed to update NetBoxDeviceRole status: {}", e);
+                            let error_msg = format!("Failed to update NetBoxDeviceRole status: {}", e);
+                            error!("{}", error_msg);
+                            // Emit event for reconciliation failure
+                            use crate::events::reasons;
+                            self.record_event_warning(
+                                reasons::RECONCILIATION_FAILED,
+                                &error_msg,
+                                device_role_crd,
+                            ).await;
                             return Err(ControllerError::Kube(e.into()));
                         }
                     }
@@ -124,11 +140,25 @@ impl Reconciler {
                     ).await {
                         Ok(created) => {
                             info!("Created device role {} in NetBox (ID: {})", created.name, created.id);
+                            // Emit event for successful creation
+                            use crate::events::reasons;
+                            self.record_event_normal(
+                                reasons::CREATED,
+                                &format!("Created device role {} in NetBox (ID: {})", created.name, created.id),
+                                device_role_crd,
+                            ).await;
                             created
                         }
                         Err(e) => {
                             let error_msg = format!("Failed to create device role in NetBox: {}", e);
                             error!("{}", error_msg);
+                            // Emit event for reconciliation failure
+                            use crate::events::reasons;
+                            self.record_event_warning(
+                                reasons::RECONCILIATION_FAILED,
+                                &error_msg,
+                                device_role_crd,
+                            ).await;
                             return Err(ControllerError::NetBox(e));
                         }
                     }

@@ -45,20 +45,22 @@ mod tests {
         mock_token_resolver.add_secret("default", "netbox-token-datacenter-tenant", "test-token".to_string());
         
         // Setup: Get MockNetBoxClient to set up test data
-        let mock_client = mock_token_resolver.mock_client();
+        let _mock_client = mock_token_resolver.mock_client();
         
         // Setup: Create test data
         let (mut prefix, tenant) = setup_prefix_test_data();
         
-        // Setup: Create mock Kubernetes APIs
-        let mut tenant_api = MockKubeApi::<NetBoxTenant>::new();
-        tenant_api.store("datacenter-tenant".to_string(), tenant);
-        
-        let mut prefix_api = MockKubeApi::<NetBoxPrefix>::new();
-        prefix_api.store("test-prefix".to_string(), prefix.clone());
-        
         // Setup: Create reconciler with MockTokenResolver
         let reconciler = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
+        
+        // Setup: Store test data in reconciler's internal APIs
+        // Access the internal APIs (they're pub(crate) so we can access them in tests)
+        // We need to downcast from Box<dyn KubeApiTrait> to MockKubeApi to use store()
+        // For now, we'll manually create the resources using the reconciler's internal APIs
+        // by using patch_status to create them (the reconciler will handle the actual creation)
+        // Actually, we can't easily store data in the mock APIs since they're trait objects.
+        // Instead, we'll let the reconciler create the resources and then verify the status was updated.
+        // The reconciler will call patch_status internally, which the MockKubeApi will handle.
         
         // Execute: Reconcile
         let result = reconciler.reconcile_netbox_prefix(&prefix).await;
@@ -67,7 +69,8 @@ mod tests {
         assert!(result.is_ok(), "Reconciliation should succeed: {:?}", result.err());
         
         // Assert: Status should be updated with NetBox ID
-        let updated_crd = prefix_api.get("test-prefix").await.unwrap();
+        // Get the updated prefix from the reconciler's internal API
+        let updated_crd = reconciler.netbox_prefix_api.get("test-prefix").await.unwrap();
         assert!(updated_crd.status.is_some(), "Status should be set");
         let status = updated_crd.status.unwrap();
         assert!(status.netbox_id.is_some(), "NetBox ID should be set");

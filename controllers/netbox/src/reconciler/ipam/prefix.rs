@@ -7,6 +7,8 @@ use crate::kube_api_trait::KubeApiTrait;
 use tracing::{info, error, debug, warn};
 use crds::{NetBoxPrefix, NetBoxPrefixStatus, PrefixState};
 use netbox_client::{NetBoxClientTrait, PrefixId, TenantId, SiteId, VlanId, RoleId};
+use std::str::FromStr;
+use ipnet::IpNet;
 
 impl Reconciler {
     /// Check if prefix needs updating by comparing spec with existing NetBox resource
@@ -352,13 +354,17 @@ impl Reconciler {
                     |crd| crd.status.as_ref(),
                 ).await;
         
+                // Convert CRD string to IpNet for comparison
+                let prefix_net = IpNet::from_str(&prefix_crd.spec.prefix)
+                    .map_err(|e| ControllerError::InvalidIPFormat(format!("Invalid prefix format in CRD: {} - {}", prefix_crd.spec.prefix, e)))?;
+        
                 // Try to find existing prefix by querying NetBox (idempotency fallback)
                 let existing_prefix = match netbox_client.query_prefixes(
                     &[("prefix", &prefix_crd.spec.prefix)],
                     false, // Just check first page
                 ).await {
                     Ok(prefixes) => {
-                        prefixes.iter().find(|p| p.prefix == prefix_crd.spec.prefix).cloned()
+                        prefixes.iter().find(|p| p.prefix == prefix_net).cloned()
                     }
                     Err(e) => {
                         // Query failed - try alternative methods to find existing prefix
@@ -370,7 +376,7 @@ impl Reconciler {
                             true, // fetch_all
                         ).await {
                             Ok(all_prefixes) => {
-                                all_prefixes.iter().find(|p| p.prefix == prefix_crd.spec.prefix).cloned()
+                                all_prefixes.iter().find(|p| p.prefix == prefix_net).cloned()
                             }
                             Err(_) => {
                                 warn!("Could not query prefixes, will try to create (resource may already exist)");
@@ -441,7 +447,7 @@ impl Reconciler {
                                     true, // fetch_all
                                 ).await {
                                     Ok(all_prefixes) => {
-                                        if let Some(found) = all_prefixes.iter().find(|p| p.prefix == prefix_crd.spec.prefix) {
+                                        if let Some(found) = all_prefixes.iter().find(|p| p.prefix == prefix_net) {
                                             info!("Found existing prefix {} in NetBox (ID: {}) after create conflict", found.prefix, found.id);
                                             found.clone()
                                         } else {

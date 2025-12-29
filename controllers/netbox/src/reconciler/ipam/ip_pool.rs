@@ -98,7 +98,7 @@ impl Reconciler {
         
         // Query allocated IPs from this prefix
         let allocated_ips = match netbox_client.query_ip_addresses(
-            &[("prefix", &prefix.prefix)],
+            &[("prefix", &prefix.prefix.to_string())],
             true, // fetch all pages
         ).await {
             Ok(ips) => ips,

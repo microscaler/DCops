@@ -164,7 +164,11 @@ impl Reconciler {
         
         // Allocate IP from NetBox
         let allocation_request = AllocateIPRequest {
-            address: claim.spec.preferred_ip.clone(),
+            address: claim.spec.preferred_ip.as_ref().map(|s| {
+                use std::str::FromStr;
+                use ipnet::IpNet;
+                IpNet::from_str(s).ok()
+            }).flatten(),
             description: Some(format!("IPClaim: {}/{}", namespace, name)),
             status: Some(IPAddressStatus::Active),
             role: None,

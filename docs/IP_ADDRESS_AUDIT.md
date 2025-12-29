@@ -248,35 +248,35 @@ let existing = prefixes.iter().find(|p| {
 - [x] Update `query_ip_addresses()` mock filter to use `ipnet`
 - [x] Fix tests to work with proper IP network checking
 
-### Phase 2: Models (High Priority)
-- [ ] Add custom serde serializers for `IpNet` in models
-- [ ] Update `Prefix.prefix` to `ipnet::IpNet` with string serialization
-- [ ] Update `IPAddress.address` to `ipnet::IpNet` with string serialization
-- [ ] Update `AvailableIP.address` to `ipnet::IpNet` with string serialization
-- [ ] Update `AllocateIPRequest.address` to `Option<ipnet::IpNet>`
-- [ ] Update `Aggregate.prefix` to `ipnet::IpNet` with string serialization
+### Phase 2: Models (High Priority) ✅ Complete
+- [x] Add custom serde serializers for `IpNet` in models
+- [x] Update `Prefix.prefix` to `ipnet::IpNet` with string serialization
+- [x] Update `IPAddress.address` to `ipnet::IpNet` with string serialization
+- [x] Update `AvailableIP.address` to `ipnet::IpNet` with string serialization
+- [x] Update `AllocateIPRequest.address` to `Option<ipnet::IpNet>`
+- [x] Update `Aggregate.prefix` to `ipnet::IpNet` with string serialization
 
-### Phase 3: API Functions (High Priority)
-- [ ] Update `NetBoxClientTrait` to accept `&ipnet::IpNet` for prefix/IP parameters
-- [ ] Update `NetBoxClient` implementation
-- [ ] Update `MockNetBoxClient` implementation
-- [ ] Update `MockNetBoxClientWrapper` implementation
-- [ ] Convert `IpNet` to `String` only at HTTP request boundary
+### Phase 3: API Functions (High Priority) ✅ Complete
+- [x] Update `NetBoxClientTrait` to accept `&ipnet::IpNet` for prefix/IP parameters
+- [x] Update `NetBoxClient` implementation
+- [x] Update `MockNetBoxClient` implementation
+- [x] Update `MockNetBoxClientWrapper` implementation
+- [x] Convert `IpNet` to `String` only at HTTP request boundary
 
-### Phase 4: Reconciler Logic (High Priority)
-- [ ] Convert CRD `String` fields to `IpNet` at start of reconcile functions
-- [ ] Replace string comparisons with `IpNet` comparisons
-- [ ] Use `IpNet.contains()` for network containment checks
-- [ ] Update logging to use `IpNet::to_string()` for consistency
+### Phase 4: Reconciler Logic (High Priority) ✅ Complete
+- [x] Convert CRD `String` fields to `IpNet` at start of reconcile functions
+- [x] Replace string comparisons with `IpNet` comparisons
+- [x] Use `IpNet.contains()` for network containment checks
+- [x] Update logging to use `IpNet::to_string()` for consistency
 
-### Phase 5: CRD Validation (Medium Priority)
-- [ ] Add JSON schema validation for CIDR format in CRDs
-- [ ] Add validation in reconciler using `IpNet::from_str()`
-- [ ] Return clear error messages for invalid CIDR
+### Phase 5: CRD Validation (Medium Priority) ✅ Complete
+- [x] Add JSON schema validation for CIDR format in CRDs
+- [x] Add validation in reconciler using `IpNet::from_str()`
+- [x] Return clear error messages for invalid CIDR
 
-### Phase 6: Test Utilities (Low Priority)
-- [ ] Update test helpers to use `IpNet` or validate strings
-- [ ] Add helper functions for creating `IpNet` in tests
+### Phase 6: Test Utilities (Low Priority) ✅ Complete
+- [x] Update test helpers to use `IpNet` or validate strings
+- [x] Add helper functions for creating `IpNet` in tests
 
 ---
 

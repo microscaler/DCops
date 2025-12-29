@@ -5,7 +5,7 @@
 
 use crds::{NetBoxResourceReference, NetBoxTenant, NetBoxDevice, NetBoxSite, NetBoxAggregate, NetBoxPrefix};
 use kube::{Api, Client};
-use netbox_client::{NetBoxClient, NetBoxError};
+use netbox_client::{NetBoxClient, NetBoxClientTrait, NetBoxError};
 use tracing::{debug, error, warn, info};
 
 /// Trait for resolving NetBox API tokens and creating clients
@@ -24,7 +24,7 @@ pub trait TokenResolverTrait: Send + Sync {
         &self,
         namespace: &str,
         tenant_ref: &NetBoxResourceReference,
-    ) -> Result<NetBoxClient, TokenResolutionError>;
+    ) -> Result<Box<dyn NetBoxClientTrait>, TokenResolutionError>;
 
     /// Create a NetBoxClient for a shared resource
     ///
@@ -35,7 +35,7 @@ pub trait TokenResolverTrait: Send + Sync {
         namespace: &str,
         resource_kind: &str,
         resource_name: &str,
-    ) -> Result<NetBoxClient, TokenResolutionError>;
+    ) -> Result<Box<dyn NetBoxClientTrait>, TokenResolutionError>;
 
     /// Get a reference to the kube client
     ///
@@ -613,8 +613,9 @@ impl TokenResolverTrait for TokenResolver {
         &self,
         namespace: &str,
         tenant_ref: &NetBoxResourceReference,
-    ) -> Result<NetBoxClient, TokenResolutionError> {
-        self.create_client_for_tenant(namespace, tenant_ref).await
+    ) -> Result<Box<dyn NetBoxClientTrait>, TokenResolutionError> {
+        let client = self.create_client_for_tenant(namespace, tenant_ref).await?;
+        Ok(Box::new(client))
     }
 
     async fn create_client_for_shared_resource(
@@ -622,8 +623,9 @@ impl TokenResolverTrait for TokenResolver {
         namespace: &str,
         resource_kind: &str,
         resource_name: &str,
-    ) -> Result<NetBoxClient, TokenResolutionError> {
-        self.create_client_for_shared_resource(namespace, resource_kind, resource_name).await
+    ) -> Result<Box<dyn NetBoxClientTrait>, TokenResolutionError> {
+        let client = self.create_client_for_shared_resource(namespace, resource_kind, resource_name).await?;
+        Ok(Box::new(client))
     }
 
     fn kube_client(&self) -> &Client {

@@ -10,11 +10,293 @@ use crds::NetBoxResourceReference;
 #[cfg(test)]
 use kube::Client;
 #[cfg(test)]
-use netbox_client::NetBoxClient;
+use netbox_client::NetBoxClientTrait;
 #[cfg(test)]
 use std::collections::HashMap;
 #[cfg(test)]
 use std::sync::{Arc, Mutex};
+
+/// Wrapper to make Arc<MockNetBoxClient> work as Box<dyn NetBoxClientTrait>
+#[cfg(test)]
+struct MockNetBoxClientWrapper {
+    client: Arc<netbox_client::MockNetBoxClient>,
+}
+
+#[async_trait::async_trait]
+#[cfg(test)]
+impl NetBoxClientTrait for MockNetBoxClientWrapper {
+    fn base_url(&self) -> &str {
+        self.client.base_url()
+    }
+
+    async fn validate_token(&self) -> Result<(), netbox_client::NetBoxError> {
+        self.client.validate_token().await
+    }
+
+    async fn get_prefix(&self, id: netbox_client::PrefixId) -> Result<netbox_client::Prefix, netbox_client::NetBoxError> {
+        self.client.get_prefix(id).await
+    }
+
+    async fn get_available_ips(&self, prefix_id: netbox_client::PrefixId, limit: Option<u32>) -> Result<Vec<netbox_client::AvailableIP>, netbox_client::NetBoxError> {
+        self.client.get_available_ips(prefix_id, limit).await
+    }
+
+    async fn allocate_ip(&self, prefix_id: netbox_client::PrefixId, request: Option<netbox_client::AllocateIPRequest>) -> Result<netbox_client::IPAddress, netbox_client::NetBoxError> {
+        self.client.allocate_ip(prefix_id, request).await
+    }
+
+    async fn get_ip_address(&self, id: netbox_client::IpAddressId) -> Result<netbox_client::IPAddress, netbox_client::NetBoxError> {
+        self.client.get_ip_address(id).await
+    }
+
+    async fn query_ip_addresses(&self, filters: &[(&str, &str)], fetch_all: bool) -> Result<Vec<netbox_client::IPAddress>, netbox_client::NetBoxError> {
+        self.client.query_ip_addresses(filters, fetch_all).await
+    }
+
+    async fn query_prefixes(&self, filters: &[(&str, &str)], fetch_all: bool) -> Result<Vec<netbox_client::Prefix>, netbox_client::NetBoxError> {
+        self.client.query_prefixes(filters, fetch_all).await
+    }
+
+    async fn create_ip_address(&self, address: &str, request: Option<netbox_client::AllocateIPRequest>) -> Result<netbox_client::IPAddress, netbox_client::NetBoxError> {
+        self.client.create_ip_address(address, request).await
+    }
+
+    async fn update_ip_address(&self, id: netbox_client::IpAddressId, request: netbox_client::AllocateIPRequest) -> Result<netbox_client::IPAddress, netbox_client::NetBoxError> {
+        self.client.update_ip_address(id, request).await
+    }
+
+    async fn delete_ip_address(&self, id: netbox_client::IpAddressId) -> Result<(), netbox_client::NetBoxError> {
+        self.client.delete_ip_address(id).await
+    }
+
+    async fn create_prefix(&self, prefix: &str, description: Option<String>, site_id: Option<netbox_client::SiteId>, vlan_id: Option<netbox_client::VlanId>, status: Option<&str>, role_id: Option<netbox_client::RoleId>, tenant_id: Option<netbox_client::TenantId>, tags: Option<Vec<String>>) -> Result<netbox_client::Prefix, netbox_client::NetBoxError> {
+        self.client.create_prefix(prefix, description, site_id, vlan_id, status, role_id, tenant_id, tags).await
+    }
+
+    async fn update_prefix(&self, id: netbox_client::PrefixId, prefix: Option<&str>, description: Option<String>, status: Option<&str>, role: Option<String>, tenant_id: Option<netbox_client::TenantId>, site_id: Option<netbox_client::SiteId>, vlan_id: Option<netbox_client::VlanId>, tags: Option<Vec<String>>) -> Result<netbox_client::Prefix, netbox_client::NetBoxError> {
+        self.client.update_prefix(id, prefix, description, status, role, tenant_id, site_id, vlan_id, tags).await
+    }
+
+    async fn query_aggregates(&self, filters: &[(&str, &str)], fetch_all: bool) -> Result<Vec<netbox_client::Aggregate>, netbox_client::NetBoxError> {
+        self.client.query_aggregates(filters, fetch_all).await
+    }
+
+    async fn get_aggregate(&self, id: netbox_client::AggregateId) -> Result<netbox_client::Aggregate, netbox_client::NetBoxError> {
+        self.client.get_aggregate(id).await
+    }
+
+    async fn create_aggregate(&self, prefix: &str, rir_id: Option<netbox_client::RirId>, date_allocated: Option<&str>, description: Option<String>, comments: Option<String>) -> Result<netbox_client::Aggregate, netbox_client::NetBoxError> {
+        self.client.create_aggregate(prefix, rir_id, date_allocated, description, comments).await
+    }
+
+    async fn query_rirs(&self, filters: &[(&str, &str)], fetch_all: bool) -> Result<Vec<netbox_client::Rir>, netbox_client::NetBoxError> {
+        self.client.query_rirs(filters, fetch_all).await
+    }
+
+    async fn get_rir_by_name(&self, name: &str) -> Result<Option<netbox_client::Rir>, netbox_client::NetBoxError> {
+        self.client.get_rir_by_name(name).await
+    }
+
+    async fn create_rir(&self, name: &str, slug: Option<&str>, description: Option<String>, is_private: Option<bool>) -> Result<netbox_client::Rir, netbox_client::NetBoxError> {
+        self.client.create_rir(name, slug, description, is_private).await
+    }
+
+    async fn create_vlan(&self, vid: u16, name: &str, site_id: Option<netbox_client::SiteId>, group_id: Option<netbox_client::VlanGroupId>, tenant_id: Option<netbox_client::TenantId>, role_id: Option<netbox_client::RoleId>, status: Option<&str>, description: Option<String>, comments: Option<String>) -> Result<netbox_client::Vlan, netbox_client::NetBoxError> {
+        self.client.create_vlan(vid, name, site_id, group_id, tenant_id, role_id, status, description, comments).await
+    }
+
+    async fn get_vlan(&self, id: netbox_client::VlanId) -> Result<netbox_client::Vlan, netbox_client::NetBoxError> {
+        self.client.get_vlan(id).await
+    }
+
+    async fn query_vlans(&self, filters: &[(&str, &str)], fetch_all: bool) -> Result<Vec<netbox_client::Vlan>, netbox_client::NetBoxError> {
+        self.client.query_vlans(filters, fetch_all).await
+    }
+
+    async fn query_sites(&self, filters: &[(&str, &str)], fetch_all: bool) -> Result<Vec<netbox_client::Site>, netbox_client::NetBoxError> {
+        self.client.query_sites(filters, fetch_all).await
+    }
+
+    async fn get_site(&self, id: netbox_client::SiteId) -> Result<netbox_client::Site, netbox_client::NetBoxError> {
+        self.client.get_site(id).await
+    }
+
+    async fn create_site(&self, name: &str, slug: Option<&str>, status: Option<&str>, region_id: Option<netbox_client::RegionId>, site_group_id: Option<netbox_client::SiteGroupId>, tenant_id: Option<netbox_client::TenantId>, facility: Option<&str>, asn: Option<u32>, time_zone: Option<&str>, description: Option<String>, physical_address: Option<String>, shipping_address: Option<String>, latitude: Option<f64>, longitude: Option<f64>, comments: Option<String>) -> Result<netbox_client::Site, netbox_client::NetBoxError> {
+        self.client.create_site(name, slug, status, region_id, site_group_id, tenant_id, facility, asn, time_zone, description, physical_address, shipping_address, latitude, longitude, comments).await
+    }
+
+    async fn update_site(&self, id: netbox_client::SiteId, name: Option<&str>, slug: Option<&str>, status: Option<&str>, region_id: Option<netbox_client::RegionId>, site_group_id: Option<netbox_client::SiteGroupId>, tenant_id: Option<netbox_client::TenantId>, facility: Option<&str>, asn: Option<u32>, time_zone: Option<&str>, description: Option<String>, physical_address: Option<String>, shipping_address: Option<String>, latitude: Option<f64>, longitude: Option<f64>, comments: Option<String>) -> Result<netbox_client::Site, netbox_client::NetBoxError> {
+        self.client.update_site(id, name, slug, status, region_id, site_group_id, tenant_id, facility, asn, time_zone, description, physical_address, shipping_address, latitude, longitude, comments).await
+    }
+
+    async fn query_regions(&self, filters: &[(&str, &str)], fetch_all: bool) -> Result<Vec<netbox_client::Region>, netbox_client::NetBoxError> {
+        self.client.query_regions(filters, fetch_all).await
+    }
+
+    async fn get_region(&self, id: netbox_client::RegionId) -> Result<netbox_client::Region, netbox_client::NetBoxError> {
+        self.client.get_region(id).await
+    }
+
+    async fn create_region(&self, name: &str, slug: Option<&str>, parent_id: Option<netbox_client::RegionId>, description: Option<String>) -> Result<netbox_client::Region, netbox_client::NetBoxError> {
+        self.client.create_region(name, slug, parent_id, description).await
+    }
+
+    async fn query_site_groups(&self, filters: &[(&str, &str)], fetch_all: bool) -> Result<Vec<netbox_client::SiteGroup>, netbox_client::NetBoxError> {
+        self.client.query_site_groups(filters, fetch_all).await
+    }
+
+    async fn get_site_group(&self, id: netbox_client::SiteGroupId) -> Result<netbox_client::SiteGroup, netbox_client::NetBoxError> {
+        self.client.get_site_group(id).await
+    }
+
+    async fn create_site_group(&self, name: &str, slug: Option<&str>, parent_id: Option<netbox_client::SiteGroupId>, description: Option<String>) -> Result<netbox_client::SiteGroup, netbox_client::NetBoxError> {
+        self.client.create_site_group(name, slug, parent_id, description).await
+    }
+
+    async fn query_locations(&self, filters: &[(&str, &str)], fetch_all: bool) -> Result<Vec<netbox_client::Location>, netbox_client::NetBoxError> {
+        self.client.query_locations(filters, fetch_all).await
+    }
+
+    async fn get_location(&self, id: netbox_client::LocationId) -> Result<netbox_client::Location, netbox_client::NetBoxError> {
+        self.client.get_location(id).await
+    }
+
+    async fn create_location(&self, name: &str, site_id: netbox_client::SiteId, slug: Option<&str>, parent_id: Option<netbox_client::LocationId>, tenant_id: Option<netbox_client::TenantId>, description: Option<String>) -> Result<netbox_client::Location, netbox_client::NetBoxError> {
+        self.client.create_location(name, site_id, slug, parent_id, tenant_id, description).await
+    }
+
+    async fn query_devices(&self, filters: &[(&str, &str)], fetch_all: bool) -> Result<Vec<netbox_client::Device>, netbox_client::NetBoxError> {
+        self.client.query_devices(filters, fetch_all).await
+    }
+
+    async fn get_device(&self, id: netbox_client::DeviceId) -> Result<netbox_client::Device, netbox_client::NetBoxError> {
+        self.client.get_device(id).await
+    }
+
+    async fn get_device_by_mac(&self, mac: &str) -> Result<Option<netbox_client::Device>, netbox_client::NetBoxError> {
+        self.client.get_device_by_mac(mac).await
+    }
+
+    async fn create_device(&self, name: Option<&str>, device_type_id: netbox_client::DeviceTypeId, device_role_id: netbox_client::DeviceRoleId, site_id: netbox_client::SiteId, location_id: Option<netbox_client::LocationId>, tenant_id: Option<netbox_client::TenantId>, platform_id: Option<netbox_client::PlatformId>, serial: Option<&str>, asset_tag: Option<&str>, status: Option<&str>, primary_ip4_id: Option<netbox_client::IpAddressId>, primary_ip6_id: Option<netbox_client::IpAddressId>, description: Option<String>, comments: Option<String>) -> Result<netbox_client::Device, netbox_client::NetBoxError> {
+        self.client.create_device(name, device_type_id, device_role_id, site_id, location_id, tenant_id, platform_id, serial, asset_tag, status, primary_ip4_id, primary_ip6_id, description, comments).await
+    }
+
+    async fn query_interfaces(&self, filters: &[(&str, &str)], fetch_all: bool) -> Result<Vec<netbox_client::Interface>, netbox_client::NetBoxError> {
+        self.client.query_interfaces(filters, fetch_all).await
+    }
+
+    async fn get_interface(&self, id: netbox_client::InterfaceId) -> Result<netbox_client::Interface, netbox_client::NetBoxError> {
+        self.client.get_interface(id).await
+    }
+
+    async fn create_interface(&self, device_id: netbox_client::DeviceId, name: &str, r#type: Option<&str>, enabled: Option<bool>, mac_address: Option<&str>, mtu: Option<u16>, mgmt_only: Option<bool>, description: Option<String>) -> Result<netbox_client::Interface, netbox_client::NetBoxError> {
+        self.client.create_interface(device_id, name, r#type, enabled, mac_address, mtu, mgmt_only, description).await
+    }
+
+    async fn update_interface(&self, id: netbox_client::InterfaceId, name: Option<&str>, r#type: Option<&str>, enabled: Option<bool>, mac_address: Option<&str>, mtu: Option<u16>, mgmt_only: Option<bool>, description: Option<String>) -> Result<netbox_client::Interface, netbox_client::NetBoxError> {
+        self.client.update_interface(id, name, r#type, enabled, mac_address, mtu, mgmt_only, description).await
+    }
+
+    async fn query_mac_addresses(&self, filters: &[(&str, &str)], fetch_all: bool) -> Result<Vec<netbox_client::MACAddress>, netbox_client::NetBoxError> {
+        self.client.query_mac_addresses(filters, fetch_all).await
+    }
+
+    async fn get_mac_address(&self, id: netbox_client::MacAddressId) -> Result<netbox_client::MACAddress, netbox_client::NetBoxError> {
+        self.client.get_mac_address(id).await
+    }
+
+    async fn create_mac_address(&self, interface_id: netbox_client::InterfaceId, address: &str, description: Option<String>, comments: Option<String>) -> Result<netbox_client::MACAddress, netbox_client::NetBoxError> {
+        self.client.create_mac_address(interface_id, address, description, comments).await
+    }
+
+    async fn query_device_roles(&self, filters: &[(&str, &str)], fetch_all: bool) -> Result<Vec<netbox_client::DeviceRole>, netbox_client::NetBoxError> {
+        self.client.query_device_roles(filters, fetch_all).await
+    }
+
+    async fn get_device_role(&self, id: netbox_client::DeviceRoleId) -> Result<netbox_client::DeviceRole, netbox_client::NetBoxError> {
+        self.client.get_device_role(id).await
+    }
+
+    async fn create_device_role(&self, name: &str, slug: Option<&str>, color: Option<&str>, vm_role: Option<bool>, description: Option<String>, comments: Option<String>) -> Result<netbox_client::DeviceRole, netbox_client::NetBoxError> {
+        self.client.create_device_role(name, slug, color, vm_role, description, comments).await
+    }
+
+    async fn query_manufacturers(&self, filters: &[(&str, &str)], fetch_all: bool) -> Result<Vec<netbox_client::Manufacturer>, netbox_client::NetBoxError> {
+        self.client.query_manufacturers(filters, fetch_all).await
+    }
+
+    async fn get_manufacturer(&self, id: netbox_client::ManufacturerId) -> Result<netbox_client::Manufacturer, netbox_client::NetBoxError> {
+        self.client.get_manufacturer(id).await
+    }
+
+    async fn create_manufacturer(&self, name: &str, slug: Option<&str>, description: Option<String>) -> Result<netbox_client::Manufacturer, netbox_client::NetBoxError> {
+        self.client.create_manufacturer(name, slug, description).await
+    }
+
+    async fn query_platforms(&self, filters: &[(&str, &str)], fetch_all: bool) -> Result<Vec<netbox_client::Platform>, netbox_client::NetBoxError> {
+        self.client.query_platforms(filters, fetch_all).await
+    }
+
+    async fn get_platform(&self, id: netbox_client::PlatformId) -> Result<netbox_client::Platform, netbox_client::NetBoxError> {
+        self.client.get_platform(id).await
+    }
+
+    async fn create_platform(&self, name: &str, slug: Option<&str>, manufacturer_id: Option<netbox_client::ManufacturerId>, napalm_driver: Option<&str>, napalm_args: Option<serde_json::Value>, description: Option<String>, comments: Option<String>) -> Result<netbox_client::Platform, netbox_client::NetBoxError> {
+        self.client.create_platform(name, slug, manufacturer_id, napalm_driver, napalm_args, description, comments).await
+    }
+
+    async fn query_device_types(&self, filters: &[(&str, &str)], fetch_all: bool) -> Result<Vec<netbox_client::DeviceType>, netbox_client::NetBoxError> {
+        self.client.query_device_types(filters, fetch_all).await
+    }
+
+    async fn get_device_type(&self, id: netbox_client::DeviceTypeId) -> Result<netbox_client::DeviceType, netbox_client::NetBoxError> {
+        self.client.get_device_type(id).await
+    }
+
+    async fn create_device_type(&self, manufacturer_id: netbox_client::ManufacturerId, model: &str, slug: Option<&str>, part_number: Option<&str>, u_height: Option<f64>, is_full_depth: Option<bool>, description: Option<String>, comments: Option<String>) -> Result<netbox_client::DeviceType, netbox_client::NetBoxError> {
+        self.client.create_device_type(manufacturer_id, model, slug, part_number, u_height, is_full_depth, description, comments).await
+    }
+
+    async fn query_tenants(&self, filters: &[(&str, &str)], fetch_all: bool) -> Result<Vec<netbox_client::Tenant>, netbox_client::NetBoxError> {
+        self.client.query_tenants(filters, fetch_all).await
+    }
+
+    async fn get_tenant(&self, id: netbox_client::TenantId) -> Result<netbox_client::Tenant, netbox_client::NetBoxError> {
+        self.client.get_tenant(id).await
+    }
+
+    async fn create_tenant(&self, name: &str, slug: Option<&str>, group_id: Option<netbox_client::TenantGroupId>, description: Option<String>, comments: Option<String>) -> Result<netbox_client::Tenant, netbox_client::NetBoxError> {
+        self.client.create_tenant(name, slug, group_id, description, comments).await
+    }
+
+    async fn update_tenant(&self, id: netbox_client::TenantId, name: Option<&str>, slug: Option<&str>, group_id: Option<netbox_client::TenantGroupId>, description: Option<String>, comments: Option<String>) -> Result<netbox_client::Tenant, netbox_client::NetBoxError> {
+        self.client.update_tenant(id, name, slug, group_id, description, comments).await
+    }
+
+    async fn query_roles(&self, filters: &[(&str, &str)], fetch_all: bool) -> Result<Vec<netbox_client::Role>, netbox_client::NetBoxError> {
+        self.client.query_roles(filters, fetch_all).await
+    }
+
+    async fn get_role(&self, id: netbox_client::RoleId) -> Result<netbox_client::Role, netbox_client::NetBoxError> {
+        self.client.get_role(id).await
+    }
+
+    async fn create_role(&self, name: &str, slug: Option<&str>, weight: Option<u16>, description: Option<String>, content_types: Option<Vec<String>>) -> Result<netbox_client::Role, netbox_client::NetBoxError> {
+        self.client.create_role(name, slug, weight, description, content_types).await
+    }
+
+    async fn query_tags(&self, filters: &[(&str, &str)], fetch_all: bool) -> Result<Vec<netbox_client::Tag>, netbox_client::NetBoxError> {
+        self.client.query_tags(filters, fetch_all).await
+    }
+
+    async fn get_tag(&self, id: netbox_client::TagId) -> Result<netbox_client::Tag, netbox_client::NetBoxError> {
+        self.client.get_tag(id).await
+    }
+
+    async fn create_tag(&self, name: &str, slug: Option<&str>, color: Option<&str>, description: Option<String>) -> Result<netbox_client::Tag, netbox_client::NetBoxError> {
+        self.client.create_tag(name, slug, color, description).await
+    }
+}
 
 /// Mock TokenResolver for testing
 ///
@@ -24,6 +306,7 @@ use std::sync::{Arc, Mutex};
 pub struct MockTokenResolver {
     netbox_url: String,
     secrets: Arc<Mutex<HashMap<String, String>>>, // namespace/secret_name -> token
+    mock_netbox_client: Arc<netbox_client::MockNetBoxClient>, // Shared MockNetBoxClient
 }
 
 #[cfg(test)]
@@ -31,9 +314,17 @@ impl MockTokenResolver {
     /// Create a new mock TokenResolver
     pub fn new(netbox_url: String) -> Self {
         Self {
-            netbox_url,
+            netbox_url: netbox_url.clone(),
             secrets: Arc::new(Mutex::new(HashMap::new())),
+            mock_netbox_client: Arc::new(netbox_client::MockNetBoxClient::new(netbox_url)),
         }
+    }
+    
+    /// Get a reference to the underlying MockNetBoxClient
+    /// 
+    /// This allows tests to set up mock data (e.g., add_prefix, set_available_ips)
+    pub fn mock_client(&self) -> Arc<netbox_client::MockNetBoxClient> {
+        self.mock_netbox_client.clone()
     }
     
     /// Add a secret token to the mock
@@ -91,13 +382,15 @@ impl TokenResolverTrait for MockTokenResolver {
         &self,
         namespace: &str,
         tenant_ref: &NetBoxResourceReference,
-    ) -> Result<NetBoxClient, TokenResolutionError> {
-        let token = self.resolve_token(namespace, tenant_ref).await?;
+    ) -> Result<Box<dyn netbox_client::NetBoxClientTrait>, TokenResolutionError> {
+        // Verify token exists (for test validation)
+        let _token = self.resolve_token(namespace, tenant_ref).await?;
         
-        NetBoxClient::new(self.netbox_url.clone(), token)
-            .map_err(|e| {
-                TokenResolutionError::ClientCreation(e)
-            })
+        // Return the shared MockNetBoxClient wrapped in a Box
+        // We clone the Arc to get a new reference to the same MockNetBoxClient
+        Ok(Box::new(MockNetBoxClientWrapper {
+            client: self.mock_netbox_client.clone(),
+        }))
     }
 
     async fn create_client_for_shared_resource(
@@ -105,7 +398,7 @@ impl TokenResolverTrait for MockTokenResolver {
         namespace: &str,
         _resource_kind: &str,
         _resource_name: &str,
-    ) -> Result<NetBoxClient, TokenResolutionError> {
+    ) -> Result<Box<dyn netbox_client::NetBoxClientTrait>, TokenResolutionError> {
         // For shared resources, use main tenant
         let tenant_ref = self.get_main_tenant_reference();
         self.create_client_for_tenant(namespace, &tenant_ref).await
@@ -163,4 +456,3 @@ pub fn create_test_reconciler_with_mock_token_resolver(
         MockKubeApi::new(), // ip_claim_api
     )
 }
-

@@ -33,10 +33,19 @@ mod tests {
     }
     
     #[tokio::test]
-    #[ignore] // Ignored until kube::Client mocking is implemented
     async fn test_reconcile_prefix_create() {
-        // Setup: Create mock NetBoxClient
-        let mock_netbox = MockNetBoxClient::new("http://test-netbox");
+        use crate::test_utils::mock_token_resolver::{MockTokenResolver, create_test_reconciler_with_mock_token_resolver};
+        use std::sync::Arc;
+        
+        // Setup: Create mock TokenResolver with MockNetBoxClient
+        let netbox_url = "http://test-netbox".to_string();
+        let mock_token_resolver = Arc::new(MockTokenResolver::new(netbox_url.clone()));
+        
+        // Setup: Add secret for tenant
+        mock_token_resolver.add_secret("default", "netbox-token-datacenter-tenant", "test-token".to_string());
+        
+        // Setup: Get MockNetBoxClient to set up test data
+        let mock_client = mock_token_resolver.mock_client();
         
         // Setup: Create test data
         let (mut prefix, tenant) = setup_prefix_test_data();
@@ -48,36 +57,21 @@ mod tests {
         let mut prefix_api = MockKubeApi::<NetBoxPrefix>::new();
         prefix_api.store("test-prefix".to_string(), prefix.clone());
         
-        // Setup: Create reconciler
-        // Note: This requires a real kube::Client for TokenResolver
-        // Once kube::Client mocking is implemented, this test can be enabled
-        let _kube_client = match Client::try_default().await {
-            Ok(client) => client,
-            Err(_) => {
-                // Skip test if no kube client available
-                return;
-            }
-        };
+        // Setup: Create reconciler with MockTokenResolver
+        let reconciler = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
         
-        // TODO: Uncomment once kube::Client mocking is implemented
-        // let reconciler = create_test_reconciler(kube_client, "http://test-netbox".to_string());
-        // 
-        // // Setup: Add prefix to mock NetBox
-        // let test_prefix = create_test_prefix(1, "192.168.1.0/24", "http://test-netbox");
-        // mock_netbox.add_prefix(test_prefix);
-        // 
-        // // Execute: Reconcile
-        // let result = reconciler.reconcile_netbox_prefix(&prefix).await;
-        // 
-        // // Assert: Should succeed
-        // assert!(result.is_ok(), "Reconciliation should succeed: {:?}", result.err());
-        // 
-        // // Assert: Status should be updated with NetBox ID
-        // let updated_crd = prefix_api.get("test-prefix").await.unwrap();
-        // assert!(updated_crd.status.is_some(), "Status should be set");
-        // let status = updated_crd.status.unwrap();
-        // assert!(status.netbox_id.is_some(), "NetBox ID should be set");
-        // assert_eq!(status.state, PrefixState::Created, "State should be Created");
+        // Execute: Reconcile
+        let result = reconciler.reconcile_netbox_prefix(&prefix).await;
+        
+        // Assert: Should succeed
+        assert!(result.is_ok(), "Reconciliation should succeed: {:?}", result.err());
+        
+        // Assert: Status should be updated with NetBox ID
+        let updated_crd = prefix_api.get("test-prefix").await.unwrap();
+        assert!(updated_crd.status.is_some(), "Status should be set");
+        let status = updated_crd.status.unwrap();
+        assert!(status.netbox_id.is_some(), "NetBox ID should be set");
+        assert_eq!(status.state, PrefixState::Created, "State should be Created");
     }
     
     #[tokio::test]

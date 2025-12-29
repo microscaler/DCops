@@ -182,7 +182,7 @@ impl Reconciler {
                 if let Some(netbox_id) = status.netbox_id {
                     // Use helper function for drift detection, diffing, and updating
                     match check_and_update_existing(
-                        &netbox_client,
+                        netbox_client.as_ref(),
                         netbox_id,
                         &format!("NetBoxPrefix {}/{}", namespace, name),
                         netbox_client.get_prefix(PrefixId(netbox_id)),

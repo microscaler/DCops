@@ -3,10 +3,7 @@
 #[cfg(test)]
 mod tests {
     use crate::test_utils::*;
-    use crate::kube_api_trait::mock::MockKubeApi;
-    use netbox_client::MockNetBoxClient;
     use crds::{NetBoxSite, NetBoxTenant, ResourceState};
-    use kube::Client;
     
     /// Helper to set up test data for site reconciliation
     fn setup_site_test_data() -> (NetBoxSite, NetBoxTenant) {
@@ -32,43 +29,63 @@ mod tests {
     }
     
     #[tokio::test]
-    #[ignore] // Ignored until kube::Client mocking is implemented
     async fn test_reconcile_site_create() {
-        // Setup: Create mock NetBoxClient
-        let _mock_netbox = MockNetBoxClient::new("http://test-netbox");
+        use crate::test_utils::mock_token_resolver::{MockTokenResolver, create_test_reconciler_with_mock_token_resolver};
+        use crate::kube_api_trait::KubeApiTrait;
+        use std::sync::Arc;
+        
+        // Setup: Create mock TokenResolver with MockNetBoxClient
+        let netbox_url = "http://test-netbox".to_string();
+        let mock_token_resolver = Arc::new(MockTokenResolver::new(netbox_url.clone()));
+        
+        // Setup: Add secret for tenant
+        mock_token_resolver.add_secret("default", "netbox-token-datacenter-tenant", "test-token".to_string());
+        
+        // Setup: Get MockNetBoxClient to set up test data
+        let mock_client = mock_token_resolver.mock_client();
         
         // Setup: Create test data
         let (mut site, tenant) = setup_site_test_data();
         site.status = None; // Clear status to test create path
         
-        // Setup: Create mock Kubernetes APIs
-        let tenant_api = MockKubeApi::<NetBoxTenant>::new();
-        // tenant_api.store("datacenter-tenant".to_string(), tenant);
+        // Setup: Create reconciler with MockTokenResolver
+        let (reconciler, apis) = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
         
-        let site_api = MockKubeApi::<NetBoxSite>::new();
-        // site_api.store("test-site".to_string(), site.clone());
+        // Setup: Store test data in the APIs before reconciliation
+        apis.tenant_api.store("datacenter-tenant".to_string(), tenant);
+        apis.site_api.store("test-site".to_string(), site.clone());
         
-        // Setup: Create reconciler
-        let _kube_client = match Client::try_default().await {
-            Ok(client) => client,
-            Err(_) => return, // Skip test if no kube client available
+        // Setup: Add tenant to mock NetBox (required for create_site call)
+        // The tenant is already created by the reconciler, but we need it in NetBox for the site creation
+        // Since the tenant reconciler would have created it, we'll simulate that by adding it to the mock
+        use netbox_client::Tenant;
+        use chrono::Utc;
+        let netbox_tenant = Tenant {
+            id: 1,
+            url: format!("{}/api/tenancy/tenants/1/", netbox_url),
+            display: "Data Center Operations".to_string(),
+            name: "Data Center Operations".to_string(),
+            slug: "datacenter-ops".to_string(),
+            description: Some("Primary tenant for datacenter operations".to_string()),
+            comments: Some(String::new()),
+            group: None,
+            created: Utc::now().to_rfc3339(),
+            last_updated: Utc::now().to_rfc3339(),
         };
+        mock_client.add_tenant(netbox_tenant);
         
-        // TODO: Uncomment once kube::Client mocking is implemented
-        // let reconciler = create_test_reconciler(kube_client, "http://test-netbox".to_string());
-        // 
-        // // Execute: Reconcile
-        // let result = reconciler.reconcile_netbox_site(&site).await;
-        // 
-        // // Assert: Should succeed
-        // assert!(result.is_ok(), "Reconciliation should succeed: {:?}", result.err());
-        // 
-        // // Assert: Status should be updated with NetBox ID
-        // let updated_crd = site_api.get("test-site").await.unwrap();
-        // assert!(updated_crd.status.is_some(), "Status should be set");
-        // let status = updated_crd.status.unwrap();
-        // assert!(status.netbox_id.is_some(), "NetBox ID should be set");
-        // assert_eq!(status.state, ResourceState::Created, "State should be Created");
+        // Execute: Reconcile
+        let result = reconciler.reconcile_netbox_site(&site).await;
+        
+        // Assert: Should succeed
+        assert!(result.is_ok(), "Reconciliation should succeed: {:?}", result.err());
+        
+        // Assert: Status should be updated with NetBox ID
+        let updated_crd = apis.site_api.get("test-site").await.unwrap();
+        assert!(updated_crd.status.is_some(), "Status should be set");
+        let status = updated_crd.status.unwrap();
+        assert!(status.netbox_id.is_some(), "NetBox ID should be set");
+        assert_eq!(status.state, ResourceState::Created, "State should be Created");
     }
     
     #[tokio::test]

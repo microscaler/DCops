@@ -88,10 +88,10 @@ pub async fn query_ip_addresses(client: &MockNetBoxClient, filters: &[(&str, &st
         let ips = client.ip_addresses.lock().unwrap();
         let mut results: Vec<IPAddress> = ips.values().cloned().collect();
 
-        // Apply filters (properly handles prefix filter using ipnet)
+        // Apply filters (properly handles prefix filter using ipnet for IP network checking)
         for (key, value) in filters {
             if *key == "prefix" {
-                // Parse the prefix as an IP network
+                // Parse the prefix as an IP network using ipnet
                 let prefix_net = match ipnet::IpNet::from_str(value) {
                     Ok(net) => net,
                     Err(_) => {

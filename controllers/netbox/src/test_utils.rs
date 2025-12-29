@@ -210,6 +210,14 @@ pub fn create_test_ip_claim(
     interface: Option<&str>,
     preferred_ip: Option<&str>,
 ) -> IPClaim {
+    // Validate preferred_ip format if provided
+    if let Some(ref ip) = preferred_ip {
+        use std::str::FromStr;
+        use ipnet::IpNet;
+        IpNet::from_str(ip)
+            .unwrap_or_else(|e| panic!("Invalid preferred IP format '{}' in test: {}. Expected CIDR notation (e.g., '192.168.1.10/24')", ip, e));
+    }
+    
     IPClaim {
         metadata: ObjectMeta {
             name: Some(name.to_string()),

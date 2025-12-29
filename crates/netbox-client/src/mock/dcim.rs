@@ -25,12 +25,124 @@ pub async fn get_device_by_mac(_client: &MockNetBoxClient, _mac: &str) -> Result
         Ok(None)
 }
 
-pub async fn create_device(_client: &MockNetBoxClient, _device_type_id: u64, _device_role_id: u64, _site_id: u64, _name: Option<&str>, _tenant_id: Option<u64>, _platform_id: Option<u64>, _location_id: Option<u64>, _serial: Option<&str>, _asset_tag: Option<&str>, _status: Option<&str>, _primary_ip4_id: Option<u64>, _primary_ip6_id: Option<u64>, _description: Option<String>, _comments: Option<String>) -> Result<Device, NetBoxError> {
-        Err(NetBoxError::Api("Not implemented in mock".to_string()))
+pub async fn create_device(client: &MockNetBoxClient, device_type_id: u64, device_role_id: u64, site_id: u64, name: Option<&str>, tenant_id: Option<u64>, platform_id: Option<u64>, location_id: Option<u64>, serial: Option<&str>, asset_tag: Option<&str>, status: Option<&str>, primary_ip4_id: Option<u64>, primary_ip6_id: Option<u64>, description: Option<String>, comments: Option<String>) -> Result<Device, NetBoxError> {
+        let id = client.next_id();
+        let status_enum = match status {
+            Some("active") => DeviceStatus::Active,
+            Some("offline") => DeviceStatus::Offline,
+            Some("planned") => DeviceStatus::Planned,
+            Some("staged") => DeviceStatus::Staged,
+            Some("failed") => DeviceStatus::Failed,
+            Some("inventory") => DeviceStatus::Inventory,
+            Some("decommissioning") => DeviceStatus::Decommissioning,
+            _ => DeviceStatus::Active,
+        };
+        
+        // Get device type to extract manufacturer_id and model
+        let device_type = client.device_types.lock().unwrap()
+            .values()
+            .find(|dt| dt.id == device_type_id)
+            .cloned();
+        
+        let (manufacturer_id, model) = if let Some(dt) = device_type {
+            (dt.manufacturer.id, dt.model)
+        } else {
+            (1, "Unknown Model".to_string())
+        };
+        
+        let display = name.map(|n| n.to_string()).unwrap_or_else(|| format!("Device {}", id));
+        
+        let device = Device {
+            id,
+            url: format!("{}/api/dcim/devices/{}/", client.base_url, id),
+            display: display.clone(),
+            name: name.map(|s| s.to_string()),
+            device_type: client.helpers().create_nested_device_type(device_type_id, Some(model), Some(manufacturer_id)),
+            device_role: Some(client.helpers().create_nested_device_role(device_role_id, None)),
+            tenant: tenant_id.map(|tid| client.helpers().create_nested_tenant(tid, None)),
+            platform: platform_id.map(|pid| client.helpers().create_nested_platform(pid, None)),
+            site: Some(client.helpers().create_nested_site(site_id, None)),
+            location: location_id.map(|lid| client.helpers().create_nested_location(lid, None)),
+            status: status_enum,
+            serial: serial.map(|s| s.to_string()),
+            asset_tag: asset_tag.map(|s| s.to_string()),
+            primary_ip4: primary_ip4_id.and_then(|ip_id| {
+                client.ip_addresses.lock().unwrap()
+                    .get(&ip_id)
+                    .map(|ip| client.helpers().create_nested_ip_address(ip_id, ip.address))
+            }),
+            primary_ip6: primary_ip6_id.and_then(|ip_id| {
+                client.ip_addresses.lock().unwrap()
+                    .get(&ip_id)
+                    .map(|ip| client.helpers().create_nested_ip_address(ip_id, ip.address))
+            }),
+            description,
+            comments,
+            tags: vec![],
+            created: chrono::Utc::now().to_rfc3339(),
+            last_updated: chrono::Utc::now().to_rfc3339(),
+        };
+        
+        client.devices.lock().unwrap().insert(id, device.clone());
+        Ok(device)
     }
 
-pub async fn update_device(_client: &MockNetBoxClient, _id: u64, _name: Option<&str>, _tenant_id: Option<u64>, _platform_id: Option<u64>, _location_id: Option<u64>, _serial: Option<&str>, _asset_tag: Option<&str>, _status: Option<&str>, _primary_ip4_id: Option<u64>, _primary_ip6_id: Option<u64>, _description: Option<String>, _comments: Option<String>) -> Result<Device, NetBoxError> {
-        Err(NetBoxError::Api("Not implemented in mock".to_string()))
+pub async fn update_device(client: &MockNetBoxClient, id: u64, name: Option<&str>, tenant_id: Option<u64>, platform_id: Option<u64>, location_id: Option<u64>, serial: Option<&str>, asset_tag: Option<&str>, status: Option<&str>, primary_ip4_id: Option<u64>, primary_ip6_id: Option<u64>, description: Option<String>, comments: Option<String>) -> Result<Device, NetBoxError> {
+        let mut devices = client.devices.lock().unwrap();
+        let device = devices
+            .get_mut(&id)
+            .ok_or_else(|| NetBoxError::NotFound(format!("Device {} not found", id)))?;
+        
+        if let Some(name_str) = name {
+            device.name = Some(name_str.to_string());
+            device.display = name_str.to_string();
+        }
+        if let Some(tenant) = tenant_id {
+            device.tenant = Some(client.helpers().create_nested_tenant(tenant, None));
+        }
+        if let Some(platform) = platform_id {
+            device.platform = Some(client.helpers().create_nested_platform(platform, None));
+        }
+        if let Some(location) = location_id {
+            device.location = Some(client.helpers().create_nested_location(location, None));
+        }
+        if let Some(serial_str) = serial {
+            device.serial = Some(serial_str.to_string());
+        }
+        if let Some(asset_tag_str) = asset_tag {
+            device.asset_tag = Some(asset_tag_str.to_string());
+        }
+        if let Some(status_str) = status {
+            device.status = match status_str {
+                "active" => DeviceStatus::Active,
+                "offline" => DeviceStatus::Offline,
+                "planned" => DeviceStatus::Planned,
+                "staged" => DeviceStatus::Staged,
+                "failed" => DeviceStatus::Failed,
+                "inventory" => DeviceStatus::Inventory,
+                "decommissioning" => DeviceStatus::Decommissioning,
+                _ => DeviceStatus::Active,
+            };
+        }
+        if let Some(ip_id) = primary_ip4_id {
+            device.primary_ip4 = client.ip_addresses.lock().unwrap()
+                .get(&ip_id)
+                .map(|ip| client.helpers().create_nested_ip_address(ip_id, ip.address));
+        }
+        if let Some(ip_id) = primary_ip6_id {
+            device.primary_ip6 = client.ip_addresses.lock().unwrap()
+                .get(&ip_id)
+                .map(|ip| client.helpers().create_nested_ip_address(ip_id, ip.address));
+        }
+        if let Some(desc) = description {
+            device.description = Some(desc);
+        }
+        if let Some(comm) = comments {
+            device.comments = Some(comm);
+        }
+        
+        device.last_updated = chrono::Utc::now().to_rfc3339();
+        Ok(device.clone())
     }
 
 pub async fn query_interfaces(_client: &MockNetBoxClient, _filters: &[(&str, &str)], _fetch_all: bool) -> Result<Vec<Interface>, NetBoxError> {

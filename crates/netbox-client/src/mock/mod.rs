@@ -20,7 +20,6 @@ use crate::error::NetBoxError;
 use crate::models::*;
 use crate::netbox_trait::NetBoxClientTrait;
 use crate::types::*;
-use ipnet::IpNet;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
@@ -115,6 +114,11 @@ impl MockNetBoxClient {
     /// Add a tag to the mock store (for test setup)
     pub fn add_tag(&self, tag: Tag) {
         self.tags.lock().unwrap().insert(tag.id, tag);
+    }
+
+    /// Add a device to the mock store (for test setup)
+    pub fn add_device(&self, device: Device) {
+        self.devices.lock().unwrap().insert(device.id, device);
     }
 
     /// Generate next ID

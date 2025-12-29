@@ -1,6 +1,7 @@
 //! Helper functions for creating nested NetBox model types
 
 use crate::models::*;
+use ipnet::IpNet;
 
 /// Helper functions for creating nested types in mock implementations
 pub struct Helpers {
@@ -136,6 +137,53 @@ impl Helpers {
         tags.into_iter()
             .filter_map(|v| self.create_nested_tag(&v))
             .collect()
+    }
+
+    /// Helper to create NestedDeviceType
+    pub fn create_nested_device_type(&self, id: u64, model: Option<String>, manufacturer_id: Option<u64>) -> NestedDeviceType {
+        let model_str = model.unwrap_or_else(|| format!("Device Type {}", id));
+        let manufacturer_id = manufacturer_id.unwrap_or(1);
+        NestedDeviceType {
+            id,
+            url: format!("{}/api/dcim/device-types/{}/", self.base_url, id),
+            display: model_str.clone(),
+            model: model_str,
+            manufacturer: self.create_nested_manufacturer(manufacturer_id, None),
+        }
+    }
+
+    /// Helper to create NestedDeviceRole
+    pub fn create_nested_device_role(&self, id: u64, name: Option<String>) -> NestedDeviceRole {
+        let name_str = name.unwrap_or_else(|| format!("Device Role {}", id));
+        NestedDeviceRole {
+            id,
+            url: format!("{}/api/dcim/device-roles/{}/", self.base_url, id),
+            display: name_str.clone(),
+            name: name_str.clone(),
+            slug: name_str.to_lowercase().replace(' ', "-"),
+        }
+    }
+
+    /// Helper to create NestedPlatform
+    pub fn create_nested_platform(&self, id: u64, name: Option<String>) -> NestedPlatform {
+        let name_str = name.unwrap_or_else(|| format!("Platform {}", id));
+        NestedPlatform {
+            id,
+            url: format!("{}/api/dcim/platforms/{}/", self.base_url, id),
+            display: name_str.clone(),
+            name: name_str.clone(),
+            slug: name_str.to_lowercase().replace(' ', "-"),
+        }
+    }
+
+    /// Helper to create NestedIPAddress
+    pub fn create_nested_ip_address(&self, id: u64, address: ipnet::IpNet) -> NestedIPAddress {
+        NestedIPAddress {
+            id,
+            url: format!("{}/api/ipam/ip-addresses/{}/", self.base_url, id),
+            display: address.to_string(),
+            address,
+        }
     }
 }
 

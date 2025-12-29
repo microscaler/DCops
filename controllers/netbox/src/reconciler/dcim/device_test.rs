@@ -2,11 +2,11 @@
 
 #[cfg(test)]
 mod tests {
+    use crate::test_utils::mock_token_resolver::{MockTokenResolver, create_test_reconciler_with_mock_token_resolver};
     use crate::test_utils::*;
-    use crate::kube_api_trait::mock::MockKubeApi;
-    use netbox_client::MockNetBoxClient;
+    use crate::kube_api_trait::KubeApiTrait;
+    use std::sync::Arc;
     use crds::{NetBoxDevice, NetBoxTenant, NetBoxSite, NetBoxDeviceType, NetBoxDeviceRole, ResourceState};
-    use kube::Client;
     
     /// Helper to set up test data for device reconciliation
     fn setup_device_test_data() -> (NetBoxDevice, NetBoxTenant, NetBoxSite, NetBoxDeviceType, NetBoxDeviceRole) {

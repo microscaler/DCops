@@ -48,6 +48,13 @@ pub trait TokenResolverTrait: Send + Sync {
     /// This is needed for creating NetBoxClient instances directly
     /// (used in special cases like NetBoxTenant reconciler).
     fn netbox_url(&self) -> &str;
+    
+    /// Create a NetBoxClient from a token (for tenant reconciler)
+    ///
+    /// This allows the tenant reconciler to create a client with its own token
+    /// without requiring the tenant to already exist (avoiding circular dependency).
+    /// In test mode, this should return a mock client.
+    fn create_client_with_token(&self, token: String) -> Result<Box<dyn NetBoxClientTrait>, TokenResolutionError>;
 }
 
 /// Error types for token resolution
@@ -634,6 +641,15 @@ impl TokenResolverTrait for TokenResolver {
 
     fn netbox_url(&self) -> &str {
         &self.netbox_url
+    }
+    
+    fn create_client_with_token(&self, token: String) -> Result<Box<dyn NetBoxClientTrait>, TokenResolutionError> {
+        // Create a real NetBoxClient with the provided token
+        let client = NetBoxClient::new(
+            self.netbox_url.clone(),
+            token,
+        ).map_err(|e| TokenResolutionError::TokenDecodeError(format!("Failed to create NetBoxClient: {}", e)))?;
+        Ok(Box::new(client))
     }
 }
 

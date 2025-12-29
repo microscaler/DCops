@@ -99,8 +99,13 @@ impl Controller {
         // Create reconciler with wrapped APIs
         // NOTE: KubeApiWrapper is a thin delegation layer - all calls forward to real Api<T>
         // This preserves 100% real cluster operation while enabling unit testing with mocks
+        // Create RealSecretFetcher for production use
+        use crate::secret_fetcher::RealSecretFetcher;
+        let secret_fetcher = Arc::new(RealSecretFetcher::new(kube_client.clone()));
+        
         let reconciler = Reconciler::new(
             token_resolver.clone(),
+            Some(secret_fetcher), // Use RealSecretFetcher for production
             // IPAM
             KubeApiWrapper::new(netbox_prefix_api.clone()), // Wraps REAL Api<T> - zero overhead
             KubeApiWrapper::new(netbox_role_api.clone()),

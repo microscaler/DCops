@@ -56,65 +56,86 @@ impl Reconciler {
         let secret_namespace = secret_ref.namespace.as_deref().unwrap_or(namespace);
         
         // Fetch Secret directly
-        use kube::Api;
-        // We need access to kube_client - get it from TokenResolver
-        let kube_client = self.token_resolver.kube_client().clone();
-        let secret_api: Api<k8s_openapi::api::core::v1::Secret> =
-            Api::namespaced(kube_client, secret_namespace);
-        let secret = secret_api
-            .get(&secret_ref.name)
-            .await
-            .map_err(|e| {
-                error!("Failed to fetch Secret {} in namespace {}: {}", secret_ref.name, secret_namespace, e);
-                ControllerError::TokenResolution(crate::token_resolver::TokenResolutionError::SecretFetchError(
+        // Use SecretFetcher if available (for testing), otherwise use kube_client
+        let secret = match (if let Some(secret_fetcher) = &self.secret_fetcher {
+            secret_fetcher.get_secret(secret_namespace, &secret_ref.name).await
+        } else {
+            use kube::Api;
+            let kube_client = self.token_resolver.kube_client().clone();
+            let secret_api: Api<k8s_openapi::api::core::v1::Secret> =
+                Api::namespaced(kube_client, secret_namespace);
+            secret_api.get(&secret_ref.name).await
+        }) {
+            Ok(s) => s,
+            Err(e) => {
+                let error_msg = format!("Failed to fetch Secret {} in namespace {}: {}", secret_ref.name, secret_namespace, e);
+                error!("{}", error_msg);
+                update_status_error(&*self.netbox_tenant_api, name, namespace, error_msg.clone(), tenant_crd.status.as_ref()).await;
+                return Err(ControllerError::TokenResolution(crate::token_resolver::TokenResolutionError::SecretFetchError(
                     format!("{}: {}", secret_ref.name, e)
-                ))
-            })?;
+                )));
+            }
+        };
         
         // Extract token from Secret
         let token_key = secret_ref.key();
-        let token_data = secret
+        let token_data = match secret
             .data
             .as_ref()
-            .and_then(|data| data.get(token_key))
-            .ok_or_else(|| {
-                error!("Token key '{}' not found in Secret {}", token_key, secret_ref.name);
-                ControllerError::TokenResolution(crate::token_resolver::TokenResolutionError::TokenKeyNotFound(
+            .and_then(|data| data.get(token_key)) {
+            Some(data) => data,
+            None => {
+                let error_msg = format!("Token key '{}' not found in Secret {}", token_key, secret_ref.name);
+                error!("{}", error_msg);
+                update_status_error(&*self.netbox_tenant_api, name, namespace, error_msg.clone(), tenant_crd.status.as_ref()).await;
+                return Err(ControllerError::TokenResolution(crate::token_resolver::TokenResolutionError::TokenKeyNotFound(
                     token_key.to_string()
-                ))
-            })?;
+                )));
+            }
+        };
         
         // Decode token (base64 encoded in Kubernetes Secrets)
-        let token = String::from_utf8(token_data.0.clone())
-            .map_err(|e| {
-                error!("Failed to decode token from Secret {}: {}", secret_ref.name, e);
-                ControllerError::TokenResolution(crate::token_resolver::TokenResolutionError::TokenDecodeError(
+        let token = match String::from_utf8(token_data.0.clone()) {
+            Ok(t) => t,
+            Err(e) => {
+                let error_msg = format!("Failed to decode token from Secret {}: {}", secret_ref.name, e);
+                error!("{}", error_msg);
+                update_status_error(&*self.netbox_tenant_api, name, namespace, error_msg.clone(), tenant_crd.status.as_ref()).await;
+                return Err(ControllerError::TokenResolution(crate::token_resolver::TokenResolutionError::TokenDecodeError(
                     format!("{}: {}", secret_ref.name, e)
-                ))
-            })?;
+                )));
+            }
+        };
         
         // Trim whitespace (common issue with secrets)
         let token = token.trim().to_string();
         
         if token.is_empty() {
+            let error_msg = format!("Token in Secret {} is empty", secret_ref.name);
+            error!("{}", error_msg);
+            update_status_error(&*self.netbox_tenant_api, name, namespace, error_msg.clone(), tenant_crd.status.as_ref()).await;
             return Err(ControllerError::TokenResolution(
-                crate::token_resolver::TokenResolutionError::TokenDecodeError(
-                    format!("Token in Secret {} is empty", secret_ref.name)
-                )
+                crate::token_resolver::TokenResolutionError::TokenDecodeError(error_msg)
             ));
         }
         
-        // Create client with the resolved token
-        let netbox_client = netbox_client::NetBoxClient::new(
-            self.token_resolver.netbox_url().to_string(),
-            token,
-        ).map_err(|e| ControllerError::InvalidConfig(format!("Failed to create NetBoxClient: {}", e)))?;
+        // Create client with the resolved token using TokenResolver
+        // This allows MockTokenResolver to return a mock client in tests
+        let netbox_client = match self.token_resolver.create_client_with_token(token) {
+            Ok(client) => client,
+            Err(e) => {
+                let error_msg = format!("Failed to create NetBoxClient: {}", e);
+                error!("{}", error_msg);
+                update_status_error(&*self.netbox_tenant_api, name, namespace, error_msg.clone(), tenant_crd.status.as_ref()).await;
+                return Err(ControllerError::TokenResolution(e));
+            }
+        };
         
         // Check if already created - use shared helper for drift detection and status validation
         use crate::reconcile_helpers::{validate_status_and_drift, DriftCheckResult};
         
         let drift_result = {
-            let netbox_client_ref = &netbox_client;
+            let netbox_client_ref = netbox_client.as_ref();
             validate_status_and_drift(
                 tenant_crd.status.as_ref(),
                 "NetBoxTenant",
@@ -201,7 +222,7 @@ impl Reconciler {
                     
                     // Resolve tenant group ID if group reference provided
                     let group_id = if let Some(group_ref) = &tenant_crd.spec.group {
-                        match netbox_client.get_tenant_group_by_name(&group_ref.name).await {
+                        match netbox_client.as_ref().get_tenant_group_by_name(&group_ref.name).await {
                             Ok(Some(group)) => Some(group.id),
                             _ => None,
                         }
@@ -209,7 +230,7 @@ impl Reconciler {
                         None
                     };
                     
-                    match netbox_client.update_tenant(
+                    match netbox_client.as_ref().update_tenant(
                         TenantId(tenant.id),
                         Some(&tenant_crd.spec.name),
                         Some(&slug),
@@ -270,7 +291,7 @@ impl Reconciler {
             }
             None => {
                 // Need to create tenant - try to find existing by name (idempotency fallback)
-                let existing_tenant = match netbox_client.query_tenants(
+                let existing_tenant = match netbox_client.as_ref().query_tenants(
                     &[("name", &tenant_crd.spec.name)],
                     false,
                 ).await {
@@ -293,7 +314,7 @@ impl Reconciler {
                         None
                     } else {
                         info!("Tenant group specified in CRD: '{}'", group_ref.name);
-                        match netbox_client.get_tenant_group_by_name(&group_ref.name).await {
+                        match netbox_client.as_ref().get_tenant_group_by_name(&group_ref.name).await {
                             Ok(Some(group)) => {
                                 info!("Resolved tenant group '{}' to ID {}", group_ref.name, group.id);
                                 Some(group.id)
@@ -321,7 +342,7 @@ impl Reconciler {
                         _ => {
                             // Create a default tenant group
                             debug!("No tenant groups found, attempting to create default tenant group 'Default'");
-                            match netbox_client.create_tenant_group(
+                            match netbox_client.as_ref().create_tenant_group(
                                 "Default",
                                 Some("default"), // Slug is required
                                 Some("Default tenant group for DCops".to_string()),
@@ -349,7 +370,7 @@ impl Reconciler {
                     debug!("Attempting to create tenant {} in NetBox", tenant_crd.spec.name);
                     let slug = tenant_crd.spec.slug.as_deref().map(|s| s.to_string())
                         .unwrap_or_else(|| tenant_crd.spec.name.to_lowercase().replace(' ', "-"));
-                    match netbox_client.create_tenant(
+                    match netbox_client.as_ref().create_tenant(
                         &tenant_crd.spec.name,
                         Some(&slug),
                         tenant_crd.spec.description.clone(),
@@ -376,7 +397,7 @@ impl Reconciler {
                                     .unwrap_or_else(|| tenant_crd.spec.name.to_lowercase().replace(' ', "-"));
                                 
                                 // Strategy 1: Query by name
-                                match netbox_client.query_tenants(
+                                match netbox_client.as_ref().query_tenants(
                                     &[("name", &tenant_crd.spec.name)],
                                     false,
                                 ).await {
@@ -391,7 +412,7 @@ impl Reconciler {
                                 
                                 // Strategy 2: Query by slug if not found
                                 if found_tenant.is_none() {
-                                    match netbox_client.query_tenants(
+                                    match netbox_client.as_ref().query_tenants(
                                         &[("slug", slug_fallback.as_str())],
                                         false,
                                     ).await {
@@ -407,7 +428,7 @@ impl Reconciler {
                                 
                                 // Strategy 3: Fallback - query all tenants and filter
                                 if found_tenant.is_none() {
-                                    match netbox_client.query_tenants(&[], true).await {
+                                    match netbox_client.as_ref().query_tenants(&[], true).await {
                                         Ok(all_tenants) => {
                                             if let Some(tenant) = all_tenants.iter().find(|t| {
                                                 t.name == tenant_crd.spec.name || t.slug == slug_fallback

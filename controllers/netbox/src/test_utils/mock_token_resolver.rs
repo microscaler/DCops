@@ -15,6 +15,57 @@ use netbox_client::NetBoxClientTrait;
 use std::collections::HashMap;
 #[cfg(test)]
 use std::sync::{Arc, Mutex};
+#[cfg(test)]
+use k8s_openapi::api::core::v1::Secret;
+#[cfg(test)]
+use k8s_openapi::apimachinery::pkg::apis::meta::v1::ObjectMeta;
+#[cfg(test)]
+use std::collections::BTreeMap;
+#[cfg(test)]
+use kube::Error as KubeError;
+#[cfg(test)]
+use kube::api::Api;
+
+/// Mock Api<Secret> for testing
+///
+/// This implements the Secret API operations needed by the tenant reconciler.
+#[cfg(test)]
+pub struct MockSecretApi {
+    namespace: String,
+    secrets: Arc<Mutex<HashMap<String, String>>>, // namespace/secret_name -> token
+}
+
+#[cfg(test)]
+impl MockSecretApi {
+    /// Get a secret by name
+    pub async fn get(&self, name: &str) -> Result<Secret, KubeError> {
+        let key = format!("{}/{}", self.namespace, name);
+        let secrets = self.secrets.lock().unwrap();
+        secrets.get(&key).map(|token| {
+            // Create a Secret object from the stored token
+            let mut data = BTreeMap::new();
+            let token_bytes = token.as_bytes().to_vec();
+            data.insert("token".to_string(), k8s_openapi::ByteString(token_bytes));
+            
+            Secret {
+                metadata: ObjectMeta {
+                    name: Some(name.to_string()),
+                    namespace: Some(self.namespace.clone()),
+                    ..Default::default()
+                },
+                data: Some(data),
+                ..Default::default()
+            }
+        }).ok_or_else(|| {
+            KubeError::Api(kube::error::ErrorResponse {
+                code: 404,
+                message: format!("Secret {} not found in namespace {}", name, self.namespace),
+                reason: "NotFound".to_string(),
+                status: "Failure".to_string(),
+            })
+        })
+    }
+}
 
 /// Wrapper to make Arc<MockNetBoxClient> work as Box<dyn NetBoxClientTrait>
 #[cfg(test)]
@@ -330,6 +381,15 @@ impl NetBoxClientTrait for MockNetBoxClientWrapper {
     }
 }
 
+/// Mock kube::Client for Secret API calls
+///
+/// This is a minimal mock that only supports Secret API operations.
+/// It uses the in-memory secret storage from MockTokenResolver.
+#[cfg(test)]
+struct MockKubeClient {
+    secrets: Arc<Mutex<HashMap<String, String>>>, // namespace/secret_name -> token
+}
+
 /// Mock TokenResolver for testing
 ///
 /// This mock stores secrets in memory and returns them when requested.
@@ -337,19 +397,46 @@ impl NetBoxClientTrait for MockNetBoxClientWrapper {
 #[cfg(test)]
 pub struct MockTokenResolver {
     netbox_url: String,
-    secrets: Arc<Mutex<HashMap<String, String>>>, // namespace/secret_name -> token
+    pub(crate) secrets: Arc<Mutex<HashMap<String, String>>>, // namespace/secret_name -> token
     mock_netbox_client: Arc<netbox_client::MockNetBoxClient>, // Shared MockNetBoxClient
+    mock_kube_client: Arc<MockKubeClient>, // Mock kube::Client for Secret API
 }
 
 #[cfg(test)]
 impl MockTokenResolver {
     /// Create a new mock TokenResolver
     pub fn new(netbox_url: String) -> Self {
+        let secrets = Arc::new(Mutex::new(HashMap::new()));
         Self {
             netbox_url: netbox_url.clone(),
-            secrets: Arc::new(Mutex::new(HashMap::new())),
+            secrets: secrets.clone(),
             mock_netbox_client: Arc::new(netbox_client::MockNetBoxClient::new(netbox_url)),
+            mock_kube_client: Arc::new(MockKubeClient { secrets }),
         }
+    }
+    
+    /// Get a secret from the mock storage
+    ///
+    /// This is used by the mock kube::Client to fetch secrets.
+    pub fn get_secret(&self, namespace: &str, secret_name: &str) -> Option<Secret> {
+        let key = format!("{}/{}", namespace, secret_name);
+        let secrets = self.secrets.lock().unwrap();
+        secrets.get(&key).map(|token| {
+            // Create a Secret object from the stored token
+            let mut data = BTreeMap::new();
+            let token_bytes = token.as_bytes().to_vec();
+            data.insert("token".to_string(), k8s_openapi::ByteString(token_bytes));
+            
+            Secret {
+                metadata: ObjectMeta {
+                    name: Some(secret_name.to_string()),
+                    namespace: Some(namespace.to_string()),
+                    ..Default::default()
+                },
+                data: Some(data),
+                ..Default::default()
+            }
+        })
     }
     
     /// Get a reference to the underlying MockNetBoxClient
@@ -438,12 +525,19 @@ impl TokenResolverTrait for MockTokenResolver {
 
     fn kube_client(&self) -> &Client {
         // Mock doesn't have a real kube client - this should not be called in tests
-        // that use MockTokenResolver. If it is, we'll need to add a mock kube client.
-        panic!("MockTokenResolver::kube_client() called - not supported. Use real TokenResolver for tests that need kube_client()");
+        // that use MockTokenResolver. The tenant reconciler should use SecretFetcher instead.
+        panic!("MockTokenResolver::kube_client() called - not supported. Use SecretFetcher for tests that need secret fetching.");
     }
 
     fn netbox_url(&self) -> &str {
         &self.netbox_url
+    }
+    
+    fn create_client_with_token(&self, _token: String) -> Result<Box<dyn netbox_client::NetBoxClientTrait>, TokenResolutionError> {
+        // Return the shared MockNetBoxClient (token is already validated via SecretFetcher)
+        Ok(Box::new(MockNetBoxClientWrapper {
+            client: self.mock_netbox_client.clone(),
+        }))
     }
 }
 
@@ -512,9 +606,14 @@ pub fn create_test_reconciler_with_mock_token_resolver(
     let ip_pool_api = Arc::new(MockKubeApi::<IPPool>::new());
     let ip_claim_api = Arc::new(MockKubeApi::<IPClaim>::new());
     
+    // Create MockSecretFetcher using the same secret storage
+    use crate::secret_fetcher::mock::MockSecretFetcher;
+    let secret_fetcher = Arc::new(MockSecretFetcher::new(mock_token_resolver.secrets.clone()));
+    
     let reconciler = Reconciler::new(
         // Now that Reconciler uses TokenResolverTrait, we can use MockTokenResolver!
         mock_token_resolver as Arc<dyn TokenResolverTrait>,
+        Some(secret_fetcher), // Use MockSecretFetcher for testing
         // IPAM APIs - clone Arc and pass directly (Reconciler::new boxes them internally)
         prefix_api.clone(),
         role_api.clone(),

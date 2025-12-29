@@ -15,6 +15,7 @@ mod backoff;
 mod reconcile_helpers;
 mod kube_api_trait;
 mod token_resolver;
+mod secret_fetcher;
 #[cfg(test)]
 mod test_utils;
 #[cfg(test)]

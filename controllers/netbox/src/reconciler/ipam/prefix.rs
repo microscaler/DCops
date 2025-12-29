@@ -439,7 +439,7 @@ impl Reconciler {
                             // Check if error is "already exists" - if so, try to find it (idempotency)
                             let error_str = format!("{}", e);
                             if error_str.contains("already exists") || error_str.contains("duplicate") || error_str.contains("unique constraint") {
-                                warn!("Prefix {} already exists in NetBox, attempting to retrieve it (idempotency)", prefix_crd.spec.prefix);
+                                warn!("Prefix {} already exists in NetBox, attempting to retrieve it (idempotency)", prefix_net);
                                 
                                 // Try to find the existing prefix using fetch_all
                                 match netbox_client.query_prefixes(

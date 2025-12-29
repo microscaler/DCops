@@ -182,6 +182,11 @@ impl MockNetBoxClient {
         self.regions.lock().unwrap().insert(region.id, region);
     }
 
+    /// Add a site group to the mock store (for test setup)
+    pub fn add_site_group(&self, site_group: SiteGroup) {
+        self.site_groups.lock().unwrap().insert(site_group.id, site_group);
+    }
+
     /// Generate next ID
     pub(crate) fn next_id(&self) -> u64 {
         let mut id = self.next_id.lock().unwrap();

@@ -434,10 +434,25 @@ pub async fn create_region(client: &MockNetBoxClient, name: &str, slug: Option<&
         Ok(region)
     }
 
-pub async fn query_site_groups(client: &MockNetBoxClient, _filters: &[(&str, &str)], _fetch_all: bool) -> Result<Vec<SiteGroup>, NetBoxError> {
+pub async fn query_site_groups(client: &MockNetBoxClient, filters: &[(&str, &str)], _fetch_all: bool) -> Result<Vec<SiteGroup>, NetBoxError> {
         let site_groups = client.site_groups.lock().unwrap();
-        Ok(site_groups.values().cloned().collect())
-}
+        let mut results: Vec<SiteGroup> = site_groups.values().cloned().collect();
+        
+        // Apply filters
+        for (key, value) in filters {
+            match *key {
+                "slug" => {
+                    results.retain(|sg| sg.slug == *value);
+                }
+                "name" => {
+                    results.retain(|sg| sg.name == *value);
+                }
+                _ => {}
+            }
+        }
+        
+        Ok(results)
+    }
 
 pub async fn get_site_group(client: &MockNetBoxClient, id: u64) -> Result<SiteGroup, NetBoxError> {
         client.site_groups

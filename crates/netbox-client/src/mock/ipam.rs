@@ -88,10 +88,31 @@ pub async fn query_ip_addresses(client: &MockNetBoxClient, filters: &[(&str, &st
         let ips = client.ip_addresses.lock().unwrap();
         let mut results: Vec<IPAddress> = ips.values().cloned().collect();
 
-        // Apply filters (simplified - only handles prefix filter)
+        // Apply filters (properly handles prefix filter using ipnet)
         for (key, value) in filters {
             if *key == "prefix" {
-                results.retain(|ip| ip.address.starts_with(value));
+                // Parse the prefix as an IP network
+                let prefix_net = match ipnet::IpNet::from_str(value) {
+                    Ok(net) => net,
+                    Err(_) => {
+                        // If prefix parsing fails, fall back to string matching
+                        results.retain(|ip| ip.address.starts_with(value));
+                        continue;
+                    }
+                };
+                
+                // Filter IPs that are within the prefix network
+                results.retain(|ip| {
+                    // Parse the IP address from the address string (e.g., "192.168.1.2/24")
+                    // Extract just the IP part before the "/"
+                    if let Some(ip_part) = ip.address.split('/').next() {
+                        if let Ok(ip_addr) = ip_part.parse::<std::net::IpAddr>() {
+                            return prefix_net.contains(&ip_addr);
+                        }
+                    }
+                    // Fallback to string matching if parsing fails
+                    ip.address.starts_with(value)
+                });
             }
         }
 

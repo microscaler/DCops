@@ -28,6 +28,9 @@ urlencoding = "2.1"
 # Async trait support for mocking
 async-trait = "0.1"
 
+# IP network types for proper IP address handling
+ipnet = { workspace = true }
+
 [features]
 default = []
 test-util = []

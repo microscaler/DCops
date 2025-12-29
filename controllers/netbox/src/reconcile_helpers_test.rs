@@ -1406,7 +1406,8 @@ mod tests {
     mod edge_case_tests {
         use super::*;
         use crate::reconcile_helpers::{check_and_update_existing, check_existing};
-        use netbox_client::{MockNetBoxClient, NetBoxClientTrait};
+        use crate::error::ControllerError;
+        use netbox_client::{MockNetBoxClient, NetBoxClientTrait, NetBoxError};
 
         #[tokio::test]
         async fn test_check_and_update_existing_update_error() {

@@ -454,6 +454,29 @@ impl Reconciler {
         }
     }
     
+    /// Helper method to record a retry attempt event
+    /// This is called when a reconciliation fails and will be retried with backoff
+    /// Takes a string error message to avoid borrowing issues in closures
+    pub(crate) async fn record_event_retry_attempt_str<K: kube::Resource>(
+        &self,
+        error_str: &str,
+        attempt: u32,
+        backoff_seconds: u64,
+        obj: &K,
+    )
+    where
+        K::DynamicType: Default,
+    {
+        if let Some(recorder) = &self.event_recorder {
+            use crate::events::{EventRecorderExt, reasons};
+            let message = format!(
+                "Retrying reconciliation after error (attempt {}, backoff: {}s): {}",
+                attempt, backoff_seconds, error_str
+            );
+            recorder.record_warning(reasons::RETRY_ATTEMPT, &message, obj).await;
+        }
+    }
+    
     /// Performs startup reconciliation to map existing NetBox resources back to Kubernetes CRs.
     ///
     /// This is called when the controller starts up to ensure that:

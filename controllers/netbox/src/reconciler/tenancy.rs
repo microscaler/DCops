@@ -106,7 +106,7 @@ impl Reconciler {
         
         // Create client with the resolved token
         let netbox_client = netbox_client::NetBoxClient::new(
-            self.token_resolver.netbox_url.clone(),
+            self.token_resolver.netbox_url().to_string(),
             token,
         ).map_err(|e| ControllerError::InvalidConfig(format!("Failed to create NetBoxClient: {}", e)))?;
         

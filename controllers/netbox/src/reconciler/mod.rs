@@ -16,7 +16,7 @@ pub mod extras;
 use crate::error::ControllerError;
 use crate::backoff::FibonacciBackoff;
 use crate::kube_api_trait::KubeApiTrait;
-use crate::token_resolver::TokenResolver;
+use crate::token_resolver::TokenResolverTrait;
 use netbox_client::{NetBoxClientTrait, PrefixId};
 use crds::{
     IPClaim, IPPool, NetBoxPrefix, NetBoxTenant, NetBoxSite, NetBoxRole, NetBoxTag, NetBoxAggregate,
@@ -55,7 +55,7 @@ impl BackoffState {
 
 /// Reconciles NetBox-related resources.
 pub struct Reconciler {
-    pub(crate) token_resolver: Arc<TokenResolver>,
+    pub(crate) token_resolver: Arc<dyn TokenResolverTrait>,
     // IPAM APIs
     pub(crate) netbox_prefix_api: Box<dyn KubeApiTrait<NetBoxPrefix> + Send + Sync>,
     pub(crate) netbox_role_api: Box<dyn KubeApiTrait<NetBoxRole> + Send + Sync>,
@@ -365,7 +365,7 @@ impl Reconciler {
     
     /// Creates a new reconciler instance.
     pub fn new(
-        token_resolver: Arc<TokenResolver>,
+        token_resolver: Arc<dyn TokenResolverTrait>,
         // IPAM APIs
         netbox_prefix_api: impl KubeApiTrait<NetBoxPrefix> + Send + Sync + 'static,
         netbox_role_api: impl KubeApiTrait<NetBoxRole> + Send + Sync + 'static,

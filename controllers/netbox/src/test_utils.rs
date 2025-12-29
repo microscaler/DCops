@@ -113,19 +113,17 @@ pub fn create_test_netbox_prefix(
 /// - TokenResolver (requires a real kube::Client - use kube::Client::try_default() in tests)
 /// - Mock Kubernetes APIs for all CRDs
 ///
-/// Note: TokenResolver requires a real kube::Client to fetch secrets.
-/// For unit tests, you may need to use kube's test framework or mark tests as #[ignore]
-/// until kube::Client mocking is implemented.
+/// For unit tests without a real kube::Client, use `create_test_reconciler_with_mock_token_resolver` instead.
 #[cfg(test)]
 pub fn create_test_reconciler(
     kube_client: Client,
     netbox_url: String,
 ) -> Reconciler {
     use crate::kube_api_trait::mock::MockKubeApi;
-    use crate::token_resolver::TokenResolver;
+    use crate::token_resolver::{TokenResolver, TokenResolverTrait};
     use std::sync::Arc;
     
-    let token_resolver = Arc::new(TokenResolver::new(kube_client, netbox_url));
+    let token_resolver = Arc::new(TokenResolver::new(kube_client, netbox_url)) as Arc<dyn TokenResolverTrait>;
     
     Reconciler::new(
         token_resolver,

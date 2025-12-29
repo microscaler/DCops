@@ -4,9 +4,11 @@
 //! a real kube::Client. It stores secrets in memory and returns them when requested.
 
 #[cfg(test)]
-use crate::token_resolver::{TokenResolver, TokenResolutionError};
+use crate::token_resolver::{TokenResolverTrait, TokenResolutionError};
 #[cfg(test)]
 use crds::NetBoxResourceReference;
+#[cfg(test)]
+use kube::Client;
 #[cfg(test)]
 use netbox_client::NetBoxClient;
 #[cfg(test)]
@@ -71,8 +73,21 @@ impl MockTokenResolver {
             })
     }
     
-    /// Create a NetBoxClient with resolved token for a tenant (mock implementation)
-    pub async fn create_client_for_tenant(
+    /// Get the main tenant reference (datacenter-tenant)
+    pub fn get_main_tenant_reference(&self) -> NetBoxResourceReference {
+        NetBoxResourceReference {
+            api_group: "dcops.microscaler.io".to_string(),
+            kind: "NetBoxTenant".to_string(),
+            name: "datacenter-tenant".to_string(),
+            namespace: None,
+        }
+    }
+}
+
+#[async_trait::async_trait]
+#[cfg(test)]
+impl TokenResolverTrait for MockTokenResolver {
+    async fn create_client_for_tenant(
         &self,
         namespace: &str,
         tenant_ref: &NetBoxResourceReference,
@@ -84,19 +99,25 @@ impl MockTokenResolver {
                 TokenResolutionError::ClientCreation(e)
             })
     }
-    
-    /// Get the main tenant reference (datacenter-tenant)
-    pub fn get_main_tenant_reference(&self) -> NetBoxResourceReference {
-        NetBoxResourceReference {
-            api_group: "dcops.microscaler.io".to_string(),
-            kind: "NetBoxTenant".to_string(),
-            name: "datacenter-tenant".to_string(),
-            namespace: None,
-        }
+
+    async fn create_client_for_shared_resource(
+        &self,
+        namespace: &str,
+        _resource_kind: &str,
+        _resource_name: &str,
+    ) -> Result<NetBoxClient, TokenResolutionError> {
+        // For shared resources, use main tenant
+        let tenant_ref = self.get_main_tenant_reference();
+        self.create_client_for_tenant(namespace, &tenant_ref).await
     }
-    
-    /// Get the NetBox URL
-    pub fn netbox_url(&self) -> &str {
+
+    fn kube_client(&self) -> &Client {
+        // Mock doesn't have a real kube client - this should not be called in tests
+        // that use MockTokenResolver. If it is, we'll need to add a mock kube client.
+        panic!("MockTokenResolver::kube_client() called - not supported. Use real TokenResolver for tests that need kube_client()");
+    }
+
+    fn netbox_url(&self) -> &str {
         &self.netbox_url
     }
 }
@@ -114,12 +135,8 @@ pub fn create_test_reconciler_with_mock_token_resolver(
     use crds::*;
     
     Reconciler::new(
-        // We need to wrap MockTokenResolver in a way that Reconciler accepts
-        // For now, this is a placeholder - we'll need to refactor Reconciler
-        // to accept a trait instead of concrete TokenResolver
-        // TODO: Refactor Reconciler to use a TokenResolverTrait
-        // For now, this function is a placeholder showing the intended API
-        mock_token_resolver, // This won't compile yet - needs trait refactoring
+        // Now that Reconciler uses TokenResolverTrait, we can use MockTokenResolver!
+        mock_token_resolver as Arc<dyn TokenResolverTrait>,
         // IPAM APIs
         MockKubeApi::new(), // netbox_prefix_api
         MockKubeApi::new(), // netbox_role_api

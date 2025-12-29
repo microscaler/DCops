@@ -8,6 +8,48 @@ use kube::{Api, Client};
 use netbox_client::{NetBoxClient, NetBoxError};
 use tracing::{debug, error, warn, info};
 
+/// Trait for resolving NetBox API tokens and creating clients
+///
+/// This trait abstracts token resolution to enable:
+/// - Dependency injection
+/// - Mocking in unit tests
+/// - Different implementations (real TokenResolver, MockTokenResolver, etc.)
+#[async_trait::async_trait]
+pub trait TokenResolverTrait: Send + Sync {
+    /// Create a NetBoxClient with resolved token for a tenant
+    ///
+    /// This is the SINGLE POINT of NetBoxClient creation with tenant tokens.
+    /// All tenant-specific client creation flows through this method.
+    async fn create_client_for_tenant(
+        &self,
+        namespace: &str,
+        tenant_ref: &NetBoxResourceReference,
+    ) -> Result<NetBoxClient, TokenResolutionError>;
+
+    /// Create a NetBoxClient for a shared resource
+    ///
+    /// Shared resources don't have a tenant reference, so we need to resolve
+    /// the tenant by finding a resource that references this shared resource.
+    async fn create_client_for_shared_resource(
+        &self,
+        namespace: &str,
+        resource_kind: &str,
+        resource_name: &str,
+    ) -> Result<NetBoxClient, TokenResolutionError>;
+
+    /// Get a reference to the kube client
+    ///
+    /// This is needed for special cases like NetBoxTenant reconciler
+    /// which needs to read the secret directly to avoid circular dependencies.
+    fn kube_client(&self) -> &Client;
+
+    /// Get the NetBox URL
+    ///
+    /// This is needed for creating NetBoxClient instances directly
+    /// (used in special cases like NetBoxTenant reconciler).
+    fn netbox_url(&self) -> &str;
+}
+
 /// Error types for token resolution
 #[derive(Debug, thiserror::Error)]
 pub enum TokenResolutionError {
@@ -561,6 +603,35 @@ impl TokenResolver {
     ) -> Result<NetBoxClient, TokenResolutionError> {
         let tenant_ref = self.resolve_tenant_for_shared_resource(namespace, resource_kind, resource_name).await?;
         self.create_client_for_tenant(namespace, &tenant_ref).await
+    }
+}
+
+// Implement TokenResolverTrait for TokenResolver
+#[async_trait::async_trait]
+impl TokenResolverTrait for TokenResolver {
+    async fn create_client_for_tenant(
+        &self,
+        namespace: &str,
+        tenant_ref: &NetBoxResourceReference,
+    ) -> Result<NetBoxClient, TokenResolutionError> {
+        self.create_client_for_tenant(namespace, tenant_ref).await
+    }
+
+    async fn create_client_for_shared_resource(
+        &self,
+        namespace: &str,
+        resource_kind: &str,
+        resource_name: &str,
+    ) -> Result<NetBoxClient, TokenResolutionError> {
+        self.create_client_for_shared_resource(namespace, resource_kind, resource_name).await
+    }
+
+    fn kube_client(&self) -> &Client {
+        self.kube_client()
+    }
+
+    fn netbox_url(&self) -> &str {
+        &self.netbox_url
     }
 }
 

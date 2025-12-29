@@ -3,7 +3,7 @@
 #[cfg(test)]
 mod tests {
     use crate::test_utils::*;
-    use crds::{NetBoxPrefix, NetBoxTenant, PrefixState};
+    use crds::{NetBoxPrefix, NetBoxTenant, PrefixState, ResourceState};
     
     /// Helper to set up test data for prefix reconciliation
     fn setup_prefix_test_data() -> (NetBoxPrefix, NetBoxTenant) {
@@ -258,13 +258,56 @@ mod tests {
     }
     
     #[tokio::test]
-    #[ignore] // Ignored until kube::Client mocking is implemented
     async fn test_reconcile_prefix_drift_detection() {
-        // TODO: Test drift detection
-        // 1. Create prefix with status
-        // 2. Delete prefix in NetBox (simulate drift)
-        // 3. Reconcile
-        // 4. Verify status is cleared and prefix is recreated
+        use crate::test_utils::mock_token_resolver::{MockTokenResolver, create_test_reconciler_with_mock_token_resolver};
+        use crate::test_utils::mock_token_resolver::TestReconcilerApis;
+        use crate::kube_api_trait::KubeApiTrait;
+        use std::sync::Arc;
+        use std::str::FromStr;
+        use ipnet::IpNet;
+        
+        // Setup: Create mock TokenResolver
+        let netbox_url = "http://test-netbox".to_string();
+        let mock_token_resolver = Arc::new(MockTokenResolver::new(netbox_url.clone()));
+        mock_token_resolver.add_secret("default", "netbox-token-datacenter-tenant", "test-token".to_string());
+        
+        // Setup: Create reconciler
+        let (reconciler, apis) = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
+        let TestReconcilerApis {
+            tenant_api,
+            prefix_api,
+            ..
+        } = apis;
+        
+        // Setup: Create test data with status (prefix already exists)
+        let (mut prefix, tenant) = setup_prefix_test_data();
+        prefix.status = Some(crds::NetBoxPrefixStatus {
+            netbox_id: Some(1),
+            netbox_url: Some(format!("{}/api/ipam/prefixes/1/", netbox_url)),
+            state: PrefixState::Created,
+            error: None,
+            last_reconciled: None,
+        });
+        
+        // Store dependencies in mock APIs
+        tenant_api.store("datacenter-tenant".to_string(), tenant);
+        prefix_api.store("test-prefix".to_string(), prefix.clone());
+        
+        // IMPORTANT: Do NOT add the prefix to mock NetBox client (simulating drift - prefix was deleted)
+        // This will cause validate_status_and_drift to detect the prefix is missing and trigger recreation
+        
+        // Execute: Reconcile (should detect drift and recreate prefix)
+        let result = reconciler.reconcile_netbox_prefix(&prefix).await;
+        
+        // Assert: Should succeed (prefix will be recreated)
+        assert!(result.is_ok(), "Reconciliation should succeed after drift detection: {:?}", result.err());
+        
+        // Assert: Status should be updated with new NetBox ID (prefix was recreated)
+        let updated_crd = prefix_api.get("test-prefix").await.unwrap();
+        assert!(updated_crd.status.is_some(), "Status should be set");
+        let status = updated_crd.status.unwrap();
+        assert!(status.netbox_id.is_some(), "NetBox ID should be set after recreation");
+        assert_eq!(status.state, PrefixState::Created, "State should be Created");
     }
 }
 

@@ -349,12 +349,97 @@ mod tests {
     }
     
     #[tokio::test]
-    #[ignore] // Ignored until kube::Client mocking is implemented
     async fn test_reconcile_ip_claim_with_device_interface() {
-        // TODO: Test IP allocation with device and interface specified
-        // 1. Create IPClaim with device and interface
-        // 2. Reconcile
-        // 3. Verify IP is allocated and assigned to interface
+        use crate::test_utils::mock_token_resolver::{MockTokenResolver, create_test_reconciler_with_mock_token_resolver};
+        use crate::test_utils::mock_token_resolver::TestReconcilerApis;
+        use crate::kube_api_trait::KubeApiTrait;
+        use std::sync::Arc;
+        use std::str::FromStr;
+        use ipnet::IpNet;
+        
+        // Setup: Create mock TokenResolver
+        let netbox_url = "http://test-netbox".to_string();
+        let mock_token_resolver = Arc::new(MockTokenResolver::new(netbox_url.clone()));
+        mock_token_resolver.add_secret("default", "netbox-token-datacenter-tenant", "test-token".to_string());
+        
+        // Setup: Get MockNetBoxClient
+        let mock_client = mock_token_resolver.mock_client();
+        
+        // Setup: Create reconciler
+        let (reconciler, apis) = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
+        let TestReconcilerApis {
+            tenant_api,
+            prefix_api,
+            ip_pool_api,
+            ip_claim_api,
+            ..
+        } = apis;
+        
+        // Setup: Create tenant
+        let tenant = create_test_netbox_tenant(
+            "datacenter-tenant",
+            "default",
+            Some(1),
+            Some(format!("{}/api/tenancy/tenants/1/", netbox_url)),
+        );
+        tenant_api.store("datacenter-tenant".to_string(), tenant);
+        
+        // Setup: Create prefix CRD
+        let prefix_net = IpNet::from_str("192.168.1.0/24").unwrap();
+        let prefix = create_test_netbox_prefix(
+            "test-prefix",
+            "default",
+            1,
+            Some(format!("{}/api/ipam/prefixes/1/", netbox_url)),
+        );
+        // Update prefix spec to match our test data
+        let mut prefix_with_spec = prefix;
+        prefix_with_spec.spec.prefix = "192.168.1.0/24".to_string();
+        prefix_with_spec.spec.tenant.name = "datacenter-tenant".to_string();
+        prefix_api.store("test-prefix".to_string(), prefix_with_spec);
+        
+        // Setup: Add prefix to mock NetBox
+        use netbox_client::Prefix;
+        use chrono::Utc;
+        let netbox_prefix = create_test_prefix(
+            1,
+            "192.168.1.0/24",
+            &netbox_url,
+        );
+        mock_client.add_prefix(netbox_prefix);
+        
+        // Setup: Create IPPool (prefix_ref_namespace should be None or Some("default"))
+        let ip_pool = create_test_ip_pool("test-ip-pool", "default", "test-prefix", None);
+        ip_pool_api.store("test-ip-pool".to_string(), ip_pool);
+        
+        // Setup: Create IPClaim with device and interface
+        let ip_claim = create_test_ip_claim(
+            "test-ip-claim",
+            "default",
+            "test-ip-pool",
+            None,
+            "test-device",
+            Some("eth0"), // Interface specified
+            None,
+        );
+        ip_claim_api.store("test-ip-claim".to_string(), ip_claim.clone());
+        
+        // Execute: Reconcile
+        let result = reconciler.reconcile_ip_claim(&ip_claim).await;
+        
+        // Assert: Should succeed
+        assert!(result.is_ok(), "Reconciliation should succeed: {:?}", result.err());
+        
+        // Assert: Status should be updated with allocated IP
+        let updated_crd = ip_claim_api.get("test-ip-claim").await.unwrap();
+        assert!(updated_crd.status.is_some(), "Status should be set");
+        let status = updated_crd.status.unwrap();
+        assert_eq!(status.state, AllocationState::Allocated, "State should be Allocated");
+        assert!(status.ip.is_some(), "IP should be allocated");
+        assert!(status.netbox_ip_ref.is_some(), "NetBox IP reference should be set");
+        
+        // Note: Device/interface assignment to the IP address is not yet implemented in the reconciler
+        // This test verifies that the IP allocation succeeds when device and interface are specified
     }
 }
 

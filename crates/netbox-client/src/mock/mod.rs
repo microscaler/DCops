@@ -177,12 +177,14 @@ impl NetBoxClientTrait for MockNetBoxClient {
         ipam::delete_ip_address(self, id.into()).await
     }
 
-    async fn create_prefix(&self, prefix: &str, description: Option<String>, site_id: Option<SiteId>, vlan_id: Option<VlanId>, status: Option<&str>, role_id: Option<RoleId>, tenant_id: Option<TenantId>, tags: Option<Vec<String>>) -> Result<Prefix, NetBoxError> {
-        ipam::create_prefix(self, prefix, description, site_id, vlan_id, status, role_id, tenant_id, tags).await
+    async fn create_prefix(&self, prefix: &ipnet::IpNet, description: Option<String>, site_id: Option<SiteId>, vlan_id: Option<VlanId>, status: Option<&str>, role_id: Option<RoleId>, tenant_id: Option<TenantId>, tags: Option<Vec<String>>) -> Result<Prefix, NetBoxError> {
+        let prefix_str = prefix.to_string();
+        ipam::create_prefix(self, prefix_str.as_str(), description, site_id, vlan_id, status, role_id, tenant_id, tags).await
     }
 
-    async fn update_prefix(&self, id: PrefixId, prefix: Option<&str>, description: Option<String>, status: Option<&str>, role: Option<String>, tenant_id: Option<TenantId>, site_id: Option<SiteId>, vlan_id: Option<VlanId>, tags: Option<Vec<String>>) -> Result<Prefix, NetBoxError> {
-        ipam::update_prefix(self, id, prefix, description, status, role, tenant_id, site_id, vlan_id, tags).await
+    async fn update_prefix(&self, id: PrefixId, prefix: Option<&ipnet::IpNet>, description: Option<String>, status: Option<&str>, role: Option<String>, tenant_id: Option<TenantId>, site_id: Option<SiteId>, vlan_id: Option<VlanId>, tags: Option<Vec<String>>) -> Result<Prefix, NetBoxError> {
+        let prefix_str_opt = prefix.map(|p| p.to_string());
+        ipam::update_prefix(self, id, prefix_str_opt.as_deref(), description, status, role, tenant_id, site_id, vlan_id, tags).await
     }
 
     async fn query_aggregates(&self, filters: &[(&str, &str)], fetch_all: bool) -> Result<Vec<Aggregate>, NetBoxError> {
@@ -193,8 +195,9 @@ impl NetBoxClientTrait for MockNetBoxClient {
         ipam::get_aggregate(self, id).await
     }
 
-    async fn create_aggregate(&self, prefix: &str, rir_id: Option<RirId>, date_allocated: Option<&str>, description: Option<String>, comments: Option<String>) -> Result<Aggregate, NetBoxError> {
-        ipam::create_aggregate(self, prefix, rir_id, date_allocated, description, comments).await
+    async fn create_aggregate(&self, prefix: &ipnet::IpNet, rir_id: Option<RirId>, date_allocated: Option<&str>, description: Option<String>, comments: Option<String>) -> Result<Aggregate, NetBoxError> {
+        let prefix_str = prefix.to_string();
+        ipam::create_aggregate(self, prefix_str.as_str(), rir_id, date_allocated, description, comments).await
     }
 
     async fn query_rirs(&self, filters: &[(&str, &str)], fetch_all: bool) -> Result<Vec<Rir>, NetBoxError> {

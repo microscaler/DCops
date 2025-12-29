@@ -16,6 +16,8 @@ pub mod dcim;
 pub mod extras;
 #[cfg(test)]
 pub mod extras_test;
+#[cfg(test)]
+mod events_integration_test;
 
 use crate::error::ControllerError;
 use crate::backoff::FibonacciBackoff;

@@ -162,13 +162,25 @@ impl Reconciler {
             .await?;
         
         // Resolve tenant ID (required) using helper
-        let tenant_id = resolve_required_dependency_id(
+        let tenant_id = match resolve_required_dependency_id(
             &*self.netbox_tenant_api,
             &site_crd.spec.tenant.name,
             "Tenant",
             name,
             |crd| crd.status.as_ref(),
-        ).await?;
+        ).await {
+            Ok(id) => id,
+            Err(e) => {
+                // Emit event for dependency not found
+                use crate::events::reasons;
+                self.record_event_warning(
+                    reasons::DEPENDENCY_NOT_FOUND,
+                    &format!("Tenant '{}' not found or not ready: {}", site_crd.spec.tenant.name, e),
+                    site_crd,
+                ).await;
+                return Err(e);
+            }
+        };
         
         // Resolve region ID if region reference provided (optional) using helper
         use crate::reconcile_helpers::resolve_optional_dependency_id;
@@ -263,10 +275,24 @@ impl Reconciler {
                     ).await {
                         Ok(updated_site) => {
                             // Update successful
+                            // Emit event for successful update
+                            use crate::events::reasons;
+                            self.record_event_normal(
+                                reasons::UPDATED,
+                                &format!("Updated site {} in NetBox (ID: {})", updated_site.name, updated_site.id),
+                                site_crd,
+                            ).await;
                             Some(updated_site)
                         }
                         Err(e) => {
                             error!("Failed to update NetBoxSite {}/{} in NetBox: {}", namespace, name, e);
+                            // Emit event for reconciliation failure
+                            use crate::events::reasons;
+                            self.record_event_warning(
+                                reasons::RECONCILIATION_FAILED,
+                                &format!("Failed to update NetBoxSite {}/{} in NetBox: {}", namespace, name, e),
+                                site_crd,
+                            ).await;
                             return Err(ControllerError::NetBox(e));
                         }
                     }
@@ -276,6 +302,15 @@ impl Reconciler {
                 }
             }
             DriftCheckResult::StatusCleared { message } => {
+                // Status was cleared - drift detected
+                // Emit event for drift detection
+                use crate::events::reasons;
+                self.record_event_warning(
+                    reasons::DRIFT_DETECTED,
+                    &format!("NetBoxSite {}/{} drift detected: {}", namespace, name, message),
+                    site_crd,
+                ).await;
+                
                 // Status was cleared - update it to Pending
                 let status_patch = Self::create_resource_status_patch(
                     0, // Clear netbox_id

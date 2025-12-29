@@ -14,6 +14,8 @@ pub mod tenancy_test;
 mod mod_test;
 pub mod dcim;
 pub mod extras;
+#[cfg(test)]
+pub mod extras_test;
 
 use crate::error::ControllerError;
 use crate::backoff::FibonacciBackoff;

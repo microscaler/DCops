@@ -116,6 +116,11 @@ impl MockNetBoxClient {
         self.tags.lock().unwrap().insert(tag.id, tag);
     }
 
+    /// Add a role to the mock store (for test setup)
+    pub fn add_role(&self, role: Role) {
+        self.roles.lock().unwrap().insert(role.id, role);
+    }
+
     /// Add a device to the mock store (for test setup)
     pub fn add_device(&self, device: Device) {
         self.devices.lock().unwrap().insert(device.id, device);

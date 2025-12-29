@@ -5,6 +5,7 @@ mod tests {
     use crate::test_utils::*;
     use netbox_client::AvailableIP;
     use crds::{IPPool, NetBoxPrefix};
+    use chrono::Utc;
     
     /// Helper to set up test data for IP pool reconciliation
     fn setup_ip_pool_test_data() -> (IPPool, NetBoxPrefix) {
@@ -216,13 +217,104 @@ mod tests {
     }
     
     #[tokio::test]
-    #[ignore] // Ignored until kube::Client mocking is implemented
     async fn test_reconcile_ip_pool_status_update() {
-        // TODO: Test status update when IP counts change
-        // 1. Create IPPool with status
-        // 2. Change available IP count in NetBox
-        // 3. Reconcile
-        // 4. Verify status is updated with new counts
+        use crate::test_utils::mock_token_resolver::{MockTokenResolver, create_test_reconciler_with_mock_token_resolver};
+        use crate::kube_api_trait::KubeApiTrait;
+        use std::sync::Arc;
+        
+        // Setup: Create mock TokenResolver
+        let netbox_url = "http://test-netbox".to_string();
+        let mock_token_resolver = Arc::new(MockTokenResolver::new(netbox_url.clone()));
+        mock_token_resolver.add_secret("default", "netbox-token-datacenter-tenant", "test-token".to_string());
+        
+        // Setup: Get MockNetBoxClient
+        let mock_client = mock_token_resolver.mock_client();
+        
+        // Setup: Create reconciler
+        let (reconciler, apis) = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
+        
+        // Setup: Create prefix with status
+        let prefix = create_test_netbox_prefix(
+            "test-prefix",
+            "default",
+            1,
+            Some("http://test-netbox/api/ipam/prefixes/1/".to_string()),
+        );
+        apis.tenant_api.store("datacenter-tenant".to_string(), create_test_netbox_tenant(
+            "datacenter-tenant",
+            "default",
+            Some(1),
+            Some("http://test-netbox/api/tenancy/tenants/1/".to_string()),
+        ));
+        apis.prefix_api.store("test-prefix".to_string(), prefix);
+        
+        // Setup: Add prefix to mock NetBox
+        let netbox_prefix = create_test_prefix(1, "192.168.1.0/24", &netbox_url);
+        mock_client.add_prefix(netbox_prefix);
+        
+        // Setup: Set up available IPs (changed from 2 to 1 - simulating an IP was allocated)
+        let available_ips = vec![
+            netbox_client::AvailableIP {
+                family: 4,
+                address: "192.168.1.1/24".to_string(),
+                vrf: None,
+                description: None,
+            },
+        ];
+        mock_client.set_available_ips(1, available_ips);
+        
+        // Setup: Add an allocated IP address to simulate allocation
+        use netbox_client::IPAddress;
+        let allocated_ip = IPAddress {
+            id: 1,
+            url: format!("{}/api/ipam/ip-addresses/1/", netbox_url),
+            display: "192.168.1.2/24".to_string(),
+            family: 4,
+            address: "192.168.1.2/24".to_string(),
+            vrf: None,
+            tenant: None,
+            status: netbox_client::IPAddressStatus::Active,
+            role: None,
+            assigned_object_type: None,
+            assigned_object_id: None,
+            assigned_object: None,
+            nat_inside: None,
+            nat_outside: vec![],
+            dns_name: String::new(),
+            description: String::new(),
+            comments: String::new(),
+            tags: vec![],
+            custom_fields: serde_json::json!({}),
+            created: Utc::now().to_rfc3339(),
+            last_updated: Utc::now().to_rfc3339(),
+        };
+        mock_client.add_ip_address(allocated_ip);
+        
+        // Setup: Create IPPool with old status (2 available, 0 allocated)
+        let mut pool = create_test_ip_pool("test-pool", "default", "test-prefix", None);
+        pool.status = Some(crds::IPPoolStatus {
+            netbox_prefix_id: Some(1),
+            netbox_prefix_url: Some("http://test-netbox/api/ipam/prefixes/1/".to_string()),
+            total_ips: 2,
+            allocated_ips: 0,
+            available_ips: 2, // Old count
+            last_reconciled: None,
+        });
+        apis.ip_pool_api.store("test-pool".to_string(), pool.clone());
+        
+        // Execute: Reconcile
+        let result = reconciler.reconcile_ip_pool(&pool).await;
+        
+        // Assert: Should succeed
+        assert!(result.is_ok(), "Reconciliation should succeed when IP counts change");
+        
+        // Assert: Status should be updated with new counts
+        let updated_crd = apis.ip_pool_api.get("test-pool").await.unwrap();
+        assert!(updated_crd.status.is_some(), "Status should be set");
+        let status = updated_crd.status.unwrap();
+        assert_eq!(status.total_ips, 2, "Total IPs should still be 2");
+        assert_eq!(status.allocated_ips, 1, "Allocated IPs should be 1");
+        assert_eq!(status.available_ips, 1, "Available IPs should be 1 (changed from 2)");
     }
 }
 

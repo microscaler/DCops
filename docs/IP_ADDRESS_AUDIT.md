@@ -93,127 +93,129 @@ All trait methods use `&str` for IP addresses and prefixes.
 
 ## 4. Kubernetes CRDs (`crates/crds/src/`)
 
-### Current Implementation
+### Current Implementation ✅ Complete
 
-| CRD Field | Type | Usage | Example |
-|-----------|------|-------|---------|
-| `NetBoxPrefixSpec.prefix` | `String` | CIDR prefix | `"192.168.1.0/24"` |
-| `NetBoxAggregateSpec.prefix` | `String` | Aggregate prefix | `"192.168.0.0/16"` |
-| `IPClaimSpec.preferred_ip` | `Option<String>` | Preferred IP hint | `Some("192.168.1.10/24")` |
-| `IPClaimStatus.ip` | `Option<String>` | Allocated IP | `Some("192.168.1.2/24")` |
-| `NetBoxDeviceSpec.primary_ip4` | `Option<String>` | Direct IP fallback | `Some("192.168.1.10/24")` |
-| `NetBoxDeviceSpec.primary_ip6` | `Option<String>` | Direct IP fallback | `Some("2001:db8::1/64")` |
+| CRD Field | Type | Usage | Example | Status |
+|-----------|------|-------|---------|--------|
+| `NetBoxPrefixSpec.prefix` | `String` | CIDR prefix | `"192.168.1.0/24"` | ✅ Validated with JSON schema pattern |
+| `NetBoxAggregateSpec.prefix` | `String` | Aggregate prefix | `"192.168.0.0/16"` | ✅ Validated with JSON schema pattern |
+| `IPClaimSpec.preferred_ip` | `Option<String>` | Preferred IP hint | `Some("192.168.1.10/24")` | ✅ Validated with JSON schema pattern |
+| `IPClaimStatus.ip` | `Option<String>` | Allocated IP | `Some("192.168.1.2/24")` | ✅ Intentional - CRD status must be string |
+| `NetBoxDeviceSpec.primary_ip4.ip_address` | `Option<String>` | Direct IP fallback | `Some("192.168.1.10/24")` | ✅ Validated with JSON schema pattern |
+| `NetBoxDeviceSpec.primary_ip6.ip_address` | `Option<String>` | Direct IP fallback | `Some("2001:db8::1/64")` | ✅ Validated with JSON schema pattern |
 
-### Proposed Implementation
+### Implementation Status
 
-**Decision Required**: CRDs must serialize to JSON/YAML for Kubernetes API. Options:
+**Decision**: CRDs remain `String` for Kubernetes API compatibility, with validation:
 
-1. **Keep as String in CRD** (Recommended for Phase 1)
-   - CRDs remain `String` for Kubernetes API compatibility
-   - Convert to `IpNet` immediately after deserialization
-   - Validate using `IpNet::from_str()` in reconciler
+1. **JSON Schema Validation** ✅ Complete
+   - All IP/prefix fields have `#[schemars(pattern(...))]` validation
+   - Validates CIDR format at CRD schema level
+   - Still serializes as string for Kubernetes API
 
-2. **Custom JSON Schema with Validation** (Future)
-   - Use `schemars` custom schema to validate CIDR format
-   - Still serialize as string for Kubernetes API
-   - Add validation in `kubebuilder` annotations
+2. **Runtime Validation** ✅ Complete
+   - All reconcilers validate using `IpNet::from_str()` at start
+   - Clear error messages for invalid CIDR format
+   - Conversion to `IpNet` happens immediately after deserialization
+
+3. **Status Fields** ✅ Intentional
+   - `IPClaimStatus.ip` remains `Option<String>` - required for Kubernetes status API
+   - Conversion from `IpNet` to `String` happens when updating status
+   - This is correct - Kubernetes status must be JSON-serializable strings
 
 **Migration Strategy**:
-- **Phase 1**: Keep CRD fields as `String`, validate and convert to `IpNet` in reconciler
-- **Phase 2**: Add JSON schema validation for CIDR format
-- **Phase 3**: Consider custom types with string serialization (if needed)
+- ✅ **Phase 1**: CRD fields remain `String` for Kubernetes API compatibility
+- ✅ **Phase 2**: JSON schema validation added for all CIDR format fields
+- ✅ **Phase 3**: Runtime validation in all reconcilers with clear error messages
 
 ---
 
 ## 5. Reconciler Logic (`controllers/netbox/src/reconciler/`)
 
-### Current Implementation
+### Implementation Status ✅ Complete
 
-| Location | Operation | Current | Issue |
-|----------|-----------|---------|-------|
-| `prefix.rs:357` | Query prefixes | `&prefix_crd.spec.prefix` (String) | String comparison |
-| `prefix.rs:361` | Find existing | `p.prefix == prefix_crd.spec.prefix` | String equality |
-| `prefix.rs:373` | Find in all | `p.prefix == prefix_crd.spec.prefix` | String equality |
-| `ip_pool.rs:101` | Query IPs | `&prefix.prefix` (String) | String filter |
-| `ip_claim.rs:242` | Find IP | `ip.address == *preferred_ip` | String equality |
-| `ip_claim.rs:291` | Log allocated | `allocated_ip.address` | String logging |
+| Location | Operation | Implementation | Status |
+|----------|-----------|----------------|--------|
+| `prefix.rs:358` | Validate prefix | `IpNet::from_str()` at start | ✅ Complete |
+| `prefix.rs:367` | Find existing | `p.prefix == prefix_net` (IpNet) | ✅ Complete |
+| `prefix.rs:379` | Find in all | `p.prefix == prefix_net` (IpNet) | ✅ Complete |
+| `ip_pool.rs:101` | Query IPs | `prefix.prefix.to_string()` for API filter | ✅ Correct - API expects string |
+| `ip_claim.rs:260` | Find IP | `ip.address == preferred_net` (IpNet) | ✅ Complete |
+| `ip_claim.rs:311` | Log allocated | `allocated_ip.address` (IpNet, auto-display) | ✅ Complete |
+| `aggregate.rs:18` | Validate prefix | `IpNet::from_str()` at start | ✅ Complete |
+| `device.rs:217,285` | Query by IP | `ip_addr` (String) for API filter | ✅ Correct - API expects string |
 
-### Proposed Implementation
+### Implementation Details
 
-| Location | Current | Proposed | Benefit |
-|----------|---------|----------|---------|
-| `prefix.rs` | String comparison | `IpNet` comparison | Normalized comparison (192.168.1.0/24 == 192.168.001.0/24) |
-| `ip_pool.rs` | String filter | `IpNet.contains()` | Proper network containment |
-| `ip_claim.rs` | String equality | `IpNet` equality | Type-safe comparison |
+**All Internal Operations Use `IpNet`**:
+- ✅ CRD `String` fields converted to `IpNet` at start of reconcile functions
+- ✅ All comparisons use `IpNet` types (normalized, type-safe)
+- ✅ Network containment uses `IpNet.contains()` (proper network math)
+- ✅ All logging uses `IpNet::to_string()` for consistency
 
-**Migration Strategy**:
-1. Convert CRD `String` to `IpNet` at start of reconcile function
-2. Use `IpNet` for all internal operations
-3. Convert back to `String` only for API calls and status updates
+**String Conversion Boundaries**:
+- ✅ **NetBox API Calls**: Convert `IpNet` to `String` only at HTTP request boundary
+  - `query_ip_addresses(&[("prefix", &prefix.prefix.to_string())])` - API filter expects string
+  - `query_ip_addresses(&[("address", ip_addr)])` - API filter expects string
+- ✅ **Kubernetes Status Updates**: Convert `IpNet` to `String` for status patches
+  - `IPClaimStatus.ip` must be `Option<String>` for Kubernetes API
+  - `create_ipclaim_status_patch(Some(allocated_ip.address.to_string()), ...)`
 
-**Example**:
-```rust
-// Current
-let prefix_str = &prefix_crd.spec.prefix;
-let existing = prefixes.iter().find(|p| p.prefix == prefix_str);
+**Remaining String Usage (Intentional)**:
+- ✅ **CRD Spec Fields**: Remain `String` for Kubernetes API compatibility
+- ✅ **CRD Status Fields**: Remain `String` for Kubernetes API compatibility  
+- ✅ **NetBox API Query Filters**: Use `String` as API expects string parameters
+- ✅ **Device Primary IP (CRD)**: `ip_ref.ip_address` is `Option<String>` from CRD (validated with JSON schema)
 
-// Proposed
-let prefix_net = ipnet::IpNet::from_str(&prefix_crd.spec.prefix)?;
-let existing = prefixes.iter().find(|p| {
-    ipnet::IpNet::from_str(&p.prefix)
-        .map(|net| net == prefix_net)
-        .unwrap_or(false)
-});
-```
+**No Issues Found**: All IP address handling is now type-safe with proper validation and conversion boundaries.
 
 ---
 
 ## 6. Test Utilities (`controllers/netbox/src/test_utils.rs`)
 
-### Current Implementation
+### Implementation Status ✅ Complete
 
-| Function | Parameter | Type | Usage |
-|----------|-----------|------|-------|
-| `create_test_prefix()` | `prefix` | `&str` | Create test Prefix model |
-| `create_test_ip_claim()` | `preferred_ip` | `Option<&str>` | Create test IPClaim |
+| Function | Parameter | Implementation | Status |
+|----------|-----------|----------------|--------|
+| `create_test_prefix()` | `prefix: &str` | Validates with `IpNet::from_str()`, creates `IpNet` in model | ✅ Complete |
+| `create_test_ip_claim()` | `preferred_ip: Option<&str>` | Validates with `IpNet::from_str()` if provided | ✅ Complete |
 
-### Proposed Implementation
+### Implementation Details
 
-| Function | Current | Proposed | Migration Notes |
-|----------|---------|----------|-----------------|
-| `create_test_prefix()` | `&str` | `&ipnet::IpNet` or keep `&str` | If keep `&str`, validate internally |
-| `create_test_ip_claim()` | `Option<&str>` | `Option<&ipnet::IpNet>` or keep | Same as above |
+**Test Helpers with Validation**:
+- ✅ `create_test_prefix()`: Accepts `&str`, validates with `IpNet::from_str()`, creates `Prefix` with `IpNet` field
+- ✅ `create_test_ip_claim()`: Accepts `Option<&str>`, validates with `IpNet::from_str()` if provided
+- ✅ All test helpers validate IP/prefix strings before use
+- ✅ Clear panic messages for invalid test data
 
-**Migration Strategy**:
-- Option A: Keep `&str` in test helpers, convert internally
-- Option B: Change to `&IpNet` for type safety in tests
+**Migration Strategy**: ✅ Complete
+- Kept `&str` parameters for convenience in tests
+- Added internal validation using `IpNet::from_str()`
+- Test failures catch invalid IP formats early
 
 ---
 
 ## 7. Mock Implementation (`crates/netbox-client/src/mock/`)
 
-### Current Implementation
+### Implementation Status ✅ Complete
 
-| Location | Operation | Current | Status |
-|----------|-----------|---------|--------|
-| `mock/ipam.rs:89-122` | `query_ip_addresses()` filter | **UPDATED** | Now uses `ipnet::IpNet::from_str()` and `contains()` |
-| `mock/ipam.rs:211` | `create_prefix()` | `&str` | Needs update |
-| `mock/ipam.rs:262` | `update_prefix()` | `Option<&str>` | Needs update |
-| `mock/ipam.rs:328` | `create_aggregate()` | `&str` | Needs update |
+| Location | Operation | Implementation | Status |
+|----------|-----------|----------------|--------|
+| `mock/ipam.rs:95-121` | `query_ip_addresses()` filter | Uses `ipnet::IpNet::from_str()` and `contains()` | ✅ Complete |
+| `mock/ipam.rs:127` | `create_ip_address()` | Accepts `&IpNet`, converts to string internally | ✅ Complete |
+| `mock/ipam.rs:216` | `create_prefix()` | Accepts `&IpNet`, converts to string internally | ✅ Complete |
+| `mock/ipam.rs:274` | `update_prefix()` | Accepts `Option<&IpNet>`, converts to string internally | ✅ Complete |
+| `mock/ipam.rs:346` | `create_aggregate()` | Accepts `&IpNet`, converts to string internally | ✅ Complete |
 
-### Proposed Implementation
+### Implementation Details
 
-| Location | Current | Proposed | Priority |
-|----------|---------|----------|----------|
-| `query_ip_addresses()` | ✅ Updated | ✅ Complete | Done |
-| `create_prefix()` | `&str` | `&ipnet::IpNet` | High |
-| `update_prefix()` | `Option<&str>` | `Option<&ipnet::IpNet>` | High |
-| `create_aggregate()` | `&str` | `&ipnet::IpNet` | Medium |
+**All Mock Functions Updated**:
+- ✅ All mock functions accept `&IpNet` or `Option<&IpNet>` parameters
+- ✅ Internal storage uses `String` (for compatibility with models which serialize as strings)
+- ✅ Conversion happens at function boundary: `IpNet` → `String` for storage
+- ✅ Filtering and validation use `IpNet` types for correctness
 
-**Migration Strategy**:
-- Update mock functions to accept `IpNet`
-- Store as `String` internally (for compatibility with models)
-- Use `IpNet` for filtering and validation
+**Migration Complete**: All mock implementations now use type-safe `IpNet` types with proper conversion boundaries.
 
 ---
 
@@ -369,6 +371,82 @@ pub struct Prefix {
 
 ---
 
+---
+
+## 9. Post-Migration Audit Results
+
+### Comprehensive Codebase Scan (2025-01-28)
+
+**All IP Address Strings Identified and Categorized**:
+
+#### ✅ Intentional String Usage (Correct Implementation)
+
+1. **CRD Spec Fields** (Kubernetes API Requirement)
+   - `NetBoxPrefixSpec.prefix: String` - ✅ Validated with JSON schema pattern
+   - `NetBoxAggregateSpec.prefix: String` - ✅ Validated with JSON schema pattern
+   - `IPClaimSpec.preferred_ip: Option<String>` - ✅ Validated with JSON schema pattern
+   - `PrimaryIPReference.ip_address: Option<String>` - ✅ Validated with JSON schema pattern
+
+2. **CRD Status Fields** (Kubernetes API Requirement)
+   - `IPClaimStatus.ip: Option<String>` - ✅ Intentional - Kubernetes status must be string
+   - Status patches convert `IpNet` to `String` when updating: `allocated_ip.address.to_string()`
+
+3. **NetBox API Query Filters** (API Requirement)
+   - `query_ip_addresses(&[("prefix", &prefix.prefix.to_string())])` - ✅ API expects string filter
+   - `query_ip_addresses(&[("address", ip_addr)])` - ✅ API expects string filter
+   - `query_prefixes(&[("prefix", &prefix_crd.spec.prefix)])` - ✅ API expects string filter
+
+4. **Device Primary IP Query** (API Requirement)
+   - `device.rs:217,285` - Uses `ip_ref.ip_address: Option<String>` from CRD for API query
+   - ✅ Correct - CRD field is validated, API expects string parameter
+
+#### ✅ Type-Safe Internal Operations (Complete)
+
+1. **Model Fields** - All use `IpNet`:
+   - `Prefix.prefix: IpNet` ✅
+   - `IPAddress.address: IpNet` ✅
+   - `AvailableIP.address: IpNet` ✅
+   - `AllocateIPRequest.address: Option<IpNet>` ✅
+   - `Aggregate.prefix: IpNet` ✅
+
+2. **Trait Methods** - All accept `IpNet`:
+   - `create_prefix(prefix: &IpNet)` ✅
+   - `update_prefix(prefix: Option<&IpNet>)` ✅
+   - `create_ip_address(address: &IpNet)` ✅
+   - `create_aggregate(prefix: &IpNet)` ✅
+
+3. **Reconciler Logic** - All use `IpNet`:
+   - Early validation: `IpNet::from_str()` at start of reconcile functions ✅
+   - Comparisons: `p.prefix == prefix_net` (IpNet) ✅
+   - Network containment: `prefix_net.contains(&ip_addr)` ✅
+   - Logging: `prefix_net.to_string()` for consistency ✅
+
+4. **Mock Implementation** - All accept `IpNet`:
+   - All mock functions accept `&IpNet` or `Option<&IpNet>` ✅
+   - Internal conversion to `String` for storage ✅
+
+5. **Test Utilities** - All validate with `IpNet`:
+   - `create_test_prefix()` validates with `IpNet::from_str()` ✅
+   - `create_test_ip_claim()` validates with `IpNet::from_str()` ✅
+
+### Audit Conclusion
+
+**✅ No Issues Found**: All IP address handling is now type-safe with proper validation and conversion boundaries.
+
+**String Usage is Intentional and Correct**:
+- CRD fields remain `String` for Kubernetes API compatibility (with JSON schema validation)
+- Status fields remain `String` for Kubernetes API compatibility
+- API query filters use `String` as NetBox API expects string parameters
+- All conversions happen at proper boundaries (API calls, status updates)
+
+**Type Safety Achieved**:
+- All internal operations use `IpNet` types
+- All validation uses `IpNet::from_str()`
+- All comparisons use `IpNet` (normalized, type-safe)
+- All network operations use `IpNet` methods (contains, prefix_len, etc.)
+
+---
+
 *Last Updated: 2025-01-28*
-*Status: Audit Complete - Ready for Migration Planning*
+*Status: ✅ Migration Complete - All IP addresses use type-safe `ipnet::IpNet` with proper validation*
 

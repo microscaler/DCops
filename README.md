@@ -1,153 +1,155 @@
-# DCops: Microscaler Infrastructure Fabric Controllers
+# DCops: GitOps Infrastructure Control for On-Premise and Datacenter Infrastructure
 
-> **Deterministic bare-metal infrastructure control for Microscaler systems.**
-> Git-defined intent, reconciled safely into real hardware.
+> **Stop managing infrastructure with spreadsheets. Start managing it with Git.**
 
-## What We're Building
+DCops brings Kubernetes-native, GitOps-driven infrastructure management to your on-premise datacenter, colocation facility, or rented cabinet. Declare your infrastructure intent in Git, and let Kubernetes controllers automatically reconcile it to your physical hardware.
 
-A set of **Kubernetes controllers** that manage bare-metal compute infrastructure (Raspberry Pi compute blades for PriceWhisperer) through a GitOps workflow.
+## The Problem You're Solving
 
-**Core Capabilities:**
-- **Deterministic PXE boot** — Control what machines boot and when
-- **Automatic IP allocation** — No manual IP tracking or hardcoded addresses
-- **Safe cluster rebuilds** — Destroy and rebuild clusters without fear
-- **GitOps-native** — All intent lives in Git, controllers reconcile to hardware
+If you're running infrastructure in a datacenter, colocation facility, or rented cabinet, you're likely managing:
 
-## Architecture
+- **IP address allocation** in spreadsheets or wikis
+- **Network inventory** in disconnected tools or manual databases
+- **PXE boot configurations** that require manual intervention
+- **Device provisioning** that can't be safely automated
+- **Infrastructure state** that drifts from your documentation
 
-```
-Git (YAML CRDs)
-   ↓
-Kubernetes Controllers (Rust / kube-rs)
-   ↓
-NetBox (IPAM / Inventory Database)
-   ↓
-PXE / DHCP / Network Devices
-   ↓
-Bare-metal Nodes (Talos Linux)
-   ↓
-Kubernetes Clusters (compute)
-```
+Every change requires manual coordination. Every rebuild risks human error. Every expansion means more spreadsheets to maintain.
 
-**Key Principle:** Git is source of truth. NetBox is the database. Controllers reconcile intent to hardware.
+**DCops eliminates this operational debt.**
 
-**CAPI Integration:** DCops provides infrastructure layer (PXE boot, IP allocation) that CAPI uses to provision Talos clusters. CAPI manages cluster lifecycle; DCops manages infrastructure prerequisites.
+## What DCops Does
 
-## Phase 1 Controllers
+DCops is a set of Kubernetes controllers that manage your physical infrastructure through a GitOps workflow. Think of it as "Infrastructure as Code" for your datacenter.
 
-### 1. PXE Intent Controller
+### Core Capabilities
 
-Controls what machines boot and when.
+**🎯 Deterministic IP Allocation**
+- Declare IP pools and claims in Git
+- Automatic allocation from NetBox IPAM
+- No more spreadsheets, no more manual tracking
+- Safe, idempotent operations that prevent conflicts
 
-**CRDs:**
-- `BootProfile` — Defines boot configurations (kernel, initrd, cmdline)
-- `BootIntent` — Maps MAC addresses to boot profiles
+**🔧 Infrastructure Inventory Management**
+- Manage sites, regions, devices, and network topology in Git
+- Automatic reconciliation with NetBox
+- Drift detection and correction
+- Multi-tenant support for shared infrastructure
 
-**Integration:** PXE boot service (Pixiecore API or custom Rust PXE server)
+**🚀 Controlled PXE Boot**
+- Define boot profiles and intents declaratively
+- Prevent infinite boot loops and accidental reinstallations
+- Safe cluster rebuilds without manual intervention
 
-**Prevents:** Infinite netboot loops, accidental reinstallation of live nodes
+**📊 Single Source of Truth**
+- Git is your source of truth
+- NetBox is your authoritative database
+- Controllers ensure they stay in sync
+- Full audit trail and change history
 
-### 2. IP Claim Controller
+## How It Works
 
-Provides deterministic IP allocation without hardcoding.
-
-**CRDs:**
-- `IPPool` — Defines IP address pools (references NetBox prefixes)
-- `IPClaim` — Requests an IP for a device/interface
-
-**Integration:** NetBox API (allocates IPs, writes back allocations)
-
-**Removes:** Human IP bookkeeping, spreadsheets, manual tracking
-
-## Design Principles
-
-1. **Git is the source of truth** — All desired state in YAML CRDs
-2. **NetBox is a backend database** — Not a control surface, not configured manually
-3. **Controllers are idempotent** — Small, focused, reconcile intent not workflows
-4. **Hardware is projection targets** — Routers/DHCP never own state
-5. **Management cluster isolation** — Controllers never run on nodes they manage
-6. **Phase discipline** — Build only what unlocks the next stage
-
-## Technology Stack
-
-- **Language:** Rust
-- **Kubernetes:** `kube-rs` for controller framework
-- **IPAM:** NetBox (authoritative inventory + IPAM)
-- **PXE:** Pixiecore (Go) or custom Rust PXE server (`dhcproto` + `async-tftp` + `axum`)
-- **DHCP:** ISC Kea (optional, Phase 2+)
-- **Network:** MikroTik RouterOS/SwitchOS (REST API, Phase 2+)
-  - RouterOS API for routers/switches
-  - SwitchOS API for managed switches
-  - Target for RouterOS Controller
-- **OS:** Talos Linux
-  - Managed out-of-band via Talos API (gRPC)
-  - API-managed configuration (no SSH, no shell)
-  - Raspberry Pi support (Pi 4, CM4)
-  - Image Factory for custom images
-  
-- **Cluster Management:** Cluster API (CAPI) + Talos Providers
-  - **CABPT** (Bootstrap Provider) — Generates Talos machine configs
-  - **CACPPT** (Control Plane Provider) — Manages control plane lifecycle
-  - Declarative cluster management via CAPI CRDs
-  - Management cluster pattern
-
-## Repository Structure
+DCops follows a simple, powerful pattern:
 
 ```
-DCops/
-├─ controllers/          # Rust controllers (kube-rs)
-│  ├─ pxe-intent/       # PXE Intent Controller
-│  ├─ ip-claim/         # IP Claim Controller
-│  └─ (future)
-├─ crds/                # Kubernetes CRD definitions
-│  ├─ bootprofile.yaml
-│  ├─ bootintent.yaml
-│  ├─ ippool.yaml
-│  └─ ipclaim.yaml
-├─ netbox/              # NetBox integration docs
-│  ├─ conventions.md
-│  └─ data-model.md
-├─ docs/                # Architecture and design docs
-│  ├─ 00_Summary.md
-│  ├─ 01_CAPI_Integration.md
-│  ├─ 02_Raspberry_Pi_Talos.md
-│  ├─ 03_RouterOS_Controller.md
-│  ├─ PRD.md
-│  └─ ...
-├─ ADRs/                # Architecture Decision Records
-│  └─ ADR-001-Scope_and_Non-Goals.md
-└─ README.md
+Your Git Repository (YAML)
+    ↓
+Kubernetes Controllers
+    ↓
+NetBox (IPAM & Inventory)
+    ↓
+Your Physical Infrastructure
 ```
 
-## Out of Scope (Phase 1)
+**1. Declare Intent in Git**
+Define your infrastructure as Kubernetes Custom Resources (CRDs) in YAML files. Commit to Git like any other code.
 
-- **CAPI Integration** (deferred to Phase 2+)
-  - CAPI infrastructure provider for DCops
-  - Full CAPI + Talos provider integration
-  - MachineSet creation and scaling via CAPI
-  
-- **RouterOS Controller** (deferred to Phase 2+)
-  - MikroTik RouterOS/SwitchOS API integration
-  - DHCP relay configuration
-  - VLAN management and bridge configuration
-  - Network device state reconciliation
-  
-- DHCP Controller (deferred to Phase 2+)
-- Full NetBox GitOps Sync (deferred)
-- Interface-level network intent (deferred)
-- Multi-rack / multi-fabric abstraction (deferred)
+**2. Controllers Reconcile Automatically**
+Kubernetes controllers watch your Git repository and continuously reconcile your declared intent with the actual state in NetBox.
 
-See [ADR-001](ADRs/ADR-001-Scope_and_Non-Goals.md) for detailed scope decisions.
+**3. NetBox Manages State**
+NetBox serves as your authoritative IPAM and inventory database. Controllers read from and write to NetBox, but you never configure NetBox manually.
 
-## Status
+**4. Infrastructure Stays in Sync**
+If someone manually changes NetBox, controllers detect the drift and either correct it or alert you. Your Git repository always reflects reality.
 
-**Early development** — Phase 1 focus:
+## Why You Should Use DCops
 
-1. ✅ Architecture and scope defined
-2. 🔄 PXE Intent Controller (in progress)
-3. ✅ IP Claim Controller (implemented)
-4. ⏳ Integration testing with hardware
+### For SREs
 
-## Contributing
+**Eliminate Operational Toil**
+- No more IP address spreadsheets
+- No more manual NetBox configuration
+- No more "who changed what" investigations
+- Automated drift detection and correction
 
-This is internal Microscaler infrastructure. See [CONTRIBUTING.md](CONTRIBUTING.md) for development guidelines.
+**Safe, Repeatable Operations**
+- All changes go through Git (PRs, reviews, approvals)
+- Idempotent operations prevent conflicts
+- Rollback by reverting Git commits
+- Full audit trail of every change
+
+**Kubernetes-Native**
+- Uses the same patterns you already know
+- Integrates with your existing GitOps workflows
+- Runs in your management cluster
+- Standard Kubernetes RBAC and policies
+
+### For Engineering Managers
+
+**Reduce Infrastructure Risk**
+- Eliminate human error in IP allocation
+- Prevent configuration drift
+- Safe, tested changes through Git workflows
+- Faster incident recovery
+
+**Scale Your Operations**
+- Onboard new team members faster
+- Support multiple tenants and environments
+- Automate repetitive tasks
+- Reduce time-to-provision for new infrastructure
+
+**Lower Operational Costs**
+- Less time spent on manual infrastructure management
+- Fewer incidents from configuration errors
+- Better resource utilization tracking
+- Clear ROI on infrastructure investments
+
+## Perfect For
+
+**On-Premise Datacenters**
+Manage your own infrastructure with the same GitOps workflows you use for cloud resources.
+
+**Colocation Facilities**
+Coordinate infrastructure across multiple tenants and environments with clear separation and audit trails.
+
+**Rented Cabinets**
+Start small with a single cabinet, scale as you grow. All infrastructure managed through Git.
+
+**Hybrid Environments**
+Bridge the gap between cloud-native workflows and physical infrastructure management.
+
+## Technology Foundation
+
+DCops is built on proven, production-ready technologies:
+
+- **Kubernetes** - Industry-standard orchestration platform
+- **NetBox** - The de facto standard for IPAM and datacenter inventory
+- **Rust** - High-performance, memory-safe controllers
+- **GitOps** - Declarative, version-controlled infrastructure management
+
+## Getting Started
+
+DCops integrates with your existing Kubernetes cluster and NetBox instance. No special hardware required—just a management Kubernetes cluster and NetBox.
+
+See our [documentation](docs/) for installation guides, architecture details, and examples.
+
+## Learn More
+
+- **Architecture Overview**: [docs/00_Summary.md](docs/00_Summary.md)
+- **NetBox Integration**: [docs/](docs/)
+- **Contributing**: [CONTRIBUTING.md](CONTRIBUTING.md)
+
+---
+
+**Ready to eliminate infrastructure spreadsheets?** Start managing your datacenter infrastructure the same way you manage your applications: with Git, Kubernetes, and declarative intent.

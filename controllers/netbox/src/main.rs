@@ -8,6 +8,8 @@
 //! This controller ensures GitOps-style management of NetBox IPAM resources.
 
 mod controller;
+#[cfg(test)]
+mod controller_test;
 mod reconciler;
 mod watcher;
 #[cfg(test)]

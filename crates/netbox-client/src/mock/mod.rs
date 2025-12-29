@@ -132,6 +132,11 @@ impl MockNetBoxClient {
         self.device_types.lock().unwrap().insert((manufacturer_id, device_type.model.clone()), device_type);
     }
 
+    /// Add a device role to the mock store (for test setup)
+    pub fn add_device_role(&self, device_role: DeviceRole) {
+        self.device_roles.lock().unwrap().insert(device_role.name.clone(), device_role);
+    }
+
     /// Add an aggregate to the mock store (for test setup)
     pub fn add_aggregate(&self, aggregate: Aggregate) {
         self.aggregates.lock().unwrap().insert(aggregate.id, aggregate);

@@ -9,6 +9,8 @@ pub mod region;
 pub mod site_group;
 pub mod location;
 pub mod device_role;
+#[cfg(test)]
+pub mod device_role_test;
 pub mod manufacturer;
 pub mod platform;
 pub mod device_type;

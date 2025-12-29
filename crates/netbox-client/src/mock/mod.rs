@@ -121,6 +121,12 @@ impl MockNetBoxClient {
         self.devices.lock().unwrap().insert(device.id, device);
     }
 
+    /// Add a device type to the mock store (for test setup)
+    pub fn add_device_type(&self, device_type: DeviceType) {
+        let manufacturer_id = device_type.manufacturer.id;
+        self.device_types.lock().unwrap().insert((manufacturer_id, device_type.model.clone()), device_type);
+    }
+
     /// Generate next ID
     pub(crate) fn next_id(&self) -> u64 {
         let mut id = self.next_id.lock().unwrap();

@@ -134,7 +134,7 @@ mod tests {
             created: Utc::now().to_rfc3339(),
             last_updated: Utc::now().to_rfc3339(),
         };
-        mock_client.device_types.lock().unwrap().insert((manufacturer_id, "Test Model".to_string()), device_type_netbox);
+        mock_client.add_device_type(device_type_netbox);
         
         // Setup: Create reconciler
         let (reconciler, apis) = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);

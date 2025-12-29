@@ -245,6 +245,160 @@ mod tests {
             .expect("Event message should mention reconciliation failure");
     }
     
+    /// Test that DRIFT_DETECTED event infrastructure works
+    /// Note: Full drift detection testing requires MockNetBoxClient setup which is complex.
+    /// This test verifies the event infrastructure works for DRIFT_DETECTED events.
+    #[tokio::test]
+    async fn test_drift_detected_event_infrastructure() {
+        let netbox_url = "http://test-netbox".to_string();
+        let mock_token_resolver = Arc::new(MockTokenResolver::new(netbox_url.clone()));
+        let (reconciler, _, mock_event_recorder) = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
+        
+        // Create a test site
+        use crate::test_utils::create_test_netbox_site;
+        let site = create_test_netbox_site(
+            "test-site",
+            "default",
+            Some(1),
+            Some(format!("{}/api/dcim/sites/1/", netbox_url)),
+        );
+        
+        // Manually record a DRIFT_DETECTED event to verify the infrastructure works
+        reconciler.record_event_warning(
+            reasons::DRIFT_DETECTED,
+            "NetBoxSite default/test-site drift detected: Resource was deleted in NetBox",
+            &site,
+        ).await;
+        
+        // Assert: DRIFT_DETECTED event was emitted
+        let event = assert_warning_event_emitted(&mock_event_recorder, reasons::DRIFT_DETECTED)
+            .expect("DRIFT_DETECTED event should be emitted");
+        assert_event_for_resource(&event, &site)
+            .expect("Event should be for the correct site resource");
+        assert_event_message_contains(&event, "drift detected")
+            .expect("Event message should mention drift detection");
+    }
+    
+    /// Test that RETRY_ATTEMPT event infrastructure works
+    #[tokio::test]
+    async fn test_retry_attempt_event_infrastructure() {
+        let netbox_url = "http://test-netbox".to_string();
+        let mock_token_resolver = Arc::new(MockTokenResolver::new(netbox_url.clone()));
+        let (reconciler, _, mock_event_recorder) = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
+        
+        // Create a test prefix
+        let prefix = create_test_netbox_prefix("test-prefix", "default", 0, None);
+        
+        // Manually record a RETRY_ATTEMPT event to verify the infrastructure works
+        reconciler.record_event_retry_attempt_str(
+            "Test error message",
+            2,
+            60,
+            &prefix,
+        ).await;
+        
+        // Assert: RETRY_ATTEMPT event was emitted
+        let event = assert_warning_event_emitted(&mock_event_recorder, reasons::RETRY_ATTEMPT)
+            .expect("RETRY_ATTEMPT event should be emitted");
+        assert_event_for_resource(&event, &prefix)
+            .expect("Event should be for the correct prefix resource");
+        assert_event_message_contains(&event, "Retrying reconciliation")
+            .expect("Event message should mention retrying reconciliation");
+        assert_event_message_contains(&event, "2")
+            .expect("Event message should contain attempt number");
+    }
+    
+    /// Test that CREATED event infrastructure works for Site reconciler
+    /// Note: Full site creation testing requires MockNetBoxClient setup which is complex.
+    /// This test verifies the event infrastructure works for Site resources.
+    #[tokio::test]
+    async fn test_created_event_on_site_infrastructure() {
+        let netbox_url = "http://test-netbox".to_string();
+        let mock_token_resolver = Arc::new(MockTokenResolver::new(netbox_url.clone()));
+        let (reconciler, _, mock_event_recorder) = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
+        
+        // Create a test site
+        use crate::test_utils::create_test_netbox_site;
+        let site = create_test_netbox_site(
+            "test-site",
+            "default",
+            Some(1),
+            Some(format!("{}/api/dcim/sites/1/", netbox_url)),
+        );
+        
+        // Manually record a CREATED event to verify the infrastructure works
+        reconciler.record_event_normal(
+            reasons::CREATED,
+            "Created site test-site in NetBox (ID: 1)",
+            &site,
+        ).await;
+        
+        // Assert: CREATED event was emitted
+        let event = assert_normal_event_emitted(&mock_event_recorder, reasons::CREATED)
+            .expect("CREATED event should be emitted");
+        assert_event_for_resource(&event, &site)
+            .expect("Event should be for the correct site resource");
+        assert_event_message_contains(&event, "Created site")
+            .expect("Event message should mention site creation");
+    }
+    
+    /// Test that multiple events can be emitted for the same resource
+    #[tokio::test]
+    async fn test_multiple_events_for_resource() {
+        let netbox_url = "http://test-netbox".to_string();
+        let mock_token_resolver = Arc::new(MockTokenResolver::new(netbox_url.clone()));
+        let (reconciler, _, mock_event_recorder) = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
+        
+        // Create a test prefix
+        let prefix = create_test_netbox_prefix("test-prefix", "default", 0, None);
+        
+        // Record multiple events
+        reconciler.record_event_normal(
+            reasons::CREATED,
+            "Created prefix",
+            &prefix,
+        ).await;
+        
+        reconciler.record_event_normal(
+            reasons::UPDATED,
+            "Updated prefix",
+            &prefix,
+        ).await;
+        
+        reconciler.record_event_warning(
+            reasons::DRIFT_DETECTED,
+            "Drift detected",
+            &prefix,
+        ).await;
+        
+        // Assert: All events were emitted
+        assert_eq!(mock_event_recorder.get_events().len(), 3);
+        
+        // Verify each event
+        let created_event = assert_normal_event_emitted(&mock_event_recorder, reasons::CREATED)
+            .expect("CREATED event should be emitted");
+        assert_event_for_resource(&created_event, &prefix)
+            .expect("CREATED event should be for prefix");
+        
+        let updated_event = assert_normal_event_emitted(&mock_event_recorder, reasons::UPDATED)
+            .expect("UPDATED event should be emitted");
+        assert_event_for_resource(&updated_event, &prefix)
+            .expect("UPDATED event should be for prefix");
+        
+        let drift_event = assert_warning_event_emitted(&mock_event_recorder, reasons::DRIFT_DETECTED)
+            .expect("DRIFT_DETECTED event should be emitted");
+        assert_event_for_resource(&drift_event, &prefix)
+            .expect("DRIFT_DETECTED event should be for prefix");
+        
+        // Verify event counts
+        assert_event_count(&mock_event_recorder, reasons::CREATED, 1)
+            .expect("Should have exactly 1 CREATED event");
+        assert_event_count(&mock_event_recorder, reasons::UPDATED, 1)
+            .expect("Should have exactly 1 UPDATED event");
+        assert_event_count(&mock_event_recorder, reasons::DRIFT_DETECTED, 1)
+            .expect("Should have exactly 1 DRIFT_DETECTED event");
+    }
+    
     use crate::test_utils::mock_token_resolver::TestReconcilerApis;
 }
 

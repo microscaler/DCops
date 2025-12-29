@@ -138,13 +138,25 @@ impl Reconciler {
                 
                 // Validate and resolve tenant ID (required)
                 validate_reference_kind(&vlan_crd.spec.tenant, "NetBoxTenant", "tenant", name)?;
-                let tenant_id = resolve_required_dependency_id(
+                let tenant_id = match resolve_required_dependency_id(
                     &*self.netbox_tenant_api,
                     &vlan_crd.spec.tenant.name,
                     "Tenant",
                     name,
                     |crd| crd.status.as_ref(),
-                ).await?;
+                ).await {
+                    Ok(id) => id,
+                    Err(e) => {
+                        // Emit event for dependency not found
+                        use crate::events::reasons;
+                        self.record_event_warning(
+                            reasons::DEPENDENCY_NOT_FOUND,
+                            &format!("Tenant '{}' not found or not ready: {}", vlan_crd.spec.tenant.name, e),
+                            vlan_crd,
+                        ).await;
+                        return Err(e);
+                    }
+                };
                 
                 // Resolve optional role ID
                 let _role_id = resolve_optional_dependency_id(

@@ -115,13 +115,25 @@ impl Reconciler {
                 
                 // Validate and resolve site ID (required)
                 validate_reference_kind(&location_crd.spec.site, "NetBoxSite", "site", name)?;
-                let site_id: u64 = resolve_required_dependency_id(
+                let site_id = match resolve_required_dependency_id(
                     &*self.netbox_site_api,
                     &location_crd.spec.site.name,
                     "Site",
                     name,
                     |crd| crd.status.as_ref(),
-                ).await?;
+                ).await {
+                    Ok(id) => id,
+                    Err(e) => {
+                        // Emit event for dependency not found
+                        use crate::events::reasons;
+                        self.record_event_warning(
+                            reasons::DEPENDENCY_NOT_FOUND,
+                            &format!("Site '{}' not found or not ready: {}", location_crd.spec.site.name, e),
+                            location_crd,
+                        ).await;
+                        return Err(e);
+                    }
+                };
                 
                 // Resolve optional parent location ID
                 let parent_id: Option<u64> = resolve_optional_dependency_id(
@@ -135,13 +147,25 @@ impl Reconciler {
                 
                 // Validate and resolve tenant ID (required)
                 validate_reference_kind(&location_crd.spec.tenant, "NetBoxTenant", "tenant", name)?;
-                let tenant_id = resolve_required_dependency_id(
+                let tenant_id = match resolve_required_dependency_id(
                     &*self.netbox_tenant_api,
                     &location_crd.spec.tenant.name,
                     "Tenant",
                     name,
                     |crd| crd.status.as_ref(),
-                ).await?;
+                ).await {
+                    Ok(id) => id,
+                    Err(e) => {
+                        // Emit event for dependency not found
+                        use crate::events::reasons;
+                        self.record_event_warning(
+                            reasons::DEPENDENCY_NOT_FOUND,
+                            &format!("Tenant '{}' not found or not ready: {}", location_crd.spec.tenant.name, e),
+                            location_crd,
+                        ).await;
+                        return Err(e);
+                    }
+                };
                 
                 // Try to find existing location by name and site
                 let existing_location = match netbox_client.query_locations(

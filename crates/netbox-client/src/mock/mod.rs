@@ -20,6 +20,7 @@ use crate::error::NetBoxError;
 use crate::models::*;
 use crate::netbox_trait::NetBoxClientTrait;
 use crate::types::*;
+use ipnet::IpNet;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 

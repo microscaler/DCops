@@ -73,9 +73,15 @@ mod tests {
         // Custom (2): IPPool, IPClaim
         // Total: 19 watchers
         
+        let ipam_count = 6; // Prefix, Role, Tag, Aggregate, VLAN, RIR
+        let tenancy_count = 1; // Tenant
+        let dcim_count = 11; // Site, DeviceRole, Manufacturer, Platform, DeviceType, Device, Interface, MACAddress, Region, SiteGroup, Location
+        let custom_count = 2; // IPPool, IPClaim
+        
         let expected_watcher_count = 19;
-        let actual_watcher_count = 6 + 1 + 11 + 2; // IPAM + Tenancy + DCIM + Custom
-        assert_eq!(actual_watcher_count, expected_watcher_count);
+        let actual_watcher_count = ipam_count + tenancy_count + dcim_count + custom_count;
+        assert_eq!(actual_watcher_count, expected_watcher_count, 
+            "Controller should create watchers for all 19 CRD types");
     }
 
     /// Test that Controller handles startup reconciliation errors gracefully

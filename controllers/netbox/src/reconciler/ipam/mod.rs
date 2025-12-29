@@ -12,4 +12,6 @@ pub mod prefix;
 #[cfg(test)]
 pub mod prefix_test;
 pub mod aggregate;
+#[cfg(test)]
+pub mod aggregate_test;
 pub mod rir;

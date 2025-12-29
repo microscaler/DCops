@@ -127,6 +127,16 @@ impl MockNetBoxClient {
         self.device_types.lock().unwrap().insert((manufacturer_id, device_type.model.clone()), device_type);
     }
 
+    /// Add an aggregate to the mock store (for test setup)
+    pub fn add_aggregate(&self, aggregate: Aggregate) {
+        self.aggregates.lock().unwrap().insert(aggregate.id, aggregate);
+    }
+
+    /// Add an RIR to the mock store (for test setup)
+    pub fn add_rir(&self, rir: Rir) {
+        self.rirs.lock().unwrap().insert(rir.name.clone(), rir);
+    }
+
     /// Generate next ID
     pub(crate) fn next_id(&self) -> u64 {
         let mut id = self.next_id.lock().unwrap();

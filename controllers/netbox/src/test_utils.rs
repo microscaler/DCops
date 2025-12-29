@@ -158,6 +158,39 @@ pub fn create_test_reconciler(
     )
 }
 
+/// Helper to create a test Aggregate with all required fields
+/// 
+/// Validates the prefix string format using IpNet::from_str()
+#[cfg(test)]
+pub fn create_test_aggregate(
+    id: u64,
+    prefix: &str,
+    base_url: &str,
+) -> netbox_client::Aggregate {
+    use netbox_client::Aggregate;
+    use chrono::Utc;
+    use std::str::FromStr;
+    use ipnet::IpNet;
+    
+    // Validate prefix format
+    let prefix_net = IpNet::from_str(prefix)
+        .unwrap_or_else(|e| panic!("Invalid prefix format '{}' in test: {}. Expected CIDR notation (e.g., '192.168.0.0/16')", prefix, e));
+    
+    Aggregate {
+        id,
+        url: format!("{}/api/ipam/aggregates/{}/", base_url, id),
+        display: prefix.to_string(),
+        prefix: prefix_net,
+        rir: None,
+        date_allocated: None,
+        description: None,
+        comments: None,
+        tags: vec![],
+        created: Utc::now().to_rfc3339(),
+        last_updated: Utc::now().to_rfc3339(),
+    }
+}
+
 /// Helper to create a test Prefix with all required fields
 /// 
 /// Validates the prefix string format using IpNet::from_str()

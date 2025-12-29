@@ -1405,9 +1405,31 @@ mod tests {
     // Additional tests for edge cases and error paths
     mod edge_case_tests {
         use super::*;
-        use crate::reconcile_helpers::{check_and_update_existing, check_existing};
+        use crate::reconcile_helpers::{check_existing, validate_status_and_drift, DriftCheckResult, NetBoxResource};
         use crate::error::ControllerError;
         use netbox_client::{MockNetBoxClient, NetBoxClientTrait, NetBoxError};
+        
+        // Reuse TestResource from parent module - define it here since it's not exported
+        struct TestResource {
+            id: u64,
+            name: String,
+            url: String,
+        }
+        
+        impl NetBoxResource for TestResource {
+            fn id(&self) -> u64 { self.id }
+            fn url(&self) -> &str { &self.url }
+        }
+        
+        impl Clone for TestResource {
+            fn clone(&self) -> Self {
+                Self {
+                    id: self.id,
+                    name: self.name.clone(),
+                    url: self.url.clone(),
+                }
+            }
+        }
 
         #[tokio::test]
         async fn test_check_existing_network_error() {
@@ -1459,12 +1481,7 @@ mod tests {
 
         #[tokio::test]
         async fn test_validate_status_and_drift_failed_state_network_error() {
-            use crate::reconcile_helpers::{validate_status_and_drift, DriftCheckResult};
-            use netbox_client::{MockNetBoxClient, NetBoxClientTrait};
-            
-            let mut mock_client = MockNetBoxClient::new("http://test-netbox".to_string());
-            // Configure to return network error (not NotFound)
-            mock_client.set_get_site_error(netbox_client::NetBoxError::Api("Network error".to_string()));
+            use crate::reconcile_helpers::validate_status_and_drift;
             
             let status = crds::NetBoxSiteStatus {
                 netbox_id: Some(1),
@@ -1474,19 +1491,26 @@ mod tests {
                 last_reconciled: None,
             };
 
+            // Test network error path using a closure that returns an error
             let result = validate_status_and_drift(
                 Some(&status),
                 "NetBoxSite",
                 "default",
                 "test-site",
-                |id| {
-                    let client = &mock_client;
-                    async move { client.get_site(netbox_client::SiteId(id)).await }
+                |_id| {
+                    async move { 
+                        Err::<netbox_client::Site, _>(NetBoxError::Api("Network error".to_string()))
+                    }
                 },
             ).await;
 
             // Network error should be propagated (retry)
             assert!(result.is_err());
+            if let Err(ControllerError::NetBox(NetBoxError::Api(_))) = result {
+                // Expected
+            } else {
+                panic!("Expected NetBox error");
+            }
         }
     }
 }

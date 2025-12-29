@@ -228,6 +228,15 @@ impl Reconciler {
                         Ok(None) => {
                             // Drift detected - resource was deleted, clear status and recreate
                             warn!("NetBoxPrefix {}/{} was deleted in NetBox (ID: {}), clearing status and will recreate", namespace, name, netbox_id);
+                            
+                            // Emit event for drift detection
+                            use crate::events::reasons;
+                            self.record_event_warning(
+                                reasons::DRIFT_DETECTED,
+                                &format!("NetBoxPrefix {}/{} was deleted in NetBox (ID: {}), will recreate", namespace, name, netbox_id),
+                                prefix_crd,
+                            ).await;
+                            
                             let status_patch = Self::create_prefix_status_patch(
                                 0, // Clear netbox_id
                                 String::new(), // Clear URL

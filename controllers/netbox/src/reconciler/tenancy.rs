@@ -71,6 +71,13 @@ impl Reconciler {
                 let error_msg = format!("Failed to fetch Secret {} in namespace {}: {}", secret_ref.name, secret_namespace, e);
                 error!("{}", error_msg);
                 update_status_error(&*self.netbox_tenant_api, name, namespace, error_msg.clone(), tenant_crd.status.as_ref()).await;
+                // Emit event for token resolution failure
+                use crate::events::reasons;
+                self.record_event_warning(
+                    reasons::TOKEN_RESOLUTION_FAILED,
+                    &error_msg,
+                    tenant_crd,
+                ).await;
                 return Err(ControllerError::TokenResolution(crate::token_resolver::TokenResolutionError::SecretFetchError(
                     format!("{}: {}", secret_ref.name, e)
                 )));
@@ -88,6 +95,13 @@ impl Reconciler {
                 let error_msg = format!("Token key '{}' not found in Secret {}", token_key, secret_ref.name);
                 error!("{}", error_msg);
                 update_status_error(&*self.netbox_tenant_api, name, namespace, error_msg.clone(), tenant_crd.status.as_ref()).await;
+                // Emit event for token resolution failure
+                use crate::events::reasons;
+                self.record_event_warning(
+                    reasons::TOKEN_RESOLUTION_FAILED,
+                    &error_msg,
+                    tenant_crd,
+                ).await;
                 return Err(ControllerError::TokenResolution(crate::token_resolver::TokenResolutionError::TokenKeyNotFound(
                     token_key.to_string()
                 )));
@@ -101,6 +115,13 @@ impl Reconciler {
                 let error_msg = format!("Failed to decode token from Secret {}: {}", secret_ref.name, e);
                 error!("{}", error_msg);
                 update_status_error(&*self.netbox_tenant_api, name, namespace, error_msg.clone(), tenant_crd.status.as_ref()).await;
+                // Emit event for token resolution failure
+                use crate::events::reasons;
+                self.record_event_warning(
+                    reasons::TOKEN_RESOLUTION_FAILED,
+                    &error_msg,
+                    tenant_crd,
+                ).await;
                 return Err(ControllerError::TokenResolution(crate::token_resolver::TokenResolutionError::TokenDecodeError(
                     format!("{}: {}", secret_ref.name, e)
                 )));
@@ -114,6 +135,13 @@ impl Reconciler {
             let error_msg = format!("Token in Secret {} is empty", secret_ref.name);
             error!("{}", error_msg);
             update_status_error(&*self.netbox_tenant_api, name, namespace, error_msg.clone(), tenant_crd.status.as_ref()).await;
+            // Emit event for token resolution failure
+            use crate::events::reasons;
+            self.record_event_warning(
+                reasons::TOKEN_RESOLUTION_FAILED,
+                &error_msg,
+                tenant_crd,
+            ).await;
             return Err(ControllerError::TokenResolution(
                 crate::token_resolver::TokenResolutionError::TokenDecodeError(error_msg)
             ));
@@ -127,6 +155,13 @@ impl Reconciler {
                 let error_msg = format!("Failed to create NetBoxClient: {}", e);
                 error!("{}", error_msg);
                 update_status_error(&*self.netbox_tenant_api, name, namespace, error_msg.clone(), tenant_crd.status.as_ref()).await;
+                // Emit event for token resolution failure
+                use crate::events::reasons;
+                self.record_event_warning(
+                    reasons::TOKEN_RESOLUTION_FAILED,
+                    &error_msg,
+                    tenant_crd,
+                ).await;
                 return Err(ControllerError::TokenResolution(e));
             }
         };
@@ -240,6 +275,13 @@ impl Reconciler {
                     ).await {
                         Ok(updated) => {
                             info!("Updated tenant {} in NetBox (ID: {})", updated.name, updated.id);
+                            // Emit event for successful update
+                            use crate::events::reasons;
+                            self.record_event_normal(
+                                reasons::UPDATED,
+                                &format!("Updated tenant {} in NetBox (ID: {})", updated.name, updated.id),
+                                tenant_crd,
+                            ).await;
                             updated
                         }
                         Err(e) => {
@@ -280,6 +322,13 @@ impl Reconciler {
                             Err(e) => {
                                 let error_msg = format!("Failed to update NetBoxTenant status: {}", e);
                                 error!("{}", error_msg);
+                                // Emit event for reconciliation failure
+                                use crate::events::reasons;
+                                self.record_event_warning(
+                                    reasons::RECONCILIATION_FAILED,
+                                    &error_msg,
+                                    tenant_crd,
+                                ).await;
                                 return Err(ControllerError::Kube(e.into()));
                             }
                         }
@@ -379,6 +428,13 @@ impl Reconciler {
                     ).await {
                         Ok(created) => {
                             info!("Created tenant {} in NetBox (ID: {})", created.name, created.id);
+                            // Emit event for successful creation
+                            use crate::events::reasons;
+                            self.record_event_normal(
+                                reasons::CREATED,
+                                &format!("Created tenant {} in NetBox (ID: {})", created.name, created.id),
+                                tenant_crd,
+                            ).await;
                             created
                         }
                         Err(e) => {

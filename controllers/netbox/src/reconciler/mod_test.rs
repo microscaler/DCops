@@ -75,7 +75,7 @@ mod tests {
     async fn test_startup_reconciliation_no_prefixes() {
         let netbox_url = "http://netbox.test".to_string();
         let mock_token_resolver = Arc::new(MockTokenResolver::new(netbox_url.clone()));
-        let (reconciler, _apis) = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
+        let (reconciler, _apis, _mock_event_recorder) = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
 
         // Run startup reconciliation with no prefixes
         let result = reconciler.startup_reconciliation().await;

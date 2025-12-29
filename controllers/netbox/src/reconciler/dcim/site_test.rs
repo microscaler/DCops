@@ -99,12 +99,106 @@ mod tests {
     }
     
     #[tokio::test]
-    #[ignore] // Ignored until kube::Client mocking is implemented
     async fn test_reconcile_site_idempotent() {
-        // TODO: Test idempotent reconciliation
-        // 1. Create site with status
-        // 2. Reconcile without changes
-        // 3. Verify no update was called (resource already up-to-date)
+        use crate::test_utils::mock_token_resolver::{MockTokenResolver, create_test_reconciler_with_mock_token_resolver};
+        use crate::kube_api_trait::KubeApiTrait;
+        use std::sync::Arc;
+        
+        // Setup: Create mock TokenResolver
+        let netbox_url = "http://test-netbox".to_string();
+        let mock_token_resolver = Arc::new(MockTokenResolver::new(netbox_url.clone()));
+        mock_token_resolver.add_secret("default", "netbox-token-datacenter-tenant", "test-token".to_string());
+        
+        // Setup: Get MockNetBoxClient
+        let mock_client = mock_token_resolver.mock_client();
+        
+        // Setup: Create reconciler
+        let (reconciler, apis) = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
+        
+        // Setup: Create tenant
+        let tenant = create_test_netbox_tenant(
+            "datacenter-tenant",
+            "default",
+            Some(1),
+            Some("http://test-netbox/api/tenancy/tenants/1/".to_string()),
+        );
+        apis.tenant_api.store("datacenter-tenant".to_string(), tenant);
+        
+        // Setup: Add tenant to mock NetBox
+        use netbox_client::Tenant;
+        use chrono::Utc;
+        let netbox_tenant = Tenant {
+            id: 1,
+            url: format!("{}/api/tenancy/tenants/1/", netbox_url),
+            display: "Data Center Operations".to_string(),
+            name: "Data Center Operations".to_string(),
+            slug: "datacenter-ops".to_string(),
+            description: Some("Primary tenant for datacenter operations".to_string()),
+            comments: Some(String::new()),
+            group: None,
+            created: Utc::now().to_rfc3339(),
+            last_updated: Utc::now().to_rfc3339(),
+        };
+        mock_client.add_tenant(netbox_tenant);
+        
+        // Setup: Add site to mock NetBox (already exists)
+        use netbox_client::Site;
+        let netbox_site = Site {
+            id: 1,
+            url: format!("{}/api/dcim/sites/1/", netbox_url),
+            display: "test-site".to_string(),
+            name: "test-site".to_string(),
+            slug: "test-site".to_string(),
+            status: netbox_client::SiteStatus::Active,
+            facility: None,
+            region: None,
+            site_group: None,
+            tenant: Some(netbox_client::NestedTenant {
+                id: 1,
+                url: format!("{}/api/tenancy/tenants/1/", netbox_url),
+                display: "Data Center Operations".to_string(),
+                name: "Data Center Operations".to_string(),
+                slug: "datacenter-ops".to_string(),
+            }),
+            description: None,
+            physical_address: None,
+            shipping_address: None,
+            latitude: None,
+            longitude: None,
+            time_zone: None,
+            comments: Some(String::new()),
+            tags: vec![],
+            created: Utc::now().to_rfc3339(),
+            last_updated: Utc::now().to_rfc3339(),
+        };
+        mock_client.add_site(netbox_site);
+        
+        // Setup: Create site with status (already created)
+        let mut site = create_test_netbox_site(
+            "test-site",
+            "default",
+            Some(1),
+            Some("http://test-netbox/api/dcim/sites/1/".to_string()),
+        );
+        site.spec.tenant = crds::NetBoxResourceReference {
+            api_group: "dcops.microscaler.io".to_string(),
+            kind: "NetBoxTenant".to_string(),
+            name: "datacenter-tenant".to_string(),
+            namespace: Some("default".to_string()),
+        };
+        apis.site_api.store("test-site".to_string(), site.clone());
+        
+        // Execute: Reconcile
+        let result = reconciler.reconcile_netbox_site(&site).await;
+        
+        // Assert: Should succeed (idempotent - no update needed)
+        assert!(result.is_ok(), "Reconciliation should succeed when site already exists");
+        
+        // Verify status is still correct
+        let updated_crd = apis.site_api.get("test-site").await.unwrap();
+        assert!(updated_crd.status.is_some(), "Status should still be set");
+        let status = updated_crd.status.unwrap();
+        assert_eq!(status.netbox_id, Some(1), "NetBox ID should still be 1");
     }
     
     #[tokio::test]
@@ -128,12 +222,34 @@ mod tests {
     }
     
     #[tokio::test]
-    #[ignore] // Ignored until kube::Client mocking is implemented
     async fn test_reconcile_site_tenant_dependency() {
-        // TODO: Test tenant dependency resolution
-        // 1. Create site with tenant reference
-        // 2. Tenant doesn't exist yet
-        // 3. Reconcile should fail with dependency error
+        use crate::test_utils::mock_token_resolver::{MockTokenResolver, create_test_reconciler_with_mock_token_resolver};
+        use std::sync::Arc;
+        
+        // Setup: Create mock TokenResolver
+        let netbox_url = "http://test-netbox".to_string();
+        let mock_token_resolver = Arc::new(MockTokenResolver::new(netbox_url));
+        mock_token_resolver.add_secret("default", "netbox-token-datacenter-tenant", "test-token".to_string());
+        
+        // Setup: Create reconciler
+        let (reconciler, apis) = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
+        
+        // Setup: Create site with reference to non-existent tenant
+        let mut site = create_test_netbox_site("test-site", "default", None, None);
+        site.status = None;
+        site.spec.tenant = crds::NetBoxResourceReference {
+            api_group: "dcops.microscaler.io".to_string(),
+            kind: "NetBoxTenant".to_string(),
+            name: "non-existent-tenant".to_string(),
+            namespace: Some("default".to_string()),
+        };
+        apis.site_api.store("test-site".to_string(), site.clone());
+        
+        // Execute: Reconcile
+        let result = reconciler.reconcile_netbox_site(&site).await;
+        
+        // Assert: Should fail with tenant not found error
+        assert!(result.is_err(), "Reconciliation should fail when tenant not found");
     }
 }
 

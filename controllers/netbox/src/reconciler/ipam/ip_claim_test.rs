@@ -142,12 +142,52 @@ mod tests {
     }
     
     #[tokio::test]
-    #[ignore] // Ignored until kube::Client mocking is implemented
     async fn test_reconcile_ip_claim_pool_no_status() {
-        // TODO: Test error handling when IPPool has no status
-        // 1. Create IPClaim with reference to pool without status
-        // 2. Reconcile
-        // 3. Verify error is returned
+        use crate::test_utils::mock_token_resolver::{MockTokenResolver, create_test_reconciler_with_mock_token_resolver};
+        use crate::kube_api_trait::KubeApiTrait;
+        use std::sync::Arc;
+        
+        // Setup: Create mock TokenResolver
+        let netbox_url = "http://test-netbox".to_string();
+        let mock_token_resolver = Arc::new(MockTokenResolver::new(netbox_url));
+        mock_token_resolver.add_secret("default", "netbox-token-datacenter-tenant", "test-token".to_string());
+        
+        // Setup: Create reconciler
+        let (reconciler, apis) = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
+        
+        // Setup: Create prefix without status
+        let mut prefix = create_test_netbox_prefix("test-prefix", "default", 1, None);
+        prefix.status = None; // Clear status
+        apis.prefix_api.store("test-prefix".to_string(), prefix);
+        
+        // Setup: Create IPPool without status
+        let mut pool = create_test_ip_pool("test-pool", "default", "test-prefix", None);
+        pool.status = None; // No status
+        apis.ip_pool_api.store("test-pool".to_string(), pool);
+        
+        // Setup: Create IPClaim
+        let claim = create_test_ip_claim(
+            "test-claim",
+            "default",
+            "test-pool",
+            None,
+            "test-device",
+            None,
+            None,
+        );
+        apis.ip_claim_api.store("test-claim".to_string(), claim.clone());
+        
+        // Execute: Reconcile
+        let result = reconciler.reconcile_ip_claim(&claim).await;
+        
+        // Assert: Should fail (pool has no status, can't resolve prefix ID)
+        assert!(result.is_err(), "Reconciliation should fail when pool has no status");
+        
+        // Assert: Status should be updated with error
+        let updated_crd = apis.ip_claim_api.get("test-claim").await.unwrap();
+        assert!(updated_crd.status.is_some(), "Status should be set");
+        let status = updated_crd.status.unwrap();
+        assert_eq!(status.state, AllocationState::Failed, "State should be Failed");
     }
     
     #[tokio::test]
@@ -192,13 +232,78 @@ mod tests {
     }
     
     #[tokio::test]
-    #[ignore] // Ignored until kube::Client mocking is implemented
     async fn test_reconcile_ip_claim_no_available_ips() {
-        // TODO: Test error handling when no IPs are available
-        // 1. Create IPPool with 0 available IPs
-        // 2. Create IPClaim
-        // 3. Reconcile
-        // 4. Verify error is returned
+        use crate::test_utils::mock_token_resolver::{MockTokenResolver, create_test_reconciler_with_mock_token_resolver};
+        use crate::kube_api_trait::KubeApiTrait;
+        use std::sync::Arc;
+        
+        // Setup: Create mock TokenResolver
+        let netbox_url = "http://test-netbox".to_string();
+        let mock_token_resolver = Arc::new(MockTokenResolver::new(netbox_url.clone()));
+        mock_token_resolver.add_secret("default", "netbox-token-datacenter-tenant", "test-token".to_string());
+        
+        // Setup: Get MockNetBoxClient
+        let mock_client = mock_token_resolver.mock_client();
+        
+        // Setup: Create reconciler
+        let (reconciler, apis) = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
+        
+        // Setup: Create test data
+        let prefix = create_test_netbox_prefix(
+            "test-prefix",
+            "default",
+            1,
+            Some("http://test-netbox/api/ipam/prefixes/1/".to_string()),
+        );
+        let mut pool = create_test_ip_pool("test-pool", "default", "test-prefix", None);
+        pool.status = Some(crds::IPPoolStatus {
+            netbox_prefix_id: Some(1),
+            netbox_prefix_url: Some("http://test-netbox/api/ipam/prefixes/1/".to_string()),
+            total_ips: 256,
+            allocated_ips: 256,
+            available_ips: 0, // No available IPs
+            last_reconciled: None,
+        });
+        let claim = create_test_ip_claim(
+            "test-claim",
+            "default",
+            "test-pool",
+            None,
+            "test-device",
+            None,
+            None,
+        );
+        
+        // Setup: Store test data
+        apis.tenant_api.store("datacenter-tenant".to_string(), create_test_netbox_tenant(
+            "datacenter-tenant",
+            "default",
+            Some(1),
+            Some("http://test-netbox/api/tenancy/tenants/1/".to_string()),
+        ));
+        apis.prefix_api.store("test-prefix".to_string(), prefix);
+        apis.ip_pool_api.store("test-pool".to_string(), pool);
+        apis.ip_claim_api.store("test-claim".to_string(), claim.clone());
+        
+        // Setup: Add prefix to mock NetBox
+        let netbox_prefix = create_test_prefix(1, "192.168.1.0/24", &netbox_url);
+        mock_client.add_prefix(netbox_prefix);
+        
+        // Setup: Set no available IPs (empty vector)
+        mock_client.set_available_ips(1, vec![]);
+        
+        // Execute: Reconcile
+        let result = reconciler.reconcile_ip_claim(&claim).await;
+        
+        // Assert: Should fail (no available IPs)
+        assert!(result.is_err(), "Reconciliation should fail when no IPs are available");
+        
+        // Assert: Status should be updated with error
+        let updated_crd = apis.ip_claim_api.get("test-claim").await.unwrap();
+        assert!(updated_crd.status.is_some(), "Status should be set");
+        let status = updated_crd.status.unwrap();
+        assert_eq!(status.state, AllocationState::Failed, "State should be Failed");
+        assert!(status.error.is_some(), "Error should be set");
     }
     
     #[tokio::test]

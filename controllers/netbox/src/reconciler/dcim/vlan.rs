@@ -202,6 +202,13 @@ impl Reconciler {
                     ).await {
                         Ok(created) => {
                             info!("Created VLAN {} ({}) in NetBox (ID: {})", created.vid, created.name, created.id);
+                            // Emit event for successful creation
+                            use crate::events::reasons;
+                            self.record_event_normal(
+                                reasons::CREATED,
+                                &format!("Created VLAN {} ({}) in NetBox (ID: {})", created.vid, created.name, created.id),
+                                vlan_crd,
+                            ).await;
                             created
                         }
                         Err(e) => {

@@ -130,7 +130,7 @@ pub async fn create_ip_address(client: &MockNetBoxClient, address: &str, request
         
         let id = client.next_id();
         let address_net = IpNet::from_str(address)
-            .map_err(|e| NetBoxError::InvalidInput(format!("Invalid IP address format: {} - {}", address, e)))?;
+            .map_err(|e| NetBoxError::Api(format!("Invalid IP address format: {} - {}", address, e)))?;
         let ip = IPAddress {
             id,
             url: format!("{}/api/ipam/ip-addresses/{}/", client.base_url, id),
@@ -278,7 +278,7 @@ pub async fn update_prefix(client: &MockNetBoxClient, id: PrefixId, prefix: Opti
             use std::str::FromStr;
             use ipnet::IpNet;
             let prefix_net = IpNet::from_str(prefix_str)
-                .map_err(|e| NetBoxError::InvalidInput(format!("Invalid prefix format: {} - {}", prefix_str, e)))?;
+                .map_err(|e| NetBoxError::Api(format!("Invalid prefix format: {} - {}", prefix_str, e)))?;
             prefix_obj.prefix = prefix_net;
             prefix_obj.display = prefix_str.to_string();
         }

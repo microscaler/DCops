@@ -2,6 +2,8 @@
 //!
 //! Handles prefixes, IP addresses, aggregates, RIRs, and VLANs
 
+use std::str::FromStr;
+
 use super::MockNetBoxClient;
 use crate::error::NetBoxError;
 use crate::models::*;

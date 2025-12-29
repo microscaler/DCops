@@ -432,6 +432,666 @@ mod tests {
             .expect("Event message should mention token");
     }
     
+    // ============================================================================
+    // Event Infrastructure Tests for Remaining Reconcilers
+    // ============================================================================
+    // These tests verify event infrastructure works for all reconcilers.
+    // Full integration tests would require complex MockNetBoxClient setup.
+    
+    /// Test that CREATED event infrastructure works for Manufacturer reconciler
+    #[tokio::test]
+    async fn test_created_event_on_manufacturer_infrastructure() {
+        let netbox_url = "http://test-netbox".to_string();
+        let mock_token_resolver = Arc::new(MockTokenResolver::new(netbox_url.clone()));
+        let (reconciler, _, mock_event_recorder) = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
+        
+        use crate::test_utils::create_test_netbox_manufacturer;
+        let manufacturer = create_test_netbox_manufacturer("test-manufacturer", "default", Some(1));
+        
+        reconciler.record_event_normal(
+            reasons::CREATED,
+            "Created manufacturer test-manufacturer in NetBox (ID: 1)",
+            &manufacturer,
+        ).await;
+        
+        let event = assert_normal_event_emitted(&mock_event_recorder, reasons::CREATED)
+            .expect("CREATED event should be emitted");
+        assert_event_for_resource(&event, &manufacturer)
+            .expect("Event should be for the correct manufacturer resource");
+        assert_event_message_contains(&event, "Created manufacturer")
+            .expect("Event message should mention manufacturer creation");
+    }
+    
+    /// Test that CREATED event infrastructure works for Device reconciler
+    #[tokio::test]
+    async fn test_created_event_on_device_infrastructure() {
+        let netbox_url = "http://test-netbox".to_string();
+        let mock_token_resolver = Arc::new(MockTokenResolver::new(netbox_url.clone()));
+        let (reconciler, _, mock_event_recorder) = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
+        
+        use crate::test_utils::create_test_netbox_device;
+        let device = create_test_netbox_device(
+            "test-device",
+            "default",
+            "device-type",
+            "device-role",
+            "test-site",
+            Some(1),
+            Some(format!("{}/api/dcim/devices/1/", netbox_url)),
+        );
+        
+        reconciler.record_event_normal(
+            reasons::CREATED,
+            "Created device test-device in NetBox (ID: 1)",
+            &device,
+        ).await;
+        
+        let event = assert_normal_event_emitted(&mock_event_recorder, reasons::CREATED)
+            .expect("CREATED event should be emitted");
+        assert_event_for_resource(&event, &device)
+            .expect("Event should be for the correct device resource");
+        assert_event_message_contains(&event, "Created device")
+            .expect("Event message should mention device creation");
+    }
+    
+    /// Test that CREATED event infrastructure works for IPPool reconciler
+    #[tokio::test]
+    async fn test_created_event_on_ip_pool_infrastructure() {
+        let netbox_url = "http://test-netbox".to_string();
+        let mock_token_resolver = Arc::new(MockTokenResolver::new(netbox_url.clone()));
+        let (reconciler, _, mock_event_recorder) = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
+        
+        use crate::test_utils::create_test_ip_pool;
+        let ip_pool = create_test_ip_pool("test-pool", "default", "test-prefix", None);
+        
+        reconciler.record_event_normal(
+            reasons::CREATED,
+            "Created IPPool test-pool in NetBox",
+            &ip_pool,
+        ).await;
+        
+        let event = assert_normal_event_emitted(&mock_event_recorder, reasons::CREATED)
+            .expect("CREATED event should be emitted");
+        assert_event_for_resource(&event, &ip_pool)
+            .expect("Event should be for the correct IPPool resource");
+        assert_event_message_contains(&event, "Created IPPool")
+            .expect("Event message should mention IPPool creation");
+    }
+    
+    /// Test that CREATED event infrastructure works for IPClaim reconciler
+    #[tokio::test]
+    async fn test_created_event_on_ip_claim_infrastructure() {
+        let netbox_url = "http://test-netbox".to_string();
+        let mock_token_resolver = Arc::new(MockTokenResolver::new(netbox_url.clone()));
+        let (reconciler, _, mock_event_recorder) = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
+        
+        use crate::test_utils::create_test_ip_claim;
+        let ip_claim = create_test_ip_claim(
+            "test-claim",
+            "default",
+            "test-pool",
+            None, // pool_ref_namespace
+            "test-device", // device_name (required)
+            None, // interface
+            None, // preferred_ip
+        );
+        
+        reconciler.record_event_normal(
+            reasons::CREATED,
+            "Allocated IP for IPClaim test-claim",
+            &ip_claim,
+        ).await;
+        
+        let event = assert_normal_event_emitted(&mock_event_recorder, reasons::CREATED)
+            .expect("CREATED event should be emitted");
+        assert_event_for_resource(&event, &ip_claim)
+            .expect("Event should be for the correct IPClaim resource");
+        assert_event_message_contains(&event, "IPClaim")
+            .expect("Event message should mention IPClaim");
+    }
+    
+    /// Test that CREATED event infrastructure works for Aggregate reconciler
+    #[tokio::test]
+    async fn test_created_event_on_aggregate_infrastructure() {
+        let netbox_url = "http://test-netbox".to_string();
+        let mock_token_resolver = Arc::new(MockTokenResolver::new(netbox_url.clone()));
+        let (reconciler, _, mock_event_recorder) = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
+        
+        use crds::NetBoxAggregate;
+        use k8s_openapi::apimachinery::pkg::apis::meta::v1::ObjectMeta;
+        
+        let aggregate = NetBoxAggregate {
+            metadata: ObjectMeta {
+                name: Some("test-aggregate".to_string()),
+                namespace: Some("default".to_string()),
+                ..Default::default()
+            },
+            spec: crds::NetBoxAggregateSpec {
+                prefix: "192.168.0.0/16".to_string(),
+                rir: None,
+                date_allocated: None,
+                description: None,
+                comments: None,
+            },
+            status: None,
+        };
+        
+        reconciler.record_event_normal(
+            reasons::CREATED,
+            "Created aggregate test-aggregate in NetBox (ID: 1)",
+            &aggregate,
+        ).await;
+        
+        let event = assert_normal_event_emitted(&mock_event_recorder, reasons::CREATED)
+            .expect("CREATED event should be emitted");
+        assert_event_for_resource(&event, &aggregate)
+            .expect("Event should be for the correct aggregate resource");
+        assert_event_message_contains(&event, "Created aggregate")
+            .expect("Event message should mention aggregate creation");
+    }
+    
+    // ============================================================================
+    // Additional Event Infrastructure Tests for Remaining Reconcilers
+    // ============================================================================
+    
+    /// Test that CREATED event infrastructure works for DeviceRole reconciler
+    #[tokio::test]
+    async fn test_created_event_on_device_role_infrastructure() {
+        let netbox_url = "http://test-netbox".to_string();
+        let mock_token_resolver = Arc::new(MockTokenResolver::new(netbox_url.clone()));
+        let (reconciler, _, mock_event_recorder) = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
+        
+        use crds::NetBoxDeviceRole;
+        use k8s_openapi::apimachinery::pkg::apis::meta::v1::ObjectMeta;
+        let device_role = NetBoxDeviceRole {
+            metadata: ObjectMeta {
+                name: Some("test-device-role".to_string()),
+                namespace: Some("default".to_string()),
+                ..Default::default()
+            },
+            spec: crds::NetBoxDeviceRoleSpec {
+                name: "test-device-role".to_string(),
+                slug: Some("test-device-role".to_string()),
+                color: Some("9e9e9e".to_string()),
+                vm_role: false,
+                description: None,
+                comments: None,
+            },
+            status: None,
+        };
+        
+        reconciler.record_event_normal(
+            reasons::CREATED,
+            "Created device role test-device-role in NetBox (ID: 1)",
+            &device_role,
+        ).await;
+        
+        let event = assert_normal_event_emitted(&mock_event_recorder, reasons::CREATED)
+            .expect("CREATED event should be emitted");
+        assert_event_for_resource(&event, &device_role)
+            .expect("Event should be for the correct device_role resource");
+        assert_event_message_contains(&event, "Created device role")
+            .expect("Event message should mention device role creation");
+    }
+    
+    /// Test that CREATED event infrastructure works for DeviceType reconciler
+    #[tokio::test]
+    async fn test_created_event_on_device_type_infrastructure() {
+        let netbox_url = "http://test-netbox".to_string();
+        let mock_token_resolver = Arc::new(MockTokenResolver::new(netbox_url.clone()));
+        let (reconciler, _, mock_event_recorder) = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
+        
+        use crds::NetBoxDeviceType;
+        use k8s_openapi::apimachinery::pkg::apis::meta::v1::ObjectMeta;
+        let device_type = NetBoxDeviceType {
+            metadata: ObjectMeta {
+                name: Some("test-device-type".to_string()),
+                namespace: Some("default".to_string()),
+                ..Default::default()
+            },
+            spec: crds::NetBoxDeviceTypeSpec {
+                manufacturer: crds::NetBoxResourceReference {
+                    api_group: "dcops.microscaler.io".to_string(),
+                    kind: "NetBoxManufacturer".to_string(),
+                    name: "test-manufacturer".to_string(),
+                    namespace: Some("default".to_string()),
+                },
+                model: "Test Model".to_string(),
+                slug: None,
+                part_number: None,
+                u_height: 1.0,
+                is_full_depth: false,
+                description: None,
+                comments: None,
+            },
+            status: None,
+        };
+        
+        reconciler.record_event_normal(
+            reasons::CREATED,
+            "Created device type test-device-type in NetBox (ID: 1)",
+            &device_type,
+        ).await;
+        
+        let event = assert_normal_event_emitted(&mock_event_recorder, reasons::CREATED)
+            .expect("CREATED event should be emitted");
+        assert_event_for_resource(&event, &device_type)
+            .expect("Event should be for the correct device_type resource");
+        assert_event_message_contains(&event, "Created device type")
+            .expect("Event message should mention device type creation");
+    }
+    
+    /// Test that CREATED event infrastructure works for Platform reconciler
+    #[tokio::test]
+    async fn test_created_event_on_platform_infrastructure() {
+        let netbox_url = "http://test-netbox".to_string();
+        let mock_token_resolver = Arc::new(MockTokenResolver::new(netbox_url.clone()));
+        let (reconciler, _, mock_event_recorder) = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
+        
+        use crds::NetBoxPlatform;
+        use k8s_openapi::apimachinery::pkg::apis::meta::v1::ObjectMeta;
+        let platform = NetBoxPlatform {
+            metadata: ObjectMeta {
+                name: Some("test-platform".to_string()),
+                namespace: Some("default".to_string()),
+                ..Default::default()
+            },
+            spec: crds::NetBoxPlatformSpec {
+                name: "test-platform".to_string(),
+                slug: Some("test-platform".to_string()),
+                manufacturer: None,
+                napalm_driver: None,
+                napalm_args: None,
+                description: None,
+                comments: None,
+            },
+            status: None,
+        };
+        
+        reconciler.record_event_normal(
+            reasons::CREATED,
+            "Created platform test-platform in NetBox (ID: 1)",
+            &platform,
+        ).await;
+        
+        let event = assert_normal_event_emitted(&mock_event_recorder, reasons::CREATED)
+            .expect("CREATED event should be emitted");
+        assert_event_for_resource(&event, &platform)
+            .expect("Event should be for the correct platform resource");
+        assert_event_message_contains(&event, "Created platform")
+            .expect("Event message should mention platform creation");
+    }
+    
+    /// Test that CREATED event infrastructure works for Region reconciler
+    #[tokio::test]
+    async fn test_created_event_on_region_infrastructure() {
+        let netbox_url = "http://test-netbox".to_string();
+        let mock_token_resolver = Arc::new(MockTokenResolver::new(netbox_url.clone()));
+        let (reconciler, _, mock_event_recorder) = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
+        
+        use crds::NetBoxRegion;
+        use k8s_openapi::apimachinery::pkg::apis::meta::v1::ObjectMeta;
+        let region = NetBoxRegion {
+            metadata: ObjectMeta {
+                name: Some("test-region".to_string()),
+                namespace: Some("default".to_string()),
+                ..Default::default()
+            },
+            spec: crds::NetBoxRegionSpec {
+                name: "test-region".to_string(),
+                slug: Some("test-region".to_string()),
+                parent: None,
+                description: None,
+            },
+            status: None,
+        };
+        
+        reconciler.record_event_normal(
+            reasons::CREATED,
+            "Created region test-region in NetBox (ID: 1)",
+            &region,
+        ).await;
+        
+        let event = assert_normal_event_emitted(&mock_event_recorder, reasons::CREATED)
+            .expect("CREATED event should be emitted");
+        assert_event_for_resource(&event, &region)
+            .expect("Event should be for the correct region resource");
+        assert_event_message_contains(&event, "Created region")
+            .expect("Event message should mention region creation");
+    }
+    
+    /// Test that CREATED event infrastructure works for SiteGroup reconciler
+    #[tokio::test]
+    async fn test_created_event_on_site_group_infrastructure() {
+        let netbox_url = "http://test-netbox".to_string();
+        let mock_token_resolver = Arc::new(MockTokenResolver::new(netbox_url.clone()));
+        let (reconciler, _, mock_event_recorder) = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
+        
+        use crds::NetBoxSiteGroup;
+        use k8s_openapi::apimachinery::pkg::apis::meta::v1::ObjectMeta;
+        let site_group = NetBoxSiteGroup {
+            metadata: ObjectMeta {
+                name: Some("test-site-group".to_string()),
+                namespace: Some("default".to_string()),
+                ..Default::default()
+            },
+            spec: crds::NetBoxSiteGroupSpec {
+                name: "test-site-group".to_string(),
+                slug: Some("test-site-group".to_string()),
+                parent: None,
+                description: None,
+            },
+            status: None,
+        };
+        
+        reconciler.record_event_normal(
+            reasons::CREATED,
+            "Created site group test-site-group in NetBox (ID: 1)",
+            &site_group,
+        ).await;
+        
+        let event = assert_normal_event_emitted(&mock_event_recorder, reasons::CREATED)
+            .expect("CREATED event should be emitted");
+        assert_event_for_resource(&event, &site_group)
+            .expect("Event should be for the correct site_group resource");
+        assert_event_message_contains(&event, "Created site group")
+            .expect("Event message should mention site group creation");
+    }
+    
+    /// Test that CREATED event infrastructure works for Location reconciler
+    #[tokio::test]
+    async fn test_created_event_on_location_infrastructure() {
+        let netbox_url = "http://test-netbox".to_string();
+        let mock_token_resolver = Arc::new(MockTokenResolver::new(netbox_url.clone()));
+        let (reconciler, _, mock_event_recorder) = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
+        
+        use crds::NetBoxLocation;
+        use k8s_openapi::apimachinery::pkg::apis::meta::v1::ObjectMeta;
+        let location = NetBoxLocation {
+            metadata: ObjectMeta {
+                name: Some("test-location".to_string()),
+                namespace: Some("default".to_string()),
+                ..Default::default()
+            },
+            spec: crds::NetBoxLocationSpec {
+                name: "test-location".to_string(),
+                slug: Some("test-location".to_string()),
+                site: crds::NetBoxResourceReference {
+                    api_group: "dcops.microscaler.io".to_string(),
+                    kind: "NetBoxSite".to_string(),
+                    name: "test-site".to_string(),
+                    namespace: Some("default".to_string()),
+                },
+                tenant: crds::NetBoxResourceReference {
+                    api_group: "dcops.microscaler.io".to_string(),
+                    kind: "NetBoxTenant".to_string(),
+                    name: "datacenter-tenant".to_string(),
+                    namespace: Some("default".to_string()),
+                },
+                parent: None,
+                facility: None,
+                description: None,
+            },
+            status: None,
+        };
+        
+        reconciler.record_event_normal(
+            reasons::CREATED,
+            "Created location test-location in NetBox (ID: 1)",
+            &location,
+        ).await;
+        
+        let event = assert_normal_event_emitted(&mock_event_recorder, reasons::CREATED)
+            .expect("CREATED event should be emitted");
+        assert_event_for_resource(&event, &location)
+            .expect("Event should be for the correct location resource");
+        assert_event_message_contains(&event, "Created location")
+            .expect("Event message should mention location creation");
+    }
+    
+    /// Test that CREATED event infrastructure works for VLAN reconciler
+    #[tokio::test]
+    async fn test_created_event_on_vlan_infrastructure() {
+        let netbox_url = "http://test-netbox".to_string();
+        let mock_token_resolver = Arc::new(MockTokenResolver::new(netbox_url.clone()));
+        let (reconciler, _, mock_event_recorder) = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
+        
+        use crds::{NetBoxVLAN, VlanStatus};
+        use k8s_openapi::apimachinery::pkg::apis::meta::v1::ObjectMeta;
+        let vlan = NetBoxVLAN {
+            metadata: ObjectMeta {
+                name: Some("test-vlan".to_string()),
+                namespace: Some("default".to_string()),
+                ..Default::default()
+            },
+            spec: crds::NetBoxVLANSpec {
+                vid: 100,
+                name: "test-vlan".to_string(),
+                site: None,
+                group: None,
+                tenant: crds::NetBoxResourceReference {
+                    api_group: "dcops.microscaler.io".to_string(),
+                    kind: "NetBoxTenant".to_string(),
+                    name: "datacenter-tenant".to_string(),
+                    namespace: Some("default".to_string()),
+                },
+                role: None,
+                status: VlanStatus::Active,
+                description: None,
+                comments: None,
+            },
+            status: None,
+        };
+        
+        reconciler.record_event_normal(
+            reasons::CREATED,
+            "Created VLAN test-vlan in NetBox (ID: 1)",
+            &vlan,
+        ).await;
+        
+        let event = assert_normal_event_emitted(&mock_event_recorder, reasons::CREATED)
+            .expect("CREATED event should be emitted");
+        assert_event_for_resource(&event, &vlan)
+            .expect("Event should be for the correct vlan resource");
+        assert_event_message_contains(&event, "Created VLAN")
+            .expect("Event message should mention VLAN creation");
+    }
+    
+    /// Test that CREATED event infrastructure works for RIR reconciler
+    #[tokio::test]
+    async fn test_created_event_on_rir_infrastructure() {
+        let netbox_url = "http://test-netbox".to_string();
+        let mock_token_resolver = Arc::new(MockTokenResolver::new(netbox_url.clone()));
+        let (reconciler, _, mock_event_recorder) = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
+        
+        use crds::NetBoxRIR;
+        use k8s_openapi::apimachinery::pkg::apis::meta::v1::ObjectMeta;
+        let rir = NetBoxRIR {
+            metadata: ObjectMeta {
+                name: Some("test-rir".to_string()),
+                namespace: Some("default".to_string()),
+                ..Default::default()
+            },
+            spec: crds::NetBoxRIRSpec {
+                name: "test-rir".to_string(),
+                slug: Some("test-rir".to_string()),
+                description: None,
+                is_private: Some(false),
+            },
+            status: None,
+        };
+        
+        reconciler.record_event_normal(
+            reasons::CREATED,
+            "Created RIR test-rir in NetBox (ID: 1)",
+            &rir,
+        ).await;
+        
+        let event = assert_normal_event_emitted(&mock_event_recorder, reasons::CREATED)
+            .expect("CREATED event should be emitted");
+        assert_event_for_resource(&event, &rir)
+            .expect("Event should be for the correct rir resource");
+        assert_event_message_contains(&event, "Created RIR")
+            .expect("Event message should mention RIR creation");
+    }
+    
+    /// Test that CREATED event infrastructure works for Role reconciler (extras)
+    #[tokio::test]
+    async fn test_created_event_on_role_infrastructure() {
+        let netbox_url = "http://test-netbox".to_string();
+        let mock_token_resolver = Arc::new(MockTokenResolver::new(netbox_url.clone()));
+        let (reconciler, _, mock_event_recorder) = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
+        
+        use crds::NetBoxRole;
+        use k8s_openapi::apimachinery::pkg::apis::meta::v1::ObjectMeta;
+        let role = NetBoxRole {
+            metadata: ObjectMeta {
+                name: Some("test-role".to_string()),
+                namespace: Some("default".to_string()),
+                ..Default::default()
+            },
+            spec: crds::NetBoxRoleSpec {
+                name: "test-role".to_string(),
+                slug: Some("test-role".to_string()),
+                weight: None,
+                description: None,
+                comments: None,
+            },
+            status: None,
+        };
+        
+        reconciler.record_event_normal(
+            reasons::CREATED,
+            "Created role test-role in NetBox (ID: 1)",
+            &role,
+        ).await;
+        
+        let event = assert_normal_event_emitted(&mock_event_recorder, reasons::CREATED)
+            .expect("CREATED event should be emitted");
+        assert_event_for_resource(&event, &role)
+            .expect("Event should be for the correct role resource");
+        assert_event_message_contains(&event, "Created role")
+            .expect("Event message should mention role creation");
+    }
+    
+    /// Test that CREATED event infrastructure works for Tag reconciler (extras)
+    #[tokio::test]
+    async fn test_created_event_on_tag_infrastructure() {
+        let netbox_url = "http://test-netbox".to_string();
+        let mock_token_resolver = Arc::new(MockTokenResolver::new(netbox_url.clone()));
+        let (reconciler, _, mock_event_recorder) = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
+        
+        use crds::NetBoxTag;
+        use k8s_openapi::apimachinery::pkg::apis::meta::v1::ObjectMeta;
+        let tag = NetBoxTag {
+            metadata: ObjectMeta {
+                name: Some("test-tag".to_string()),
+                namespace: Some("default".to_string()),
+                ..Default::default()
+            },
+            spec: crds::NetBoxTagSpec {
+                name: "test-tag".to_string(),
+                slug: Some("test-tag".to_string()),
+                color: Some("9e9e9e".to_string()),
+                description: None,
+                comments: None,
+            },
+            status: None,
+        };
+        
+        reconciler.record_event_normal(
+            reasons::CREATED,
+            "Created tag test-tag in NetBox (ID: 1)",
+            &tag,
+        ).await;
+        
+        let event = assert_normal_event_emitted(&mock_event_recorder, reasons::CREATED)
+            .expect("CREATED event should be emitted");
+        assert_event_for_resource(&event, &tag)
+            .expect("Event should be for the correct tag resource");
+        assert_event_message_contains(&event, "Created tag")
+            .expect("Event message should mention tag creation");
+    }
+    
+    /// Test that CREATED event infrastructure works for Interface reconciler
+    #[tokio::test]
+    async fn test_created_event_on_interface_infrastructure() {
+        let netbox_url = "http://test-netbox".to_string();
+        let mock_token_resolver = Arc::new(MockTokenResolver::new(netbox_url.clone()));
+        let (reconciler, _, mock_event_recorder) = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
+        
+        use crds::NetBoxInterface;
+        use k8s_openapi::apimachinery::pkg::apis::meta::v1::ObjectMeta;
+        let interface = NetBoxInterface {
+            metadata: ObjectMeta {
+                name: Some("test-interface".to_string()),
+                namespace: Some("default".to_string()),
+                ..Default::default()
+            },
+            spec: crds::NetBoxInterfaceSpec {
+                device: "test-device".to_string(),
+                name: "eth0".to_string(),
+                r#type: "1000base-t".to_string(),
+                enabled: true,
+                mac_address: None,
+                mtu: None,
+                description: None,
+            },
+            status: None,
+        };
+        
+        reconciler.record_event_normal(
+            reasons::CREATED,
+            "Created interface eth0 in NetBox (ID: 1)",
+            &interface,
+        ).await;
+        
+        let event = assert_normal_event_emitted(&mock_event_recorder, reasons::CREATED)
+            .expect("CREATED event should be emitted");
+        assert_event_for_resource(&event, &interface)
+            .expect("Event should be for the correct interface resource");
+        assert_event_message_contains(&event, "Created interface")
+            .expect("Event message should mention interface creation");
+    }
+    
+    /// Test that CREATED event infrastructure works for MACAddress reconciler
+    #[tokio::test]
+    async fn test_created_event_on_mac_address_infrastructure() {
+        let netbox_url = "http://test-netbox".to_string();
+        let mock_token_resolver = Arc::new(MockTokenResolver::new(netbox_url.clone()));
+        let (reconciler, _, mock_event_recorder) = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
+        
+        use crds::NetBoxMACAddress;
+        use k8s_openapi::apimachinery::pkg::apis::meta::v1::ObjectMeta;
+        let mac_address = NetBoxMACAddress {
+            metadata: ObjectMeta {
+                name: Some("test-mac".to_string()),
+                namespace: Some("default".to_string()),
+                ..Default::default()
+            },
+            spec: crds::NetBoxMACAddressSpec {
+                mac_address: "00:11:22:33:44:55".to_string(),
+                interface: "test-device/eth0".to_string(),
+                description: None,
+                comments: None,
+            },
+            status: None,
+        };
+        
+        reconciler.record_event_normal(
+            reasons::CREATED,
+            "Created MAC address 00:11:22:33:44:55 in NetBox (ID: 1)",
+            &mac_address,
+        ).await;
+        
+        let event = assert_normal_event_emitted(&mock_event_recorder, reasons::CREATED)
+            .expect("CREATED event should be emitted");
+        assert_event_for_resource(&event, &mac_address)
+            .expect("Event should be for the correct mac_address resource");
+        assert_event_message_contains(&event, "Created MAC address")
+            .expect("Event message should mention MAC address creation");
+    }
+    
     use crate::test_utils::mock_token_resolver::TestReconcilerApis;
 }
 

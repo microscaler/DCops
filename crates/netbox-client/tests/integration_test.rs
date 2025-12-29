@@ -74,7 +74,11 @@ async fn test_create_and_delete_ip() {
     
     // Create an IP address
     let request = AllocateIPRequest {
-        address: Some("192.168.100.1/24".to_string()),
+        address: {
+            use std::str::FromStr;
+            use ipnet::IpNet;
+            Some(IpNet::from_str("192.168.100.1/24").expect("Invalid test IP format"))
+        },
         description: Some("Test IP address".to_string()),
         status: Some(IPAddressStatus::Active),
         role: None,
@@ -82,7 +86,10 @@ async fn test_create_and_delete_ip() {
         tags: None,
     };
     
-    let ip = client.create_ip_address("192.168.100.1/24", Some(request)).await;
+    use std::str::FromStr;
+    use ipnet::IpNet;
+    let address_net = IpNet::from_str("192.168.100.1/24").expect("Invalid test IP format");
+    let ip = client.create_ip_address(&address_net, Some(request)).await;
     
     if let Ok(ip) = ip {
         println!("Created IP address: {}", ip.address);

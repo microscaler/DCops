@@ -142,12 +142,8 @@ DCops is built on proven, production-ready technologies:
 
 DCops integrates with your existing Kubernetes cluster and NetBox instance. No special hardware required—just a management Kubernetes cluster and NetBox.
 
-See our [documentation](docs/) for installation guides, architecture details, and examples.
-
 ## Learn More
 
-- **Architecture Overview**: [docs/00_Summary.md](docs/00_Summary.md)
-- **NetBox Integration**: [docs/](docs/)
 - **Contributing**: [CONTRIBUTING.md](CONTRIBUTING.md)
 
 ---

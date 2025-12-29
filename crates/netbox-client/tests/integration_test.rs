@@ -88,7 +88,7 @@ async fn test_create_and_delete_ip() {
         println!("Created IP address: {}", ip.address);
         
         // Clean up: delete the IP address
-        let _ = client.delete_ip_address(ip.id).await;
+        let _ = client.delete_ip_address(netbox_client::IpAddressId(ip.id)).await;
     }
 }
 

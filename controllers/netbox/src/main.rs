@@ -10,6 +10,8 @@
 mod controller;
 mod reconciler;
 mod watcher;
+#[cfg(test)]
+mod watcher_test;
 mod error;
 mod backoff;
 mod reconcile_helpers;

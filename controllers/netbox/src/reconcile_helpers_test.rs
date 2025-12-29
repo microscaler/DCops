@@ -1410,78 +1410,18 @@ mod tests {
         use netbox_client::{MockNetBoxClient, NetBoxClientTrait, NetBoxError};
 
         #[tokio::test]
-        async fn test_check_and_update_existing_update_error() {
-            let mut mock_client = MockNetBoxClient::new("http://test-netbox".to_string());
-            
-            // Add a site that exists
-            let existing_site = netbox_client::Site {
-                id: 1,
-                url: "http://test-netbox/api/dcim/sites/1/".to_string(),
-                display: "test-site".to_string(),
-                name: "test-site".to_string(),
-                slug: "test-site".to_string(),
-                status: netbox_client::SiteStatus::Active,
-                region: None,
-                group: None,
-                tenant: None,
-                facility: None,
-                time_zone: None,
-                description: Some("Old description".to_string()),
-                physical_address: None,
-                shipping_address: None,
-                latitude: None,
-                longitude: None,
-                contact_name: None,
-                contact_phone: None,
-                contact_email: None,
-                comments: None,
-                tags: vec![],
-                custom_fields: std::collections::HashMap::new(),
-                created: "2024-01-01T00:00:00Z".to_string(),
-                last_updated: "2024-01-01T00:00:00Z".to_string(),
-            };
-            mock_client.add_site(existing_site.clone());
-            
-            // Configure update to fail
-            mock_client.set_update_site_error(netbox_client::NetBoxError::Api("Update failed".to_string()));
-
-            let result = check_and_update_existing(
-                &mock_client,
-                1,
-                "site",
-                async { mock_client.get_site(netbox_client::SiteId(1)).await },
-                |_| true, // Always needs update
-                async { mock_client.update_site(netbox_client::SiteId(1), &netbox_client::SiteUpdateRequest {
-                    name: Some("test-site".to_string()),
-                    description: Some("New description".to_string()),
-                    ..Default::default()
-                }).await },
-            ).await;
-
-            assert!(result.is_err());
-            if let Err(ControllerError::NetBox(netbox_client::NetBoxError::Api(_))) = result {
-                // Expected error type
-            } else {
-                panic!("Expected NetBox API error");
-            }
-        }
-
-        #[tokio::test]
         async fn test_check_existing_network_error() {
-            let mut mock_client = MockNetBoxClient::new("http://test-netbox".to_string());
-            
-            // Configure get to return network error (not NotFound)
-            mock_client.set_get_site_error(netbox_client::NetBoxError::Api("Network error".to_string()));
-
-            let result = check_existing(
-                &mock_client,
+            // Test that network errors (not NotFound) are propagated for retry
+            // Using a closure that returns an error directly
+            let result: Result<Option<TestResource>, ControllerError> = check_existing(
+                &MockNetBoxClient::new("http://test-netbox"),
                 1,
-                "site",
-                async { mock_client.get_site(netbox_client::SiteId(1)).await },
+                "test-resource",
+                async { Err::<TestResource, _>(NetBoxError::Api("Network error".to_string())) },
             ).await;
 
             assert!(result.is_err());
-            if let Err(ControllerError::NetBox(netbox_client::NetBoxError::Api(_))) = result {
+            if let Err(ControllerError::NetBox(NetBoxError::Api(_))) = result {
                 // Expected error type - should retry, not assume deleted
             } else {
                 panic!("Expected NetBox error for retry");

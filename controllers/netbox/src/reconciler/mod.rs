@@ -480,6 +480,12 @@ impl Reconciler {
             let prefix_cidr = &prefix_crd.spec.prefix;
             info!("Mapping NetBoxPrefix {}/{} (prefix: {}) to NetBox resource...", namespace, name, prefix_cidr);
             
+            // Convert prefix_cidr string to IpNet for comparison (used in multiple places)
+            use std::str::FromStr;
+            use ipnet::IpNet;
+            let prefix_net = IpNet::from_str(prefix_cidr)
+                .map_err(|e| ControllerError::InvalidIPFormat(format!("Invalid prefix format: {} - {}", prefix_cidr, e)))?;
+            
             // Try multiple methods to find the prefix:
             // 1. Direct get by ID (if we have a hint)
             // 2. Query by prefix CIDR (if deserialization works)
@@ -490,11 +496,6 @@ impl Reconciler {
                 false,
             ).await {
                 // Query succeeded, check if we found a match
-                // Convert prefix_cidr string to IpNet for comparison
-                use std::str::FromStr;
-                use ipnet::IpNet;
-                let prefix_net = IpNet::from_str(prefix_cidr)
-                    .map_err(|e| ControllerError::InvalidIPFormat(format!("Invalid prefix format: {} - {}", prefix_cidr, e)))?;
                 if let Some(found) = prefixes.iter().find(|p| p.prefix == prefix_net) {
                     Some(found.clone())
                 } else {

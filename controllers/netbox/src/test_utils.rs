@@ -24,6 +24,9 @@ pub mod mock_token_resolver;
 pub mod mock_event_recorder;
 
 #[cfg(test)]
+pub mod event_test_helpers;
+
+#[cfg(test)]
 use crate::reconciler::Reconciler;
 #[cfg(test)]
 use crds::*;

@@ -65,6 +65,13 @@ where
                 resource_key, error_count, backoff_seconds
             );
             
+            // Emit event for retry attempt
+            use crate::events::reasons;
+            let error_str = format!("{}", error);
+            let message = format!("Retrying reconciliation after error (attempt {}, backoff: {}s): {}", error_count, backoff_seconds, error_str);
+            // Note: We can't easily emit events here since we don't have direct access to event_recorder
+            // Events will be emitted in the reconciler methods themselves
+            
             Action::requeue(Duration::from_secs(backoff_seconds))
         }
     };

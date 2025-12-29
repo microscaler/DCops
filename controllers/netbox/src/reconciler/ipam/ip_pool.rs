@@ -36,22 +36,38 @@ impl Reconciler {
                     prefix_crd_namespace, prefix_crd_name, name, e
                 );
                 error!("{}", error_msg);
+                // Emit event for dependency not found
+                use crate::events::reasons;
+                self.record_event_warning(
+                    reasons::DEPENDENCY_NOT_FOUND,
+                    &error_msg,
+                    pool,
+                ).await;
                 return Err(ControllerError::PrefixNotFound(error_msg));
             }
         };
         
         // Get NetBox ID from NetBoxPrefix status
-        let prefix_id = prefix_crd.status
+        let prefix_id = match prefix_crd.status
             .as_ref()
-            .and_then(|s| s.netbox_id)
-            .ok_or_else(|| {
+            .and_then(|s| s.netbox_id) {
+            Some(id) => id,
+            None => {
                 let error_msg = format!(
                     "NetBoxPrefix {}/{} has not been created in NetBox yet (no netbox_id in status). Ensure the NetBoxPrefix CRD is reconciled first.",
                     prefix_crd_namespace, prefix_crd_name
                 );
                 error!("{}", error_msg);
-                ControllerError::PrefixNotFound(error_msg)
-            })?;
+                // Emit event for dependency not ready
+                use crate::events::reasons;
+                self.record_event_warning(
+                    reasons::DEPENDENCY_NOT_FOUND,
+                    &error_msg,
+                    pool,
+                ).await;
+                return Err(ControllerError::PrefixNotFound(error_msg));
+            }
+        };
         
         // Get NetBox prefix URL from NetBoxPrefix status
         let prefix_url = prefix_crd.status
@@ -92,6 +108,13 @@ impl Reconciler {
             Err(e) => {
                 let error_msg = format!("Failed to get available IPs: {}", e);
                 error!("{}", error_msg);
+                // Emit event for reconciliation failure
+                use crate::events::reasons;
+                self.record_event_warning(
+                    reasons::RECONCILIATION_FAILED,
+                    &error_msg,
+                    pool,
+                ).await;
                 return Err(ControllerError::NetBox(e));
             }
         };
@@ -105,6 +128,13 @@ impl Reconciler {
             Err(e) => {
                 let error_msg = format!("Failed to query allocated IPs: {}", e);
                 error!("{}", error_msg);
+                // Emit event for reconciliation failure
+                use crate::events::reasons;
+                self.record_event_warning(
+                    reasons::RECONCILIATION_FAILED,
+                    &error_msg,
+                    pool,
+                ).await;
                 return Err(ControllerError::NetBox(e));
             }
         };

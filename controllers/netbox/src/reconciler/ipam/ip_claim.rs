@@ -95,6 +95,13 @@ impl Reconciler {
                 let error_msg = format!("Failed to get IPPool {}/{}: {}", pool_namespace, pool_name, e);
                 error!("{}", error_msg);
                 update_status_error(&*self.ip_claim_api, name, namespace, error_msg.clone(), claim.status.as_ref()).await;
+                // Emit event for dependency not found
+                use crate::events::reasons;
+                self.record_event_warning(
+                    reasons::DEPENDENCY_NOT_FOUND,
+                    &error_msg,
+                    claim,
+                ).await;
                 return Err(ControllerError::IPPoolNotFound(error_msg));
             }
         };
@@ -141,6 +148,13 @@ impl Reconciler {
                 let error_msg = format!("Prefix {} not found in NetBox: {}", prefix_id, e);
                 error!("{}", error_msg);
                 update_status_error(&*self.ip_claim_api, name, namespace, error_msg.clone(), claim.status.as_ref()).await;
+                // Emit event for dependency not found
+                use crate::events::reasons;
+                self.record_event_warning(
+                    reasons::DEPENDENCY_NOT_FOUND,
+                    &error_msg,
+                    claim,
+                ).await;
                 return Err(ControllerError::PrefixNotFound(error_msg));
             }
         };
@@ -304,11 +318,26 @@ impl Reconciler {
                 let error_msg = format!("Failed to allocate IP from prefix {}: {}", prefix_id, e);
                 error!("{}", error_msg);
                 update_status_error(&*self.ip_claim_api, name, namespace, error_msg.clone(), claim.status.as_ref()).await;
+                // Emit event for reconciliation failure
+                use crate::events::reasons;
+                self.record_event_warning(
+                    reasons::RECONCILIATION_FAILED,
+                    &error_msg,
+                    claim,
+                ).await;
                 return Err(ControllerError::AllocationFailed(error_msg));
             }
         };
         
         info!("Allocated IP {} for IPClaim {}/{}", allocated_ip.address, namespace, name);
+        
+        // Emit event for successful allocation
+        use crate::events::reasons;
+        self.record_event_normal(
+            reasons::CREATED,
+            &format!("Allocated IP {} for IPClaim {}/{}", allocated_ip.address, namespace, name),
+            claim,
+        ).await;
         
         // Update IPClaim status with success - only if status changed
         // IPClaim status must show the allocated IP address
@@ -347,6 +376,13 @@ impl Reconciler {
                     let error_msg = format!("Failed to update IPClaim status: {}", e);
                     error!("{}", error_msg);
                     update_status_error(&*self.ip_claim_api, name, namespace, error_msg.clone(), claim.status.as_ref()).await;
+                    // Emit event for reconciliation failure
+                    use crate::events::reasons;
+                    self.record_event_warning(
+                        reasons::RECONCILIATION_FAILED,
+                        &error_msg,
+                        claim,
+                    ).await;
                     Err(ControllerError::Kube(e.into()))
                 }
             }

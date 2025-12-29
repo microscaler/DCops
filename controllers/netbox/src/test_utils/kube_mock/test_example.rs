@@ -10,27 +10,19 @@ mod tests {
     use kube::Client;
 
     #[tokio::test]
-    #[ignore] // Example test - not meant to run yet
-    async fn example_mock_client_usage() {
+    async fn test_mock_client_creation() {
         // kube-rs recommended pattern from https://kube.rs/controllers/testing/
-        let (mock_service, mut handle) = mock::pair::<Request<Body>, Response<Body>>();
+        let (mock_service, _handle) = mock::pair::<Request<Body>, Response<Body>>();
         
-        // Create mock client
+        // Create mock client - this will fail at compile time if kube 2.0 API changed
         let client_result = create_mock_kube_client(mock_service, "default").await;
         
-        // This should work if kube 2.0 supports Client::new with a service
-        match client_result {
-            Ok(client) => {
-                // Client created successfully - can now use it in tests
-                println!("Mock client created successfully!");
-                // Use client to create Api instances and test reconcilers
-            }
-            Err(e) => {
-                // If this fails, kube 2.0 may have changed the API
-                // We'll need to use an alternative approach
-                eprintln!("Failed to create mock client: {:?}", e);
-            }
-        }
+        // Assert client was created successfully
+        assert!(client_result.is_ok(), "Failed to create mock client: {:?}", client_result.err());
+        let _client = client_result.unwrap();
+        
+        // If we get here, kube 2.0 supports Client::new with tower-test mocks!
+        // We can now use this in our reconciler tests
     }
 }
 

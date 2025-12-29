@@ -4,16 +4,17 @@
 //!
 //! This follows the kube-rs recommended pattern for testing:
 //! https://kube.rs/controllers/testing/
+//!
+//! Note: kube 2.0 uses its own Body type, so we need to adapt the tower-test mock.
 
 #[cfg(test)]
 use kube::Client;
 #[cfg(test)]
 use tower_test::mock;
 #[cfg(test)]
-use hyper::http::{Request, Response};
-// Note: tower-test 0.4 uses hyper 0.14, which has hyper::Body
+use http::Request;
 #[cfg(test)]
-use hyper::Body;
+use kube::client::Body as KubeBody;
 
 /// Create a mock Kubernetes client for testing
 /// 
@@ -24,10 +25,10 @@ use hyper::Body;
 /// 
 /// ```rust,no_run
 /// use tower_test::mock;
-/// use hyper::Body;
+/// use kube::client::Body;
 /// 
 /// let (mock_service, mut handle) = mock::pair::<Request<Body>, Response<Body>>();
-/// let client = create_mock_kube_client(mock_service, "default").await?;
+/// let client = create_mock_kube_client(mock_service, "default");
 /// 
 /// // Set up expected API interactions using handle
 /// // Then use client to create Api instances
@@ -41,13 +42,18 @@ use hyper::Body;
 /// let client = Client::new(mock_service, "default");
 /// ```
 /// 
-/// kube 2.0's Client API may have changed. This function uses the recommended pattern.
-pub async fn create_mock_kube_client(
-    mock_service: impl tower::Service<Request<Body>, Response = Response<Body>> + Send + Clone + 'static,
+/// kube 2.0's Client::new returns Client directly (not Result) and uses kube::client::Body.
+pub fn create_mock_kube_client<S>(
+    mock_service: S,
     default_namespace: &str,
-) -> Result<Client, kube::Error> {
+) -> Client
+where
+    S: tower::Service<Request<KubeBody>> + Send + Clone + 'static,
+    S::Response: tower::Service<Request<KubeBody>> + Send,
+    S::Error: Into<kube::Error>,
+{
     // kube-rs recommended pattern: Client::new(mock_service, default_namespace)
-    // According to kube-rs docs, this should work with tower-test mocks
+    // Client::new returns Client directly (not Result) in kube 2.0
     Client::new(mock_service, default_namespace)
 }
 

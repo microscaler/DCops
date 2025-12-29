@@ -6,6 +6,8 @@ pub mod site;
 #[cfg(test)]
 pub mod site_test;
 pub mod region;
+#[cfg(test)]
+pub mod region_test;
 pub mod site_group;
 pub mod device_role;
 #[cfg(test)]

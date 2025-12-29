@@ -177,6 +177,11 @@ impl MockNetBoxClient {
         self.mac_addresses.lock().unwrap().insert(mac_address, mac);
     }
 
+    /// Add a region to the mock store (for test setup)
+    pub fn add_region(&self, region: Region) {
+        self.regions.lock().unwrap().insert(region.id, region);
+    }
+
     /// Generate next ID
     pub(crate) fn next_id(&self) -> u64 {
         let mut id = self.next_id.lock().unwrap();

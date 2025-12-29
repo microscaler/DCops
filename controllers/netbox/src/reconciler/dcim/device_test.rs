@@ -97,52 +97,79 @@ mod tests {
     }
     
     #[tokio::test]
-    #[ignore] // Ignored until kube::Client mocking is implemented
     async fn test_reconcile_device_create() {
-        // Setup: Create mock NetBoxClient
-        let _mock_netbox = MockNetBoxClient::new("http://test-netbox");
+        use crate::test_utils::mock_token_resolver::TestReconcilerApis;
+        
+        // Setup: Create mock TokenResolver
+        let netbox_url = "http://test-netbox".to_string();
+        let mock_token_resolver = Arc::new(MockTokenResolver::new(netbox_url.clone()));
+        mock_token_resolver.add_secret("default", "netbox-token-datacenter-tenant", "test-token".to_string());
+        
+        // Setup: Get mock client before creating reconciler (needed to set up NetBox data)
+        let mock_client = mock_token_resolver.mock_client();
+        
+        // Setup: Add device type to mock NetBox client (needed for create_device to work)
+        use netbox_client::{DeviceType, NestedManufacturer};
+        use chrono::Utc;
+        let manufacturer_id = 1;
+        let device_type_netbox = DeviceType {
+            id: 1,
+            url: format!("{}/api/dcim/device-types/1/", netbox_url),
+            display: "Test Model".to_string(),
+            manufacturer: NestedManufacturer {
+                id: manufacturer_id,
+                url: format!("{}/api/dcim/manufacturers/{}/", netbox_url, manufacturer_id),
+                display: "Test Manufacturer".to_string(),
+                name: "Test Manufacturer".to_string(),
+                slug: "test-manufacturer".to_string(),
+            },
+            model: "Test Model".to_string(),
+            slug: "test-model".to_string(),
+            part_number: None,
+            u_height: 1.0,
+            is_full_depth: false,
+            description: None,
+            comments: None,
+            device_count: 0,
+            created: Utc::now().to_rfc3339(),
+            last_updated: Utc::now().to_rfc3339(),
+        };
+        mock_client.device_types.lock().unwrap().insert((manufacturer_id, "Test Model".to_string()), device_type_netbox);
+        
+        // Setup: Create reconciler
+        let (reconciler, apis) = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
+        let TestReconcilerApis {
+            tenant_api,
+            site_api,
+            device_type_api,
+            device_role_api,
+            device_api,
+            ..
+        } = apis;
         
         // Setup: Create test data
         let (mut device, tenant, site, device_type, device_role) = setup_device_test_data();
         device.status = None; // Clear status to test create path
         
-        // Setup: Create mock Kubernetes APIs
-        let tenant_api = MockKubeApi::<NetBoxTenant>::new();
-        // tenant_api.store("datacenter-tenant".to_string(), tenant);
+        // Store dependencies in mock APIs
+        tenant_api.store("datacenter-tenant".to_string(), tenant);
+        site_api.store("test-site".to_string(), site);
+        device_type_api.store("test-device-type".to_string(), device_type);
+        device_role_api.store("test-device-role".to_string(), device_role);
+        device_api.store("test-device".to_string(), device.clone());
         
-        let site_api = MockKubeApi::<NetBoxSite>::new();
-        // site_api.store("test-site".to_string(), site);
+        // Execute: Reconcile
+        let result = reconciler.reconcile_netbox_device(&device).await;
         
-        let device_type_api = MockKubeApi::<NetBoxDeviceType>::new();
-        // device_type_api.store("test-device-type".to_string(), device_type);
+        // Assert: Should succeed
+        assert!(result.is_ok(), "Reconciliation should succeed: {:?}", result.err());
         
-        let device_role_api = MockKubeApi::<NetBoxDeviceRole>::new();
-        // device_role_api.store("test-device-role".to_string(), device_role);
-        
-        let _device_api = MockKubeApi::<NetBoxDevice>::new();
-        // device_api.store("test-device".to_string(), device.clone());
-        
-        // Setup: Create reconciler
-        let _kube_client = match Client::try_default().await {
-            Ok(client) => client,
-            Err(_) => return, // Skip test if no kube client available
-        };
-        
-        // TODO: Uncomment once kube::Client mocking is implemented
-        // let reconciler = create_test_reconciler(kube_client, "http://test-netbox".to_string());
-        // 
-        // // Execute: Reconcile
-        // let result = reconciler.reconcile_netbox_device(&device).await;
-        // 
-        // // Assert: Should succeed
-        // assert!(result.is_ok(), "Reconciliation should succeed: {:?}", result.err());
-        // 
-        // // Assert: Status should be updated with NetBox ID
-        // let updated_crd = device_api.get("test-device").await.unwrap();
-        // assert!(updated_crd.status.is_some(), "Status should be set");
-        // let status = updated_crd.status.unwrap();
-        // assert!(status.netbox_id.is_some(), "NetBox ID should be set");
-        // assert_eq!(status.state, ResourceState::Created, "State should be Created");
+        // Assert: Status should be updated with NetBox ID
+        let updated_crd = device_api.get("test-device").await.unwrap();
+        assert!(updated_crd.status.is_some(), "Status should be set");
+        let status = updated_crd.status.unwrap();
+        assert!(status.netbox_id.is_some(), "NetBox ID should be set");
+        assert_eq!(status.state, ResourceState::Created, "State should be Created");
     }
     
     #[tokio::test]

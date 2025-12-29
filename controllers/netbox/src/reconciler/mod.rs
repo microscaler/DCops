@@ -478,13 +478,14 @@ impl Reconciler {
             
             // Try to find this prefix in NetBox by CIDR
             let prefix_cidr = &prefix_crd.spec.prefix;
-            info!("Mapping NetBoxPrefix {}/{} (prefix: {}) to NetBox resource...", namespace, name, prefix_net);
             
             // Convert prefix_cidr string to IpNet for comparison (used in multiple places)
             use std::str::FromStr;
             use ipnet::IpNet;
             let prefix_net = IpNet::from_str(prefix_cidr)
                 .map_err(|e| ControllerError::InvalidIPFormat(format!("Invalid prefix format: {} - {}", prefix_cidr, e)))?;
+            
+            info!("Mapping NetBoxPrefix {}/{} (prefix: {}) to NetBox resource...", namespace, name, prefix_net);
             
             // Try multiple methods to find the prefix:
             // 1. Direct get by ID (if we have a hint)

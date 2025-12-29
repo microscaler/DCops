@@ -432,7 +432,7 @@ impl Reconciler {
                         None, // tags - omit for now (requires numeric IDs or tag slugs)
                     ).await {
                         Ok(created) => {
-                            info!("Created prefix {} in NetBox (ID: {})", created.prefix, created.id);
+                            info!("Created prefix {} in NetBox (ID: {})", created.prefix.to_string(), created.id);
                             created
                         }
                         Err(e) => {
@@ -448,7 +448,7 @@ impl Reconciler {
                                 ).await {
                                     Ok(all_prefixes) => {
                                         if let Some(found) = all_prefixes.iter().find(|p| p.prefix == prefix_net) {
-                                            info!("Found existing prefix {} in NetBox (ID: {}) after create conflict", found.prefix, found.id);
+                                            info!("Found existing prefix {} in NetBox (ID: {}) after create conflict", found.prefix.to_string(), found.id);
                                             found.clone()
                                         } else {
                                             // Prefix exists but we can't find it - this is unusual

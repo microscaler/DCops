@@ -11,7 +11,7 @@
 #[cfg(test)]
 mod fixtures;
 
-use netbox_client::{NetBoxClient, AllocateIPRequest, IPAddressStatus};
+use netbox_client::{NetBoxClient, NetBoxClientTrait, AllocateIPRequest, IPAddressStatus};
 
 #[tokio::test]
 #[ignore] // Requires running NetBox instance

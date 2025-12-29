@@ -63,13 +63,13 @@ mod tests {
         let available_ips = vec![
             AvailableIP {
                 family: 4,
-                address: "192.168.1.1/24".to_string(),
+                address: ipnet::IpNet::from_str("192.168.1.1/24").unwrap(),
                 vrf: None,
                 description: None,
             },
             AvailableIP {
                 family: 4,
-                address: "192.168.1.2/24".to_string(),
+                address: ipnet::IpNet::from_str("192.168.1.2/24").unwrap(),
                 vrf: None,
                 description: None,
             },
@@ -181,13 +181,13 @@ mod tests {
         let available_ips = vec![
             netbox_client::AvailableIP {
                 family: 4,
-                address: "192.168.1.1/24".to_string(),
+                address: ipnet::IpNet::from_str("192.168.1.1/24").unwrap(),
                 vrf: None,
                 description: None,
             },
             netbox_client::AvailableIP {
                 family: 4,
-                address: "192.168.1.2/24".to_string(),
+                address: ipnet::IpNet::from_str("192.168.1.2/24").unwrap(),
                 vrf: None,
                 description: None,
             },
@@ -256,7 +256,7 @@ mod tests {
         let available_ips = vec![
             netbox_client::AvailableIP {
                 family: 4,
-                address: "192.168.1.1/24".to_string(),
+                address: ipnet::IpNet::from_str("192.168.1.1/24").unwrap(),
                 vrf: None,
                 description: None,
             },

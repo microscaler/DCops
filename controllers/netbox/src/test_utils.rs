@@ -167,12 +167,16 @@ pub fn create_test_prefix(
     use netbox_client::{Prefix, PrefixStatus};
     use chrono::Utc;
     
+    use std::str::FromStr;
+    use ipnet::IpNet;
+    let prefix_net = IpNet::from_str(prefix)
+        .expect("Invalid prefix format in test");
     Prefix {
         id,
         url: format!("{}/api/ipam/prefixes/{}/", base_url, id),
         display: prefix.to_string(),
         family: if prefix.contains(':') { 6 } else { 4 },
-        prefix: prefix.to_string(),
+        prefix: prefix_net,
         vrf: None,
         tenant: None,
         vlan: None,

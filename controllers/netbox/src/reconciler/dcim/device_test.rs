@@ -68,7 +68,7 @@ mod tests {
                 name: "test-device-role".to_string(),
                 slug: None,
                 color: None,
-                vm_role: None,
+                vm_role: false,
                 description: None,
                 comments: None,
             },

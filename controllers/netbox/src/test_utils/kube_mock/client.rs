@@ -43,17 +43,19 @@ use kube::client::Body as KubeBody;
 /// ```
 /// 
 /// kube 2.0's Client::new returns Client directly (not Result) and uses kube::client::Body.
+/// 
+/// NOTE: This function is currently unimplemented due to Body type mismatch between
+/// tower-test (hyper::Body) and kube 2.0 (kube::client::Body). 
+/// Use MockTokenResolver instead for testing without a real kube::Client.
 pub fn create_mock_kube_client<S>(
-    mock_service: S,
-    default_namespace: &str,
+    _mock_service: S,
+    _default_namespace: &str,
 ) -> Client
 where
-    S: tower::Service<Request<KubeBody>> + Send + Clone + 'static,
-    S::Response: tower::Service<Request<KubeBody>> + Send,
-    S::Error: Into<kube::Error>,
+    S: Send + Clone + 'static,
 {
-    // kube-rs recommended pattern: Client::new(mock_service, default_namespace)
-    // Client::new returns Client directly (not Result) in kube 2.0
-    Client::new(mock_service, default_namespace)
+    // This is blocked by Body type mismatch in kube 2.0
+    // Use MockTokenResolver for testing instead
+    unimplemented!("Direct kube::Client mocking with tower-test is blocked by Body type mismatch in kube 2.0. Use MockTokenResolver for testing.")
 }
 

@@ -172,6 +172,11 @@ impl MockNetBoxClient {
         self.locations.lock().unwrap().insert(location.id, location);
     }
 
+    /// Add a MAC address to the mock store (for test setup)
+    pub fn add_mac_address(&self, mac_address: String, mac: MACAddress) {
+        self.mac_addresses.lock().unwrap().insert(mac_address, mac);
+    }
+
     /// Generate next ID
     pub(crate) fn next_id(&self) -> u64 {
         let mut id = self.next_id.lock().unwrap();

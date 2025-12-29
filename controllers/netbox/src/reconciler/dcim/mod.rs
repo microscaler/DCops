@@ -29,6 +29,8 @@ pub mod location;
 #[cfg(test)]
 pub mod location_test;
 pub mod mac_address;
+#[cfg(test)]
+pub mod mac_address_test;
 pub mod vlan;
 #[cfg(test)]
 pub mod vlan_test;

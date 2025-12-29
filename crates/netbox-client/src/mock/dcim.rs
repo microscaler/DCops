@@ -231,8 +231,35 @@ pub async fn get_mac_address_by_address(client: &MockNetBoxClient, mac: &str) ->
         Ok(client.mac_addresses.lock().unwrap().get(mac).cloned())
 }
 
-pub async fn create_mac_address(_client: &MockNetBoxClient, _mac_address: &str, _assigned_object_type: &str, _assigned_object_id: u64, _description: Option<String>, _comments: Option<String>) -> Result<MACAddress, NetBoxError> {
-        Err(NetBoxError::Api("Not implemented in mock".to_string()))
+pub async fn create_mac_address(client: &MockNetBoxClient, mac_address: &str, _assigned_object_type: &str, assigned_object_id: u64, description: Option<String>, comments: Option<String>) -> Result<MACAddress, NetBoxError> {
+        use chrono::Utc;
+        
+        // Verify interface exists (for assigned_object_id)
+        let _interface = client.interfaces
+            .lock()
+            .unwrap()
+            .get(&assigned_object_id)
+            .cloned()
+            .ok_or_else(|| NetBoxError::NotFound(format!("Interface {} not found", assigned_object_id)))?;
+        
+        let id = client.next_id();
+        let mac = MACAddress {
+            id,
+            url: format!("{}/api/dcim/mac-addresses/{}/", client.base_url, id),
+            display: mac_address.to_string(),
+            mac_address: mac_address.to_string(),
+            assigned_object_type: Some(_assigned_object_type.to_string()),
+            assigned_object_id: Some(assigned_object_id),
+            assigned_object: None,
+            description,
+            comments,
+            tags: vec![],
+            created: Utc::now().to_rfc3339(),
+            last_updated: Utc::now().to_rfc3339(),
+        };
+        
+        client.mac_addresses.lock().unwrap().insert(mac_address.to_string(), mac.clone());
+        Ok(mac)
     }
 
 pub async fn query_sites(client: &MockNetBoxClient, _filters: &[(&str, &str)], _fetch_all: bool) -> Result<Vec<Site>, NetBoxError> {

@@ -1,0 +1,11 @@
+[profile.default]
+# Default: run tests in parallel
+
+[[profile.default.overrides]]
+# Serial tests that should run one at a time
+# Add test filters here if you have tests that need to run serially
+# Example:
+# filter = 'test(some_module::serial_tests::*)'
+# threads-required = 1
+# partition = "serial"
+

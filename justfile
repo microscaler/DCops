@@ -89,6 +89,13 @@ test-unit-verbose:
     @echo "🧪 Running unit tests (verbose)..."
     @cargo test --workspace --lib -- --nocapture --no-fail-fast
 
+# Run tests with nextest (faster test execution)
+nextest-test:
+    @echo "🧪 Running tests with nextest..."
+    @cargo nextest run --workspace --all-targets --fail-fast --retries 1
+
+alias nt := nextest-test
+
 # Run tests with LLVM coverage
 test-coverage:
     @echo "🧪 Running tests with LLVM coverage..."

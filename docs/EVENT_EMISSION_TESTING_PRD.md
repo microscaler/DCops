@@ -396,10 +396,17 @@ pub fn create_test_reconciler_with_mock_token_resolver(
 
 **Completed**: 2025-01-28
 
-**Outstanding (Optional)**:
-- Add event tests for remaining 16 reconcilers (can be done incrementally)
+**Outstanding (Optional - Incremental Work)**:
+- Add event tests for remaining 16 reconcilers (can be done incrementally as needed)
+  - Remaining reconcilers: aggregate, device, device_role, device_type, extras, interface, ip_claim, ip_pool, location, mac_address, manufacturer, platform, region, rir, site_group, vlan
+  - Current tests cover: Prefix, Tenant, Site (infrastructure verified)
+  - Pattern established - can be replicated for other reconcilers
 - Add DELETED event tests when deletion feature is implemented
+  - Event reason exists but not yet used in reconcilers
+  - Will need tests when resource deletion is implemented
 - Add STARTUP_MAPPED event tests when startup mapping feature is implemented
+  - Event reason exists but not yet used in reconcilers
+  - Will need tests when startup reconciliation mapping is implemented
 
 ---
 

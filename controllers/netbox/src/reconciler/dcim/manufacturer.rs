@@ -44,6 +44,14 @@ impl Reconciler {
         let netbox_manufacturer = match drift_result {
             DriftCheckResult::UseExisting(manufacturer) => Some(manufacturer),
             DriftCheckResult::StatusCleared { message } => {
+                // Emit event for drift detection
+                use crate::events::reasons;
+                self.record_event_warning(
+                    reasons::DRIFT_DETECTED,
+                    &format!("NetBoxManufacturer {}/{} drift detected: {}", namespace, name, message),
+                    manufacturer_crd,
+                ).await;
+                
                 let status_patch = Self::create_typed_manufacturer_status_patch(
                     0, String::new(), ResourceState::Pending,
                     Some(message),
@@ -118,6 +126,13 @@ impl Reconciler {
                     ).await {
                         Ok(created) => {
                             info!("Created manufacturer {} in NetBox (ID: {})", created.name, created.id);
+                            // Emit event for successful creation
+                            use crate::events::reasons;
+                            self.record_event_normal(
+                                reasons::CREATED,
+                                &format!("Created manufacturer {} in NetBox (ID: {})", created.name, created.id),
+                                manufacturer_crd,
+                            ).await;
                             created
                         }
                         Err(e) => {
@@ -172,6 +187,13 @@ impl Reconciler {
                             } else {
                                 let error_msg = format!("Failed to create manufacturer in NetBox: {}", e);
                                 error!("{}", error_msg);
+                                // Emit event for reconciliation failure
+                                use crate::events::reasons;
+                                self.record_event_warning(
+                                    reasons::RECONCILIATION_FAILED,
+                                    &error_msg,
+                                    manufacturer_crd,
+                                ).await;
                                 return Err(ControllerError::NetBox(e));
                             }
                         }

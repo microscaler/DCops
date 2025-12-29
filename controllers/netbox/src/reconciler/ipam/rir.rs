@@ -44,6 +44,14 @@ impl Reconciler {
         let netbox_rir = match drift_result {
             DriftCheckResult::UseExisting(rir) => Some(rir),
             DriftCheckResult::StatusCleared { message } => {
+                // Emit event for drift detection
+                use crate::events::reasons;
+                self.record_event_warning(
+                    reasons::DRIFT_DETECTED,
+                    &format!("NetBoxRIR {}/{} drift detected: {}", namespace, name, message),
+                    rir_crd,
+                ).await;
+                
                 let status_patch = Self::create_typed_rir_status_patch(
                     0, String::new(), ResourceState::Pending,
                     Some(message),
@@ -119,6 +127,13 @@ impl Reconciler {
                     ).await {
                         Ok(created) => {
                             info!("Created RIR {} in NetBox (ID: {})", created.name, created.id);
+                            // Emit event for successful creation
+                            use crate::events::reasons;
+                            self.record_event_normal(
+                                reasons::CREATED,
+                                &format!("Created RIR {} in NetBox (ID: {})", created.name, created.id),
+                                rir_crd,
+                            ).await;
                             created
                         }
                         Err(e) => {
@@ -169,6 +184,13 @@ impl Reconciler {
                             } else {
                                 let error_msg = format!("Failed to create RIR in NetBox: {}", e);
                                 error!("{}", error_msg);
+                                // Emit event for reconciliation failure
+                                use crate::events::reasons;
+                                self.record_event_warning(
+                                    reasons::RECONCILIATION_FAILED,
+                                    &error_msg,
+                                    rir_crd,
+                                ).await;
                                 return Err(ControllerError::NetBox(e));
                             }
                         }

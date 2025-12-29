@@ -22,13 +22,25 @@ impl Reconciler {
         
         // Validate and resolve manufacturer ID (required) using helper
         validate_reference_kind(&device_type_crd.spec.manufacturer, "NetBoxManufacturer", "manufacturer", name)?;
-        let manufacturer_id: u64 = resolve_required_dependency_id(
+        let manufacturer_id = match resolve_required_dependency_id(
             &*self.netbox_manufacturer_api,
             &device_type_crd.spec.manufacturer.name,
             "Manufacturer",
             name,
             |crd| crd.status.as_ref(),
-        ).await?;
+        ).await {
+            Ok(id) => id,
+            Err(e) => {
+                // Emit event for dependency not found
+                use crate::events::reasons;
+                self.record_event_warning(
+                    reasons::DEPENDENCY_NOT_FOUND,
+                    &format!("Manufacturer '{}' not found or not ready: {}", device_type_crd.spec.manufacturer.name, e),
+                    device_type_crd,
+                ).await;
+                return Err(e);
+            }
+        };
         
         // Check if already created - use shared helper for drift detection and status validation
         use crate::reconcile_helpers::{validate_status_and_drift, DriftCheckResult};
@@ -54,6 +66,14 @@ impl Reconciler {
         let netbox_device_type = match drift_result {
             DriftCheckResult::UseExisting(device_type) => Some(device_type),
             DriftCheckResult::StatusCleared { message } => {
+                // Emit event for drift detection
+                use crate::events::reasons;
+                self.record_event_warning(
+                    reasons::DRIFT_DETECTED,
+                    &format!("NetBoxDeviceType {}/{} drift detected: {}", namespace, name, message),
+                    device_type_crd,
+                ).await;
+                
                 let status_patch = Self::create_typed_device_type_status_patch(
                     0, String::new(), ResourceState::Pending,
                     Some(message),
@@ -98,7 +118,15 @@ impl Reconciler {
                             return Ok(());
                         }
                         Err(e) => {
-                            error!("Failed to update NetBoxDeviceType status: {}", e);
+                            let error_msg = format!("Failed to update NetBoxDeviceType status: {}", e);
+                            error!("{}", error_msg);
+                            // Emit event for reconciliation failure
+                            use crate::events::reasons;
+                            self.record_event_warning(
+                                reasons::RECONCILIATION_FAILED,
+                                &error_msg,
+                                device_type_crd,
+                            ).await;
                             return Err(ControllerError::Kube(e.into()));
                         }
                     }
@@ -137,6 +165,13 @@ impl Reconciler {
                     ).await {
                         Ok(created) => {
                             info!("Created device type {} in NetBox (ID: {})", created.model, created.id);
+                            // Emit event for successful creation
+                            use crate::events::reasons;
+                            self.record_event_normal(
+                                reasons::CREATED,
+                                &format!("Created device type {} in NetBox (ID: {})", created.model, created.id),
+                                device_type_crd,
+                            ).await;
                             created
                         }
                         Err(e) => {
@@ -198,6 +233,13 @@ impl Reconciler {
                             } else {
                                 let error_msg = format!("Failed to create device type in NetBox: {}", e);
                                 error!("{}", error_msg);
+                                // Emit event for reconciliation failure
+                                use crate::events::reasons;
+                                self.record_event_warning(
+                                    reasons::RECONCILIATION_FAILED,
+                                    &error_msg,
+                                    device_type_crd,
+                                ).await;
                                 return Err(ControllerError::NetBox(e));
                             }
                         }

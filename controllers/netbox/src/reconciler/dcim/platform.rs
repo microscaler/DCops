@@ -54,6 +54,14 @@ impl Reconciler {
         let netbox_platform = match drift_result {
             DriftCheckResult::UseExisting(platform) => Some(platform),
             DriftCheckResult::StatusCleared { message } => {
+                // Emit event for drift detection
+                use crate::events::reasons;
+                self.record_event_warning(
+                    reasons::DRIFT_DETECTED,
+                    &format!("NetBoxPlatform {}/{} drift detected: {}", namespace, name, message),
+                    platform_crd,
+                ).await;
+                
                 let status_patch = Self::create_typed_platform_status_patch(
                     0, String::new(), ResourceState::Pending,
                     Some(message),
@@ -132,6 +140,13 @@ impl Reconciler {
                     ).await {
                         Ok(created) => {
                             info!("Created platform {} in NetBox (ID: {})", created.name, created.id);
+                            // Emit event for successful creation
+                            use crate::events::reasons;
+                            self.record_event_normal(
+                                reasons::CREATED,
+                                &format!("Created platform {} in NetBox (ID: {})", created.name, created.id),
+                                platform_crd,
+                            ).await;
                             created
                         }
                         Err(e) => {
@@ -186,6 +201,13 @@ impl Reconciler {
                             } else {
                                 let error_msg = format!("Failed to create platform in NetBox: {}", e);
                                 error!("{}", error_msg);
+                                // Emit event for reconciliation failure
+                                use crate::events::reasons;
+                                self.record_event_warning(
+                                    reasons::RECONCILIATION_FAILED,
+                                    &error_msg,
+                                    platform_crd,
+                                ).await;
                                 return Err(ControllerError::NetBox(e));
                             }
                         }

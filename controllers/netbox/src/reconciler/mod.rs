@@ -506,7 +506,7 @@ impl Reconciler {
                 warn!("Query failed for prefix {}, trying fallback method", prefix_cidr);
                 match netbox_client.get_prefix(PrefixId(1)).await {
                     Ok(prefix) if prefix.prefix == prefix_net => {
-                        info!("Found prefix {} via fallback method (ID: 1)", prefix_cidr);
+                        info!("Found prefix {} via fallback method (ID: 1)", prefix_net);
                         Some(prefix)
                     }
                     _ => {

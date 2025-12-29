@@ -198,7 +198,7 @@ impl Reconciler {
                                     use crate::reconcile_helpers::ipclaim_status_needs_update;
                                     let needs_status_update = ipclaim_status_needs_update(
                                         claim.status.as_ref(),
-                                        Some(&existing_ip.address),
+                                        Some(&existing_ip.address.to_string()),
                                         "Allocated",
                                         Some(&existing_ip.url),
                                         None,
@@ -206,7 +206,7 @@ impl Reconciler {
                                     
                                     if needs_status_update {
                                         let status_patch = Self::create_ipclaim_status_patch(
-                                            Some(existing_ip.address.clone()),
+                                            Some(existing_ip.address.to_string()),
                                             AllocationState::Allocated,
                                             Some(existing_ip.url.clone()),
                                             None,
@@ -243,13 +243,17 @@ impl Reconciler {
                         Ok(all_ips) => {
                             // Try to match by preferred IP if we have one
                             if let Some(preferred_ip) = &claim.spec.preferred_ip {
-                                if let Some(found) = all_ips.iter().find(|ip| ip.address == *preferred_ip) {
-                                    info!("Found existing IP address {} in NetBox (ID: {}) after querying prefix", found.address, found.id);
-                                    // Use the existing IP - only update status if it changed
-                                    use crate::reconcile_helpers::ipclaim_status_needs_update;
-                                    let needs_status_update = ipclaim_status_needs_update(
-                                        claim.status.as_ref(),
-                                        Some(&found.address),
+                                // Convert preferred_ip string to IpNet for comparison
+                                use std::str::FromStr;
+                                use ipnet::IpNet;
+                                if let Ok(preferred_net) = IpNet::from_str(preferred_ip) {
+                                    if let Some(found) = all_ips.iter().find(|ip| ip.address == preferred_net) {
+                                        info!("Found existing IP address {} in NetBox (ID: {}) after querying prefix", found.address, found.id);
+                                        // Use the existing IP - only update status if it changed
+                                        use crate::reconcile_helpers::ipclaim_status_needs_update;
+                                        let needs_status_update = ipclaim_status_needs_update(
+                                            claim.status.as_ref(),
+                                            Some(&found.address.to_string()),
                                         "Allocated",
                                         Some(&found.url),
                                         None,
@@ -257,7 +261,7 @@ impl Reconciler {
                                     
                                     if needs_status_update {
                                         let status_patch = Self::create_ipclaim_status_patch(
-                                            Some(found.address.clone()),
+                                            Some(found.address.to_string()),
                                             AllocationState::Allocated,
                                             Some(found.url.clone()),
                                             None,
@@ -299,7 +303,7 @@ impl Reconciler {
         use crate::reconcile_helpers::ipclaim_status_needs_update;
         let needs_status_update = ipclaim_status_needs_update(
             claim.status.as_ref(),
-            Some(&allocated_ip.address),
+            Some(&allocated_ip.address.to_string()),
             "Allocated",
             Some(&allocated_ip.url),
             None,
@@ -307,7 +311,7 @@ impl Reconciler {
         
         if needs_status_update {
             let status_patch = Self::create_ipclaim_status_patch(
-                Some(allocated_ip.address.clone()),
+                Some(allocated_ip.address.to_string()),
                 AllocationState::Allocated,
                 Some(allocated_ip.url.clone()),
                 None,

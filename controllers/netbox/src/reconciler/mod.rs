@@ -490,7 +490,12 @@ impl Reconciler {
                 false,
             ).await {
                 // Query succeeded, check if we found a match
-                if let Some(found) = prefixes.iter().find(|p| p.prefix == *prefix_cidr) {
+                // Convert prefix_cidr string to IpNet for comparison
+                use std::str::FromStr;
+                use ipnet::IpNet;
+                let prefix_net = IpNet::from_str(prefix_cidr)
+                    .map_err(|e| ControllerError::InvalidIPFormat(format!("Invalid prefix format: {} - {}", prefix_cidr, e)))?;
+                if let Some(found) = prefixes.iter().find(|p| p.prefix == prefix_net) {
                     Some(found.clone())
                 } else {
                     None
@@ -499,7 +504,7 @@ impl Reconciler {
                 // Query failed (deserialization issue), try fallback: get by ID 1 and check
                 warn!("Query failed for prefix {}, trying fallback method", prefix_cidr);
                 match netbox_client.get_prefix(PrefixId(1)).await {
-                    Ok(prefix) if prefix.prefix == *prefix_cidr => {
+                    Ok(prefix) if prefix.prefix == prefix_net => {
                         info!("Found prefix {} via fallback method (ID: 1)", prefix_cidr);
                         Some(prefix)
                     }

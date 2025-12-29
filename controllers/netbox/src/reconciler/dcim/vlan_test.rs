@@ -126,7 +126,7 @@ mod tests {
             last_updated: Utc::now().to_rfc3339(),
         });
         
-        let (reconciler, apis) = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
+        let (reconciler, apis, _mock_event_recorder) = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
         
         // Setup: Store tenant in API
         apis.tenant_api.store("datacenter-tenant".to_string(), tenant);
@@ -180,7 +180,7 @@ mod tests {
         let netbox_vlan = create_test_vlan(1, 100, "test-vlan", 1, None, "http://test-netbox");
         mock_token_resolver.mock_client().add_vlan(netbox_vlan);
         
-        let (reconciler, apis) = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
+        let (reconciler, apis, _mock_event_recorder) = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
         
         // Setup: Store tenant in API
         apis.tenant_api.store("datacenter-tenant".to_string(), tenant);
@@ -209,7 +209,7 @@ mod tests {
         
         mock_token_resolver.add_secret("default", "netbox-token-nonexistent-tenant", "test-token".to_string());
         
-        let (reconciler, apis) = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
+        let (reconciler, apis, _mock_event_recorder) = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
         
         // Setup: Create VLAN CRD with tenant that doesn't exist
         let mut vlan = create_test_netbox_vlan("test-vlan", "default", 100, "nonexistent-tenant", None, None);

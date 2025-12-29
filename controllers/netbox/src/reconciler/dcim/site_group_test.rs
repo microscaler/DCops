@@ -104,7 +104,7 @@ mod tests {
             last_updated: Utc::now().to_rfc3339(),
         });
         
-        let (reconciler, apis) = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
+        let (reconciler, apis, _mock_event_recorder) = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
         
         // Setup: Store tenant in API
         apis.tenant_api.store("datacenter-tenant".to_string(), tenant);
@@ -158,7 +158,7 @@ mod tests {
         let netbox_site_group = create_test_site_group(1, "test-site-group", "http://test-netbox", None);
         mock_token_resolver.mock_client().add_site_group(netbox_site_group);
         
-        let (reconciler, apis) = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
+        let (reconciler, apis, _mock_event_recorder) = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
         
         // Setup: Store tenant in API
         apis.tenant_api.store("datacenter-tenant".to_string(), tenant);
@@ -211,7 +211,7 @@ mod tests {
         let parent_netbox_site_group = create_test_site_group(1, "parent-site-group", "http://test-netbox", None);
         mock_token_resolver.mock_client().add_site_group(parent_netbox_site_group);
         
-        let (reconciler, apis) = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
+        let (reconciler, apis, _mock_event_recorder) = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
         
         // Setup: Store tenant and parent site group in APIs
         apis.tenant_api.store("datacenter-tenant".to_string(), tenant);

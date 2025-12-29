@@ -48,7 +48,7 @@ mod tests {
         
         // Setup: Create reconciler with MockTokenResolver
         // This returns both the reconciler and the unboxed APIs so we can store test data
-        let (reconciler, apis) = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
+        let (reconciler, apis, _mock_event_recorder) = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
         
         // Setup: Store test data in the APIs before reconciliation
         apis.tenant_api.store("datacenter-tenant".to_string(), tenant);
@@ -85,7 +85,7 @@ mod tests {
         let mock_client = mock_token_resolver.mock_client();
         
         // Setup: Create reconciler
-        let (reconciler, apis) = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
+        let (reconciler, apis, _mock_event_recorder) = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
         
         // Setup: Create tenant
         let tenant = create_test_netbox_tenant(
@@ -166,7 +166,7 @@ mod tests {
         let mock_client = mock_token_resolver.mock_client();
         
         // Setup: Create reconciler
-        let (reconciler, apis) = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
+        let (reconciler, apis, _mock_event_recorder) = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
         
         // Setup: Create tenant
         let tenant = create_test_netbox_tenant(
@@ -237,7 +237,7 @@ mod tests {
         mock_token_resolver.add_secret("default", "netbox-token-datacenter-tenant", "test-token".to_string());
         
         // Setup: Create reconciler
-        let (reconciler, apis) = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
+        let (reconciler, apis, _mock_event_recorder) = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
         
         // Setup: Create prefix with reference to non-existent tenant
         let mut prefix = create_test_netbox_prefix("test-prefix", "default", 0, None);
@@ -272,7 +272,7 @@ mod tests {
         mock_token_resolver.add_secret("default", "netbox-token-datacenter-tenant", "test-token".to_string());
         
         // Setup: Create reconciler
-        let (reconciler, apis) = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
+        let (reconciler, apis, _mock_event_recorder) = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
         let TestReconcilerApis {
             tenant_api,
             prefix_api,

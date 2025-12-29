@@ -94,7 +94,7 @@ mod tests {
         let manufacturer = crate::test_utils::create_test_manufacturer(1, "test-manufacturer", "http://test-netbox");
         mock_token_resolver.mock_client().add_manufacturer(manufacturer);
         
-        let (reconciler, apis) = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
+        let (reconciler, apis, _mock_event_recorder) = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
         
         // Setup: Create manufacturer CRD (required dependency)
         let manufacturer_crd = crate::test_utils::create_test_netbox_manufacturer("test-manufacturer", "default", Some(1));
@@ -134,7 +134,7 @@ mod tests {
         let netbox_device_type = create_test_device_type(1, 1, "Test Model", "http://test-netbox");
         mock_token_resolver.mock_client().add_device_type(netbox_device_type);
         
-        let (reconciler, apis) = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
+        let (reconciler, apis, _mock_event_recorder) = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
         
         // Setup: Create manufacturer CRD (required dependency)
         let manufacturer_crd = crate::test_utils::create_test_netbox_manufacturer("test-manufacturer", "default", Some(1));
@@ -164,7 +164,7 @@ mod tests {
         
         mock_token_resolver.add_secret("default", "netbox-token-datacenter-tenant", "test-token".to_string());
         
-        let (reconciler, apis) = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
+        let (reconciler, apis, _mock_event_recorder) = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
         
         // Setup: Create device type CRD with manufacturer that doesn't exist
         let mut device_type = create_test_netbox_device_type("test-device-type", "default", "nonexistent-manufacturer", "Test Model", None);

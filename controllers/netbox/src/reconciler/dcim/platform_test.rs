@@ -88,7 +88,7 @@ mod tests {
         
         mock_token_resolver.add_secret("default", "netbox-token-datacenter-tenant", "test-token".to_string());
         
-        let (reconciler, apis) = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
+        let (reconciler, apis, _mock_event_recorder) = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
         
         // Setup: Create platform CRD without status
         let mut platform = create_test_netbox_platform("test-platform", "default", None, None);
@@ -120,7 +120,7 @@ mod tests {
         let netbox_platform = create_test_platform(1, "test-platform", "http://test-netbox", None);
         mock_token_resolver.mock_client().add_platform(netbox_platform);
         
-        let (reconciler, apis) = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
+        let (reconciler, apis, _mock_event_recorder) = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
         
         // Setup: Create platform CRD with status (already created)
         let platform = create_test_netbox_platform("test-platform", "default", Some(1), None);
@@ -150,7 +150,7 @@ mod tests {
         let manufacturer = crate::test_utils::create_test_manufacturer(1, "test-manufacturer", "http://test-netbox");
         mock_token_resolver.mock_client().add_manufacturer(manufacturer);
         
-        let (reconciler, apis) = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
+        let (reconciler, apis, _mock_event_recorder) = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
         
         // Setup: Create manufacturer CRD (required dependency)
         let manufacturer_crd = crate::test_utils::create_test_netbox_manufacturer("test-manufacturer", "default", Some(1));
@@ -181,7 +181,7 @@ mod tests {
         
         mock_token_resolver.add_secret("default", "netbox-token-datacenter-tenant", "test-token".to_string());
         
-        let (reconciler, apis) = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
+        let (reconciler, apis, _mock_event_recorder) = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
         
         // Setup: Create platform CRD with manufacturer that doesn't exist
         let mut platform = create_test_netbox_platform("test-platform", "default", None, Some("nonexistent-manufacturer"));

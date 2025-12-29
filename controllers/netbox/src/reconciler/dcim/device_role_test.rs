@@ -71,7 +71,7 @@ mod tests {
         
         mock_token_resolver.add_secret("default", "netbox-token-datacenter-tenant", "test-token".to_string());
         
-        let (reconciler, apis) = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
+        let (reconciler, apis, _mock_event_recorder) = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
         
         // Setup: Create device role CRD without status
         let mut device_role = create_test_netbox_device_role("test-device-role", "default", None);
@@ -103,7 +103,7 @@ mod tests {
         let netbox_device_role = create_test_device_role(1, "test-device-role", "http://test-netbox");
         mock_token_resolver.mock_client().add_device_role(netbox_device_role);
         
-        let (reconciler, apis) = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
+        let (reconciler, apis, _mock_event_recorder) = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
         
         // Setup: Create device role CRD with status (already created)
         let device_role = create_test_netbox_device_role("test-device-role", "default", Some(1));

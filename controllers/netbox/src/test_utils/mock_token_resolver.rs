@@ -573,12 +573,12 @@ pub struct TestReconcilerApis {
 /// This creates a Reconciler with a MockTokenResolver instead of a real TokenResolver,
 /// allowing tests to run without a real kube::Client.
 ///
-/// Returns both the Reconciler and the unboxed MockKubeApi instances so tests can
-/// store data in them before reconciliation.
+/// Returns the Reconciler, the unboxed MockKubeApi instances, and the MockEventRecorder
+/// so tests can store data and verify events.
 #[cfg(test)]
 pub fn create_test_reconciler_with_mock_token_resolver(
     mock_token_resolver: Arc<MockTokenResolver>,
-) -> (crate::reconciler::Reconciler, TestReconcilerApis) {
+) -> (crate::reconciler::Reconciler, TestReconcilerApis, crate::test_utils::mock_event_recorder::MockEventRecorder) {
     use crate::kube_api_trait::mock::MockKubeApi;
     use crate::reconciler::Reconciler;
     use crds::*;
@@ -610,11 +610,16 @@ pub fn create_test_reconciler_with_mock_token_resolver(
     use crate::secret_fetcher::mock::MockSecretFetcher;
     let secret_fetcher = Arc::new(MockSecretFetcher::new(mock_token_resolver.secrets.clone()));
     
+    // Create MockEventRecorder for testing
+    use crate::test_utils::mock_event_recorder::MockEventRecorder;
+    let mock_event_recorder = Arc::new(MockEventRecorder::new());
+    let event_recorder: Option<Arc<dyn crate::events::EventRecorderTrait>> = Some(mock_event_recorder.clone());
+    
     let reconciler = Reconciler::new(
         // Now that Reconciler uses TokenResolverTrait, we can use MockTokenResolver!
         mock_token_resolver as Arc<dyn TokenResolverTrait>,
         Some(secret_fetcher), // Use MockSecretFetcher for testing
-        None, // No event_recorder for tests
+        event_recorder, // Use MockEventRecorder for testing
         // IPAM APIs - clone Arc and pass directly (Reconciler::new boxes them internally)
         prefix_api.clone(),
         role_api.clone(),
@@ -664,5 +669,9 @@ pub fn create_test_reconciler_with_mock_token_resolver(
         ip_claim_api,
     };
     
-    (reconciler, apis)
+    // Unwrap the Arc to return the MockEventRecorder directly
+    // We need to clone the inner data since we can't unwrap while it's in the reconciler
+    let mock_event_recorder_clone = mock_event_recorder.clone();
+    
+    (reconciler, apis, (*mock_event_recorder_clone).clone())
 }

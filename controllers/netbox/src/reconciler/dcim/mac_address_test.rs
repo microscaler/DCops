@@ -231,7 +231,7 @@ mod tests {
         let netbox_interface = create_test_interface(1, 1, "eth0", "http://test-netbox");
         mock_token_resolver.mock_client().add_interface(netbox_interface);
         
-        let (reconciler, apis) = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
+        let (reconciler, apis, _mock_event_recorder) = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
         
         // Setup: Store tenant, device, and interface in APIs
         apis.tenant_api.store("datacenter-tenant".to_string(), tenant);
@@ -356,7 +356,7 @@ mod tests {
         let netbox_mac_address = create_test_mac_address(1, "aa:bb:cc:dd:ee:ff", 1, "http://test-netbox");
         mock_token_resolver.mock_client().add_mac_address("aa:bb:cc:dd:ee:ff".to_string(), netbox_mac_address);
         
-        let (reconciler, apis) = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
+        let (reconciler, apis, _mock_event_recorder) = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
         
         // Setup: Store tenant, device, and interface in APIs
         apis.tenant_api.store("datacenter-tenant".to_string(), tenant);
@@ -387,7 +387,7 @@ mod tests {
         
         mock_token_resolver.add_secret("default", "netbox-token-datacenter-tenant", "test-token".to_string());
         
-        let (reconciler, apis) = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
+        let (reconciler, apis, _mock_event_recorder) = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
         
         // Setup: Create MAC address CRD with device that doesn't exist
         let mut mac_address = create_test_netbox_mac_address("test-mac", "default", "aa:bb:cc:dd:ee:ff", "nonexistent-device/eth0", None);
@@ -414,7 +414,7 @@ mod tests {
         
         mock_token_resolver.add_secret("default", "netbox-token-datacenter-tenant", "test-token".to_string());
         
-        let (reconciler, apis) = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
+        let (reconciler, apis, _mock_event_recorder) = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
         
         // Setup: Create MAC address CRD with invalid interface format (missing '/')
         let mut mac_address = create_test_netbox_mac_address("test-mac", "default", "aa:bb:cc:dd:ee:ff", "invalid-format", None);
@@ -459,7 +459,7 @@ mod tests {
             Some("http://test-netbox/api/dcim/devices/1/".to_string()),
         );
         
-        let (reconciler, apis) = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
+        let (reconciler, apis, _mock_event_recorder) = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
         
         // Setup: Store tenant and device in APIs (but no interface)
         apis.tenant_api.store("datacenter-tenant".to_string(), tenant);

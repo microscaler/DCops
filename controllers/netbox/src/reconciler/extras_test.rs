@@ -120,7 +120,7 @@ mod tests {
         
         mock_token_resolver.add_secret("default", "netbox-token-datacenter-tenant", "test-token".to_string());
         
-        let (reconciler, apis) = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
+        let (reconciler, apis, _mock_event_recorder) = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
         
         // Setup: Create role CRD without status
         let mut role = create_test_netbox_role("test-role", "default", None);
@@ -152,7 +152,7 @@ mod tests {
         let netbox_role = create_test_role(1, "test-role", "http://test-netbox");
         mock_token_resolver.mock_client().add_role(netbox_role);
         
-        let (reconciler, apis) = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
+        let (reconciler, apis, _mock_event_recorder) = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
         
         // Setup: Create role CRD with status (already created)
         let role = create_test_netbox_role("test-role", "default", Some(1));
@@ -182,7 +182,7 @@ mod tests {
         let netbox_role = create_test_role(1, "test-role", "http://test-netbox");
         mock_token_resolver.mock_client().add_role(netbox_role);
         
-        let (reconciler, apis) = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
+        let (reconciler, apis, _mock_event_recorder) = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
         
         // Setup: Create role CRD without status (will try to create, get conflict, then find existing)
         let mut role = create_test_netbox_role("test-role", "default", None);
@@ -211,7 +211,7 @@ mod tests {
         
         mock_token_resolver.add_secret("default", "netbox-token-datacenter-tenant", "test-token".to_string());
         
-        let (reconciler, apis) = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
+        let (reconciler, apis, _mock_event_recorder) = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
         
         // Setup: Create tag CRD without status
         let mut tag = create_test_netbox_tag("test-tag", "default", None);
@@ -243,7 +243,7 @@ mod tests {
         let netbox_tag = create_test_tag(1, "test-tag", "http://test-netbox");
         mock_token_resolver.mock_client().add_tag(netbox_tag);
         
-        let (reconciler, apis) = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
+        let (reconciler, apis, _mock_event_recorder) = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
         
         // Setup: Create tag CRD with status (already created)
         let tag = create_test_netbox_tag("test-tag", "default", Some(1));
@@ -273,7 +273,7 @@ mod tests {
         let netbox_tag = create_test_tag(1, "test-tag", "http://test-netbox");
         mock_token_resolver.mock_client().add_tag(netbox_tag);
         
-        let (reconciler, apis) = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
+        let (reconciler, apis, _mock_event_recorder) = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
         
         // Setup: Create tag CRD without status (will try to create, get conflict, then find existing)
         let mut tag = create_test_netbox_tag("test-tag", "default", None);

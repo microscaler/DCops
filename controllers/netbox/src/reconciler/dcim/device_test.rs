@@ -137,7 +137,7 @@ mod tests {
         mock_client.add_device_type(device_type_netbox);
         
         // Setup: Create reconciler
-        let (reconciler, apis) = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
+        let (reconciler, apis, _mock_event_recorder) = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
         let TestReconcilerApis {
             tenant_api,
             site_api,
@@ -269,7 +269,7 @@ mod tests {
         mock_client.add_device(existing_device);
         
         // Setup: Create reconciler
-        let (reconciler, apis) = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
+        let (reconciler, apis, _mock_event_recorder) = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
         let TestReconcilerApis {
             tenant_api,
             site_api,
@@ -352,7 +352,7 @@ mod tests {
         mock_client.add_device_type(device_type_netbox);
         
         // Setup: Create reconciler
-        let (reconciler, apis) = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
+        let (reconciler, apis, _mock_event_recorder) = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
         let TestReconcilerApis {
             tenant_api,
             site_api,
@@ -407,7 +407,7 @@ mod tests {
         mock_token_resolver.add_secret("default", "netbox-token-datacenter-tenant", "test-token".to_string());
         
         // Setup: Create reconciler
-        let (reconciler, apis) = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
+        let (reconciler, apis, _mock_event_recorder) = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
         let TestReconcilerApis {
             tenant_api,
             site_api,
@@ -508,7 +508,7 @@ mod tests {
         mock_client.add_ip_address(primary_ip);
         
         // Setup: Create reconciler
-        let (reconciler, apis) = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
+        let (reconciler, apis, _mock_event_recorder) = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
         let TestReconcilerApis {
             tenant_api,
             site_api,

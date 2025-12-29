@@ -171,7 +171,7 @@ mod tests {
             last_updated: Utc::now().to_rfc3339(),
         });
         
-        let (reconciler, apis) = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
+        let (reconciler, apis, _mock_event_recorder) = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
         
         // Setup: Store tenant and device in APIs
         apis.tenant_api.store("datacenter-tenant".to_string(), tenant);
@@ -290,7 +290,7 @@ mod tests {
         let netbox_interface = create_test_interface(1, 1, "eth0", "http://test-netbox");
         mock_token_resolver.mock_client().add_interface(netbox_interface);
         
-        let (reconciler, apis) = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
+        let (reconciler, apis, _mock_event_recorder) = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
         
         // Setup: Store tenant and device in APIs
         apis.tenant_api.store("datacenter-tenant".to_string(), tenant);
@@ -320,7 +320,7 @@ mod tests {
         
         mock_token_resolver.add_secret("default", "netbox-token-datacenter-tenant", "test-token".to_string());
         
-        let (reconciler, apis) = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
+        let (reconciler, apis, _mock_event_recorder) = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
         
         // Setup: Create interface CRD with device that doesn't exist
         let mut interface = create_test_netbox_interface("eth0", "default", "nonexistent-device", None);
@@ -354,7 +354,7 @@ mod tests {
         );
         mock_token_resolver.add_secret("default", "netbox-token-datacenter-tenant", "test-token".to_string());
         
-        let (reconciler, apis) = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
+        let (reconciler, apis, _mock_event_recorder) = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
         
         // Setup: Create device without status (not yet created in NetBox)
         let mut device = create_test_netbox_device(

@@ -57,7 +57,7 @@ mod tests {
         let mock_client = mock_token_resolver.mock_client();
         
         // Setup: Create reconciler
-        let (reconciler, apis) = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
+        let (reconciler, apis, _mock_event_recorder) = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
         let TestReconcilerApis {
             tenant_api,
             ..
@@ -116,7 +116,7 @@ mod tests {
         mock_client.add_tenant(netbox_tenant);
         
         // Setup: Create reconciler
-        let (reconciler, apis) = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
+        let (reconciler, apis, _mock_event_recorder) = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
         let TestReconcilerApis {
             tenant_api,
             ..
@@ -181,7 +181,7 @@ mod tests {
         mock_client.add_tenant(netbox_tenant);
         
         // Setup: Create reconciler
-        let (reconciler, apis) = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
+        let (reconciler, apis, _mock_event_recorder) = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
         let TestReconcilerApis {
             tenant_api,
             ..
@@ -244,7 +244,7 @@ mod tests {
         mock_client.add_tenant(netbox_tenant);
         
         // Setup: Create reconciler
-        let (reconciler, apis) = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
+        let (reconciler, apis, _mock_event_recorder) = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
         let TestReconcilerApis {
             tenant_api,
             ..
@@ -283,7 +283,7 @@ mod tests {
         mock_token_resolver.add_secret("default", "netbox-token-test-tenant", "test-token-123".to_string());
         
         // Setup: Create reconciler
-        let (reconciler, apis) = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
+        let (reconciler, apis, _mock_event_recorder) = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
         let TestReconcilerApis {
             tenant_api,
             ..
@@ -331,7 +331,7 @@ mod tests {
         // Intentionally NOT adding the secret to simulate secret not found
         
         // Setup: Create reconciler
-        let (reconciler, apis) = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
+        let (reconciler, apis, _mock_event_recorder) = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
         let TestReconcilerApis {
             tenant_api,
             ..
@@ -377,7 +377,7 @@ mod tests {
         mock_token_resolver.add_secret("default", "netbox-token-test-tenant", "".to_string());
         
         // Setup: Create reconciler
-        let (reconciler, apis) = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
+        let (reconciler, apis, _mock_event_recorder) = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
         let TestReconcilerApis {
             tenant_api,
             ..

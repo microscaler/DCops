@@ -17,7 +17,7 @@ mod tests {
     async fn test_reconciler_has_event_methods() {
         let netbox_url = "http://test-netbox".to_string();
         let mock_token_resolver = Arc::new(MockTokenResolver::new(netbox_url.clone()));
-        let (reconciler, _) = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
+        let (reconciler, _, _mock_event_recorder) = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
         
         // Verify reconciler has event_recorder field (even if None in tests)
         // This is verified by the fact that the reconciler compiles and has the methods
@@ -59,7 +59,7 @@ mod tests {
         let mock_token_resolver = Arc::new(MockTokenResolver::new(netbox_url.clone()));
         mock_token_resolver.add_secret("default", "netbox-token-datacenter-tenant", "test-token".to_string());
         
-        let (reconciler, apis) = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
+        let (reconciler, apis, _mock_event_recorder) = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
         let TestReconcilerApis {
             tenant_api,
             prefix_api,
@@ -98,7 +98,7 @@ mod tests {
         let mock_token_resolver = Arc::new(MockTokenResolver::new(netbox_url.clone()));
         mock_token_resolver.add_secret("default", "netbox-token-datacenter-tenant", "test-token".to_string());
         
-        let (reconciler, apis) = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
+        let (reconciler, apis, _mock_event_recorder) = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
         let TestReconcilerApis {
             prefix_api,
             ..

@@ -65,7 +65,7 @@ mod tests {
         
         mock_token_resolver.add_secret("default", "netbox-token-datacenter-tenant", "test-token".to_string());
         
-        let (reconciler, apis) = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
+        let (reconciler, apis, _mock_event_recorder) = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
         
         // Setup: Create RIR CRD without status
         let mut rir = create_test_netbox_rir("ARIN", "default", None);
@@ -97,7 +97,7 @@ mod tests {
         let netbox_rir = create_test_rir(1, "ARIN", "http://test-netbox");
         mock_token_resolver.mock_client().add_rir(netbox_rir);
         
-        let (reconciler, apis) = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
+        let (reconciler, apis, _mock_event_recorder) = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
         
         // Setup: Create RIR CRD with status (already created)
         let rir = create_test_netbox_rir("ARIN", "default", Some(1));
@@ -127,7 +127,7 @@ mod tests {
         let netbox_rir = create_test_rir(1, "ARIN", "http://test-netbox");
         mock_token_resolver.mock_client().add_rir(netbox_rir);
         
-        let (reconciler, apis) = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
+        let (reconciler, apis, _mock_event_recorder) = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
         
         // Setup: Create RIR CRD without status (will try to create, get conflict, then find existing)
         let mut rir = create_test_netbox_rir("ARIN", "default", None);

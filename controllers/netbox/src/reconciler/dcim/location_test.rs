@@ -164,7 +164,7 @@ mod tests {
             last_updated: Utc::now().to_rfc3339(),
         });
         
-        let (reconciler, apis) = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
+        let (reconciler, apis, _mock_event_recorder) = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
         
         // Setup: Store tenant and site in APIs
         apis.tenant_api.store("datacenter-tenant".to_string(), tenant);
@@ -255,7 +255,7 @@ mod tests {
         let netbox_location = create_test_location(1, 1, "test-location", "http://test-netbox", None, Some(1));
         mock_token_resolver.mock_client().add_location(netbox_location);
         
-        let (reconciler, apis) = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
+        let (reconciler, apis, _mock_event_recorder) = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
         
         // Setup: Store tenant and site in APIs
         apis.tenant_api.store("datacenter-tenant".to_string(), tenant);
@@ -285,7 +285,7 @@ mod tests {
         
         mock_token_resolver.add_secret("default", "netbox-token-datacenter-tenant", "test-token".to_string());
         
-        let (reconciler, apis) = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
+        let (reconciler, apis, _mock_event_recorder) = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
         
         // Setup: Create location CRD with site that doesn't exist
         let mut location = create_test_netbox_location("test-location", "default", "nonexistent-site", "datacenter-tenant", None, None);
@@ -372,7 +372,7 @@ mod tests {
         let parent_netbox_location = create_test_location(1, 1, "parent-location", "http://test-netbox", None, Some(1));
         mock_token_resolver.mock_client().add_location(parent_netbox_location);
         
-        let (reconciler, apis) = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
+        let (reconciler, apis, _mock_event_recorder) = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
         
         // Setup: Store tenant, site, and parent location in APIs
         apis.tenant_api.store("datacenter-tenant".to_string(), tenant);

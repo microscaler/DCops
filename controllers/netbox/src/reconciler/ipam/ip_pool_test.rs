@@ -43,7 +43,7 @@ mod tests {
         let (pool, prefix) = setup_ip_pool_test_data();
         
         // Setup: Create reconciler with MockTokenResolver
-        let (reconciler, apis) = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
+        let (reconciler, apis, _mock_event_recorder) = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
         
         // Setup: Store test data in the APIs before reconciliation
         apis.tenant_api.store("datacenter-tenant".to_string(), create_test_netbox_tenant(
@@ -106,7 +106,7 @@ mod tests {
         let mock_token_resolver = Arc::new(MockTokenResolver::new(netbox_url));
         
         // Setup: Create reconciler
-        let (reconciler, apis) = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
+        let (reconciler, apis, _mock_event_recorder) = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
         
         // Setup: Create IPPool with reference to non-existent prefix
         let pool = create_test_ip_pool("test-pool", "default", "non-existent-prefix", None);
@@ -129,7 +129,7 @@ mod tests {
         let mock_token_resolver = Arc::new(MockTokenResolver::new(netbox_url));
         
         // Setup: Create reconciler
-        let (reconciler, apis) = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
+        let (reconciler, apis, _mock_event_recorder) = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
         
         // Setup: Create prefix without status (not created in NetBox yet)
         let mut prefix = create_test_netbox_prefix("test-prefix", "default", 1, None);
@@ -162,7 +162,7 @@ mod tests {
         let mock_client = mock_token_resolver.mock_client();
         
         // Setup: Create reconciler
-        let (reconciler, apis) = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
+        let (reconciler, apis, _mock_event_recorder) = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
         
         // Setup: Create prefix with status
         let prefix = create_test_netbox_prefix(
@@ -243,7 +243,7 @@ mod tests {
         let mock_client = mock_token_resolver.mock_client();
         
         // Setup: Create reconciler
-        let (reconciler, apis) = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
+        let (reconciler, apis, _mock_event_recorder) = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
         
         // Setup: Create prefix with status
         let prefix = create_test_netbox_prefix(

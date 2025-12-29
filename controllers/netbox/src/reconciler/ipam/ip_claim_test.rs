@@ -60,7 +60,7 @@ mod tests {
         let (claim, pool, prefix) = setup_ip_claim_test_data();
         
         // Setup: Create reconciler with MockTokenResolver
-        let (reconciler, apis) = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
+        let (reconciler, apis, _mock_event_recorder) = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
         
         // Setup: Store test data in the APIs before reconciliation
         apis.tenant_api.store("datacenter-tenant".to_string(), create_test_netbox_tenant(
@@ -116,7 +116,7 @@ mod tests {
         let mock_token_resolver = Arc::new(MockTokenResolver::new(netbox_url));
         
         // Setup: Create reconciler
-        let (reconciler, apis) = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
+        let (reconciler, apis, _mock_event_recorder) = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
         
         // Setup: Create IPClaim with reference to non-existent pool
         let claim = create_test_ip_claim(
@@ -159,7 +159,7 @@ mod tests {
         let mock_client = mock_token_resolver.mock_client();
         
         // Setup: Create reconciler
-        let (reconciler, apis) = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
+        let (reconciler, apis, _mock_event_recorder) = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
         
         // Setup: Create prefix with status (needed for resolving prefix ID when pool has no status)
         let prefix = create_test_netbox_prefix(
@@ -236,7 +236,7 @@ mod tests {
         let mock_token_resolver = Arc::new(MockTokenResolver::new(netbox_url));
         
         // Setup: Create reconciler
-        let (reconciler, apis) = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
+        let (reconciler, apis, _mock_event_recorder) = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
         
         // Setup: Create IPClaim with status showing already allocated
         let mut claim = create_test_ip_claim(
@@ -282,7 +282,7 @@ mod tests {
         let mock_client = mock_token_resolver.mock_client();
         
         // Setup: Create reconciler
-        let (reconciler, apis) = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
+        let (reconciler, apis, _mock_event_recorder) = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
         
         // Setup: Create test data
         let prefix = create_test_netbox_prefix(
@@ -366,7 +366,7 @@ mod tests {
         let mock_client = mock_token_resolver.mock_client();
         
         // Setup: Create reconciler
-        let (reconciler, apis) = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
+        let (reconciler, apis, _mock_event_recorder) = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
         let TestReconcilerApis {
             tenant_api,
             prefix_api,

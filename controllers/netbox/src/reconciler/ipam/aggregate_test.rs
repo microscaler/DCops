@@ -51,7 +51,7 @@ mod tests {
         // The mock resolver will use the first available secret or create a default one
         mock_token_resolver.add_secret("default", "netbox-token-datacenter-tenant", "test-token".to_string());
         
-        let (reconciler, apis) = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
+        let (reconciler, apis, _mock_event_recorder) = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
         
         // Setup: Create aggregate CRD without status
         let mut aggregate = create_test_netbox_aggregate("test-aggregate", "default", None, "192.168.0.0/16");
@@ -88,7 +88,7 @@ mod tests {
         );
         mock_token_resolver.mock_client().add_aggregate(netbox_aggregate);
         
-        let (reconciler, apis) = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
+        let (reconciler, apis, _mock_event_recorder) = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
         
         // Setup: Create aggregate CRD with status (already created)
         let aggregate = create_test_netbox_aggregate("test-aggregate", "default", Some(1), "192.168.0.0/16");
@@ -114,7 +114,7 @@ mod tests {
         
         mock_token_resolver.add_secret("default", "netbox-token-datacenter-tenant", "test-token".to_string());
         
-        let (reconciler, apis) = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
+        let (reconciler, apis, _mock_event_recorder) = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
         
         // Setup: Create aggregate with invalid prefix format
         let mut aggregate = create_test_netbox_aggregate("test-aggregate", "default", None, "invalid-prefix");
@@ -141,7 +141,7 @@ mod tests {
         
         mock_token_resolver.add_secret("default", "netbox-token-datacenter-tenant", "test-token".to_string());
         
-        let (reconciler, apis) = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
+        let (reconciler, apis, _mock_event_recorder) = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
         
         // Setup: Create aggregate with RIR that doesn't exist
         let mut aggregate = create_test_netbox_aggregate("test-aggregate", "default", None, "192.168.0.0/16");
@@ -190,7 +190,7 @@ mod tests {
         };
         mock_token_resolver.mock_client().add_rir(rir);
         
-        let (reconciler, apis) = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
+        let (reconciler, apis, _mock_event_recorder) = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
         
         // Setup: Create aggregate with RIR
         let mut aggregate = create_test_netbox_aggregate("test-aggregate", "default", None, "192.168.0.0/16");

@@ -11,7 +11,7 @@ mod tests {
     async fn test_get_backoff_for_resource() {
         let netbox_url = "http://netbox.test".to_string();
         let mock_token_resolver = Arc::new(MockTokenResolver::new(netbox_url.clone()));
-        let (reconciler, _) = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
+        let (reconciler, _, _mock_event_recorder) = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
 
         // Test initial backoff (should be 60 seconds for first error)
         let (backoff, error_count) = reconciler.get_backoff_for_resource("test-resource");
@@ -28,7 +28,7 @@ mod tests {
     async fn test_increment_error() {
         let netbox_url = "http://netbox.test".to_string();
         let mock_token_resolver = Arc::new(MockTokenResolver::new(netbox_url.clone()));
-        let (reconciler, _) = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
+        let (reconciler, _, _mock_event_recorder) = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
 
         let resource_key = "test-resource";
 
@@ -53,7 +53,7 @@ mod tests {
     async fn test_reset_error() {
         let netbox_url = "http://netbox.test".to_string();
         let mock_token_resolver = Arc::new(MockTokenResolver::new(netbox_url.clone()));
-        let (reconciler, _) = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
+        let (reconciler, _, _mock_event_recorder) = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
 
         let resource_key = "test-resource";
 
@@ -86,7 +86,7 @@ mod tests {
     async fn test_startup_reconciliation_prefix_with_netbox_id() {
         let netbox_url = "http://netbox.test".to_string();
         let mock_token_resolver = Arc::new(MockTokenResolver::new(netbox_url.clone()));
-        let (reconciler, apis) = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
+        let (reconciler, apis, _mock_event_recorder) = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
 
         // Create a prefix that already has a netbox_id
         let prefix = create_test_netbox_prefix(
@@ -118,7 +118,7 @@ mod tests {
         );
         mock_token_resolver.mock_client().add_prefix(netbox_prefix);
 
-        let (reconciler, apis) = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
+        let (reconciler, apis, _mock_event_recorder) = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
 
         // Create a prefix without netbox_id (status is None)
         // The prefix spec must match the NetBox prefix we added above (192.168.1.0/24)
@@ -147,7 +147,7 @@ mod tests {
     async fn test_startup_reconciliation_prefix_without_netbox_id_not_found() {
         let netbox_url = "http://netbox.test".to_string();
         let mock_token_resolver = Arc::new(MockTokenResolver::new(netbox_url.clone()));
-        let (reconciler, apis) = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
+        let (reconciler, apis, _mock_event_recorder) = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
 
         // Create a prefix without netbox_id that doesn't exist in NetBox
         let mut prefix = create_test_netbox_prefix(
@@ -172,7 +172,7 @@ mod tests {
     async fn test_startup_reconciliation_token_resolution_failure() {
         let netbox_url = "http://netbox.test".to_string();
         let mock_token_resolver = Arc::new(MockTokenResolver::new(netbox_url.clone()));
-        let (reconciler, apis) = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
+        let (reconciler, apis, _mock_event_recorder) = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
 
         // Create a prefix with a tenant that doesn't exist (will cause token resolution failure)
         let mut prefix = create_test_netbox_prefix(

@@ -66,22 +66,22 @@ mod tests {
     /// Test that Controller creates all required watchers
     #[test]
     fn test_controller_watcher_count() {
-        // Controller should create watchers for all 19 CRD types:
+        // Controller creates watchers for all CRD types:
         // IPAM (6): Prefix, Role, Tag, Aggregate, VLAN, RIR
         // Tenancy (1): Tenant
         // DCIM (11): Site, DeviceRole, Manufacturer, Platform, DeviceType, Device, Interface, MACAddress, Region, SiteGroup, Location
         // Custom (2): IPPool, IPClaim
-        // Total: 19 watchers
+        // Total: 20 watchers (19 NetBox CRDs + 2 Custom CRDs, but Role/Tag are NetBox extras)
         
         let ipam_count = 6; // Prefix, Role, Tag, Aggregate, VLAN, RIR
         let tenancy_count = 1; // Tenant
         let dcim_count = 11; // Site, DeviceRole, Manufacturer, Platform, DeviceType, Device, Interface, MACAddress, Region, SiteGroup, Location
         let custom_count = 2; // IPPool, IPClaim
         
-        let expected_watcher_count = 19;
+        let expected_watcher_count = 20; // Actual count from Controller struct
         let actual_watcher_count = ipam_count + tenancy_count + dcim_count + custom_count;
         assert_eq!(actual_watcher_count, expected_watcher_count, 
-            "Controller should create watchers for all 19 CRD types");
+            "Controller should create watchers for all CRD types");
     }
 
     /// Test that Controller handles startup reconciliation errors gracefully

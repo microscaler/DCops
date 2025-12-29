@@ -64,7 +64,7 @@ impl BackoffState {
 pub struct Reconciler {
     pub(crate) token_resolver: Arc<dyn TokenResolverTrait>,
     pub(crate) secret_fetcher: Option<Arc<dyn SecretFetcher>>, // Optional for testing
-    pub(crate) event_recorder: Option<kube::runtime::events::Recorder>, // Optional for testing
+    pub(crate) event_recorder: Option<Arc<dyn crate::events::EventRecorderTrait>>, // Optional for testing
     // IPAM APIs
     pub(crate) netbox_prefix_api: Box<dyn KubeApiTrait<NetBoxPrefix> + Send + Sync>,
     pub(crate) netbox_role_api: Box<dyn KubeApiTrait<NetBoxRole> + Send + Sync>,
@@ -376,7 +376,7 @@ impl Reconciler {
     pub fn new(
         token_resolver: Arc<dyn TokenResolverTrait>,
         secret_fetcher: Option<Arc<dyn SecretFetcher>>,
-        event_recorder: Option<kube::runtime::events::Recorder>,
+        event_recorder: Option<Arc<dyn crate::events::EventRecorderTrait>>,
         // IPAM APIs
         netbox_prefix_api: impl KubeApiTrait<NetBoxPrefix> + Send + Sync + 'static,
         netbox_role_api: impl KubeApiTrait<NetBoxRole> + Send + Sync + 'static,
@@ -440,8 +440,8 @@ impl Reconciler {
         K::DynamicType: Default,
     {
         if let Some(recorder) = &self.event_recorder {
-            use crate::events::EventRecorderExt;
-            recorder.record_normal(reason, message, obj).await;
+            use crate::events::{record_event_normal_helper, EventRecorderTrait};
+            record_event_normal_helper(recorder.as_ref(), reason, message, obj).await;
         }
     }
     
@@ -451,8 +451,8 @@ impl Reconciler {
         K::DynamicType: Default,
     {
         if let Some(recorder) = &self.event_recorder {
-            use crate::events::EventRecorderExt;
-            recorder.record_warning(reason, message, obj).await;
+            use crate::events::{record_event_warning_helper, EventRecorderTrait};
+            record_event_warning_helper(recorder.as_ref(), reason, message, obj).await;
         }
     }
     
@@ -470,12 +470,12 @@ impl Reconciler {
         K::DynamicType: Default,
     {
         if let Some(recorder) = &self.event_recorder {
-            use crate::events::{EventRecorderExt, reasons};
+            use crate::events::{record_event_warning_helper, reasons, EventRecorderTrait};
             let message = format!(
                 "Retrying reconciliation after error (attempt {}, backoff: {}s): {}",
                 attempt, backoff_seconds, error_str
             );
-            recorder.record_warning(reasons::RETRY_ATTEMPT, &message, obj).await;
+            record_event_warning_helper(recorder.as_ref(), reasons::RETRY_ATTEMPT, &message, obj).await;
         }
     }
     

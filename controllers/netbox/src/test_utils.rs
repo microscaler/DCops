@@ -21,6 +21,9 @@ mod kube_mock;
 pub mod mock_token_resolver;
 
 #[cfg(test)]
+pub mod mock_event_recorder;
+
+#[cfg(test)]
 use crate::reconciler::Reconciler;
 #[cfg(test)]
 use crds::*;

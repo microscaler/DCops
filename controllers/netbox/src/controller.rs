@@ -105,17 +105,20 @@ impl Controller {
         let secret_fetcher = Arc::new(RealSecretFetcher::new(kube_client.clone()));
         
         // Create EventRecorder for emitting Kubernetes events
-        use kube::runtime::events::Reporter;
+        use kube::runtime::events::{Reporter, Recorder};
+        use crate::events::RecorderWrapper;
+        use std::sync::Arc;
         let reporter = Reporter {
             controller: "netbox-controller".to_string(),
             instance: Some("netbox-controller".to_string()),
         };
-        let event_recorder = Recorder::new(kube_client.clone(), reporter);
+        let recorder = Recorder::new(kube_client.clone(), reporter);
+        let event_recorder: Option<Arc<dyn crate::events::EventRecorderTrait>> = Some(Arc::new(RecorderWrapper::new(recorder)));
         
         let reconciler = Reconciler::new(
             token_resolver.clone(),
             Some(secret_fetcher), // Use RealSecretFetcher for production
-            Some(event_recorder), // Use EventRecorder for production
+            event_recorder, // Use EventRecorder for production
             // IPAM
             KubeApiWrapper::new(netbox_prefix_api.clone()), // Wraps REAL Api<T> - zero overhead
             KubeApiWrapper::new(netbox_role_api.clone()),

@@ -18,6 +18,8 @@ pub mod platform;
 #[cfg(test)]
 pub mod platform_test;
 pub mod device_type;
+#[cfg(test)]
+pub mod device_type_test;
 pub mod device;
 #[cfg(test)]
 pub mod device_test;

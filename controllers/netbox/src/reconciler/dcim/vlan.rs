@@ -168,14 +168,11 @@ impl Reconciler {
                     info!("VLAN {} already exists in NetBox (ID: {})", vlan_crd.spec.vid, existing.id);
                     existing
                 } else {
-                    // Site is required if specified in spec, but we've already checked it's ready above
-                    let site_id_value = site_id.ok_or_else(|| {
-                        ControllerError::InvalidConfig("Site ID is required for VLAN when site is specified in spec".to_string())
-                    })?;
+                    // Create VLAN - site is optional (only required if specified in spec)
                     match netbox_client.create_vlan(
                         vlan_crd.spec.vid,
                         &vlan_crd.spec.name,
-                        Some(SiteId(site_id_value)),
+                        site_id.map(SiteId),
                         None, // group_id
                         Some(TenantId(tenant_id)),
                         None, // role_id

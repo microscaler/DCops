@@ -150,13 +150,25 @@ impl Reconciler {
         
         // Validate and resolve Tenant reference (required)
         validate_reference_kind(&prefix_crd.spec.tenant, "NetBoxTenant", "tenant", name)?;
-        let tenant_id = resolve_required_dependency_id(
+        let tenant_id = match resolve_required_dependency_id(
             &*self.netbox_tenant_api,
             &prefix_crd.spec.tenant.name,
             "Tenant",
             name,
             |crd| crd.status.as_ref(),
-        ).await?;
+        ).await {
+            Ok(id) => id,
+            Err(e) => {
+                // Emit event for dependency not found
+                use crate::events::reasons;
+                self.record_event_warning(
+                    reasons::DEPENDENCY_NOT_FOUND,
+                    &format!("Tenant '{}' not found or not ready: {}", prefix_crd.spec.tenant.name, e),
+                    prefix_crd,
+                ).await;
+                return Err(e);
+            }
+        };
         
         // Resolve optional Role reference
         let role_id: Option<u64> = resolve_optional_dependency_id(
@@ -405,6 +417,14 @@ impl Reconciler {
                     ).await {
                         Ok(updated) => {
                             info!("Updated prefix {} in NetBox (ID: {})", updated.prefix.to_string(), updated.id);
+                            
+                            // Emit event for successful update
+                            use crate::events::reasons;
+                            self.record_event_normal(
+                                reasons::UPDATED,
+                                &format!("Updated prefix {} in NetBox (ID: {})", updated.prefix.to_string(), updated.id),
+                                prefix_crd,
+                            ).await;
                             updated
                         }
                         Err(e) => {
@@ -433,6 +453,14 @@ impl Reconciler {
                     ).await {
                         Ok(created) => {
                             info!("Created prefix {} in NetBox (ID: {})", created.prefix.to_string(), created.id);
+                            
+                            // Emit event for successful creation
+                            use crate::events::reasons;
+                            self.record_event_normal(
+                                reasons::CREATED,
+                                &format!("Created prefix {} in NetBox (ID: {})", created.prefix.to_string(), created.id),
+                                prefix_crd,
+                            ).await;
                             created
                         }
                         Err(e) => {
@@ -463,6 +491,13 @@ impl Reconciler {
                                         let error_msg = format!("Failed to create prefix in NetBox (may already exist, but could not verify): {} (query error: {})", e, query_err);
                                         error!("{}", error_msg);
                                         update_status_error(&*self.netbox_prefix_api, name, namespace, error_msg.clone(), prefix_crd.status.as_ref()).await;
+                                        // Emit event for reconciliation failure
+                                        use crate::events::reasons;
+                                        self.record_event_warning(
+                                            reasons::RECONCILIATION_FAILED,
+                                            &error_msg,
+                                            prefix_crd,
+                                        ).await;
                                         return Err(ControllerError::NetBox(e));
                                     }
                                 }
@@ -508,6 +543,13 @@ impl Reconciler {
                 let error_msg = format!("Failed to update NetBoxPrefix status: {}", e);
                 error!("{}", error_msg);
                 update_status_error(&*self.netbox_prefix_api, name, namespace, error_msg.clone(), prefix_crd.status.as_ref()).await;
+                // Emit event for reconciliation failure
+                use crate::events::reasons;
+                self.record_event_warning(
+                    reasons::RECONCILIATION_FAILED,
+                    &error_msg,
+                    prefix_crd,
+                ).await;
                 Err(ControllerError::Kube(e.into()))
             }
         }

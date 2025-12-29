@@ -432,6 +432,28 @@ impl Reconciler {
         }
     }
     
+    /// Helper method to record a Normal event
+    pub(crate) async fn record_event_normal<K: kube::Resource>(&self, reason: &str, message: &str, obj: &K) 
+    where
+        K::DynamicType: Default,
+    {
+        if let Some(recorder) = &self.event_recorder {
+            use crate::events::EventRecorderExt;
+            recorder.record_normal(reason, message, obj).await;
+        }
+    }
+    
+    /// Helper method to record a Warning event
+    pub(crate) async fn record_event_warning<K: kube::Resource>(&self, reason: &str, message: &str, obj: &K)
+    where
+        K::DynamicType: Default,
+    {
+        if let Some(recorder) = &self.event_recorder {
+            use crate::events::EventRecorderExt;
+            recorder.record_warning(reason, message, obj).await;
+        }
+    }
+    
     /// Performs startup reconciliation to map existing NetBox resources back to Kubernetes CRs.
     ///
     /// This is called when the controller starts up to ensure that:

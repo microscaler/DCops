@@ -283,6 +283,7 @@ impl Reconciler {
                                 }
                             }
                         }
+                    }
                         Err(query_err) => {
                             warn!("Failed to query all IPs in prefix: {}", query_err);
                         }

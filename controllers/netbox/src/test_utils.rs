@@ -318,6 +318,57 @@ pub fn create_test_netbox_site(
     }
 }
 
+/// Helper to create test NetBoxManufacturer CRD
+#[cfg(test)]
+pub fn create_test_netbox_manufacturer(
+    name: &str,
+    namespace: &str,
+    netbox_id: Option<u64>,
+) -> NetBoxManufacturer {
+    NetBoxManufacturer {
+        metadata: ObjectMeta {
+            name: Some(name.to_string()),
+            namespace: Some(namespace.to_string()),
+            ..Default::default()
+        },
+        spec: crds::NetBoxManufacturerSpec {
+            name: name.to_string(),
+            slug: Some(name.to_string()),
+            description: None,
+        },
+        status: netbox_id.map(|id| crds::NetBoxManufacturerStatus {
+            netbox_id: Some(id),
+            netbox_url: Some(format!("http://test-netbox/api/dcim/manufacturers/{}/", id)),
+            state: crds::ResourceState::Created,
+            error: None,
+            last_reconciled: None,
+        }),
+    }
+}
+
+/// Helper to create test NetBoxManufacturer NetBox model
+#[cfg(test)]
+pub fn create_test_manufacturer(
+    id: u64,
+    name: &str,
+    base_url: &str,
+) -> netbox_client::Manufacturer {
+    use chrono::Utc;
+    netbox_client::Manufacturer {
+        id,
+        url: format!("{}/api/dcim/manufacturers/{}/", base_url, id),
+        display: name.to_string(),
+        name: name.to_string(),
+        slug: name.to_string(),
+        description: None,
+        devicetype_count: 0,
+        inventoryitem_count: 0,
+        platform_count: 0,
+        created: Utc::now().to_rfc3339(),
+        last_updated: Utc::now().to_rfc3339(),
+    }
+}
+
 /// Helper to create test NetBoxTenant CRD
 #[cfg(test)]
 pub fn create_test_netbox_tenant(

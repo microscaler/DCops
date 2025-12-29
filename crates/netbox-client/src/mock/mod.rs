@@ -142,6 +142,11 @@ impl MockNetBoxClient {
         self.manufacturers.lock().unwrap().insert(manufacturer.name.clone(), manufacturer);
     }
 
+    /// Add a platform to the mock store (for test setup)
+    pub fn add_platform(&self, platform: Platform) {
+        self.platforms.lock().unwrap().insert(platform.name.clone(), platform);
+    }
+
     /// Add an aggregate to the mock store (for test setup)
     pub fn add_aggregate(&self, aggregate: Aggregate) {
         self.aggregates.lock().unwrap().insert(aggregate.id, aggregate);

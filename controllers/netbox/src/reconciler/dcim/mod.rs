@@ -15,6 +15,8 @@ pub mod manufacturer;
 #[cfg(test)]
 pub mod manufacturer_test;
 pub mod platform;
+#[cfg(test)]
+pub mod platform_test;
 pub mod device_type;
 pub mod device;
 #[cfg(test)]

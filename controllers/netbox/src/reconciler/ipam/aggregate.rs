@@ -12,6 +12,15 @@ impl Reconciler {
         use crate::reconcile_helpers::extract_name_and_namespace;
         let (name, namespace) = extract_name_and_namespace(aggregate_crd, "NetBoxAggregate")?;
         
+        // Validate prefix format early with clear error message
+        use std::str::FromStr;
+        use ipnet::IpNet;
+        let _prefix_net = IpNet::from_str(&aggregate_crd.spec.prefix)
+            .map_err(|e| ControllerError::InvalidIPFormat(format!(
+                "Invalid prefix format '{}' in NetBoxAggregate {}/{}: {}. Expected CIDR notation (e.g., '192.168.0.0/16' or '2001:db8::/32')",
+                aggregate_crd.spec.prefix, namespace, name, e
+            )))?;
+        
         info!("Reconciling NetBoxAggregate {}/{}", namespace, name);
         
         // Local helper to patch status with an error message.

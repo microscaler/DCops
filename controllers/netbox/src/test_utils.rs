@@ -158,6 +158,8 @@ pub fn create_test_reconciler(
 }
 
 /// Helper to create a test Prefix with all required fields
+/// 
+/// Validates the prefix string format using IpNet::from_str()
 #[cfg(test)]
 pub fn create_test_prefix(
     id: u64,
@@ -166,11 +168,13 @@ pub fn create_test_prefix(
 ) -> netbox_client::Prefix {
     use netbox_client::{Prefix, PrefixStatus};
     use chrono::Utc;
-    
     use std::str::FromStr;
     use ipnet::IpNet;
+    
+    // Validate prefix format
     let prefix_net = IpNet::from_str(prefix)
-        .expect("Invalid prefix format in test");
+        .unwrap_or_else(|e| panic!("Invalid prefix format '{}' in test: {}. Expected CIDR notation (e.g., '192.168.1.0/24')", prefix, e));
+    
     Prefix {
         id,
         url: format!("{}/api/ipam/prefixes/{}/", base_url, id),

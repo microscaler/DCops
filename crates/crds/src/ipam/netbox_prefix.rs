@@ -19,7 +19,9 @@ use crate::references::NetBoxResourceReference;
 )]
 #[serde(rename_all = "camelCase")]
 pub struct NetBoxPrefixSpec {
-    /// Prefix CIDR (e.g., "192.168.1.0/24")
+    /// Prefix CIDR (e.g., "192.168.1.0/24" or "2001:db8::/64")
+    /// Must be a valid CIDR notation (IP address with prefix length)
+    #[schemars(pattern(r"^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)/(?:[0-9]|[12][0-9]|3[0-2])$|^(?:[0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}/(?:[0-9]|[1-9][0-9]|1[0-2][0-8])$"))]
     pub prefix: String,
     
     /// Description of the prefix

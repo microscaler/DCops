@@ -23,7 +23,9 @@ pub struct IPClaimSpec {
     pub device_ref: DeviceRef,
     
     /// Preferred IP (hint, not guarantee)
+    /// Must be a valid CIDR notation (IP address with prefix length, e.g., "192.168.1.10/24")
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(pattern(r"^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)/(?:[0-9]|[12][0-9]|3[0-2])$|^(?:[0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}/(?:[0-9]|[1-9][0-9]|1[0-2][0-8])$"))]
     pub preferred_ip: Option<String>,
 }
 

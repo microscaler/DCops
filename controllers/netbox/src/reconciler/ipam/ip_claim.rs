@@ -14,6 +14,17 @@ impl Reconciler {
         let (name, namespace) = extract_name_and_namespace(claim, "IPClaim")?;
         let resource_key = format!("{}/{}", namespace, name);
         
+        // Validate preferred_ip format early with clear error message (if provided)
+        if let Some(ref preferred_ip) = claim.spec.preferred_ip {
+            use std::str::FromStr;
+            use ipnet::IpNet;
+            let _preferred_net = IpNet::from_str(preferred_ip)
+                .map_err(|e| ControllerError::InvalidIPFormat(format!(
+                    "Invalid preferred IP format '{}' in IPClaim {}/{}: {}. Expected CIDR notation (e.g., '192.168.1.10/24' or '2001:db8::1/64')",
+                    preferred_ip, namespace, name, e
+                )))?;
+        }
+        
         info!("Reconciling IPClaim {}/{}", namespace, name);
         
         // Helper function to update status with error (only if error changed)

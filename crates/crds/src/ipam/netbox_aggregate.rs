@@ -17,7 +17,9 @@ use serde::{Deserialize, Serialize};
 )]
 #[serde(rename_all = "camelCase")]
 pub struct NetBoxAggregateSpec {
-    /// Aggregate prefix (e.g., "192.168.0.0/16")
+    /// Aggregate prefix (e.g., "192.168.0.0/16" or "2001:db8::/32")
+    /// Must be a valid CIDR notation (IP address with prefix length)
+    #[schemars(pattern(r"^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)/(?:[0-9]|[12][0-9]|3[0-2])$|^(?:[0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}/(?:[0-9]|[1-9][0-9]|1[0-2][0-8])$"))]
     pub prefix: String,
     
     /// RIR (Regional Internet Registry) - ARIN, RIPE, APNIC, etc.

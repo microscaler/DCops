@@ -24,8 +24,9 @@ pub struct PrimaryIPReference {
     /// Direct IP address string (e.g., "192.168.1.10/24" or "2001:db8::1/64")
     /// Used as fallback when IPClaim CRD is not available
     /// Set this when providing a direct IP address
+    /// Must be a valid CIDR notation (IP address with prefix length)
     #[serde(skip_serializing_if = "Option::is_none", rename = "ipAddress")]
-    #[schemars(rename = "ipAddress")]
+    #[schemars(rename = "ipAddress", pattern(r"^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)/(?:[0-9]|[12][0-9]|3[0-2])$|^(?:[0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}/(?:[0-9]|[1-9][0-9]|1[0-2][0-8])$"))]
     pub ip_address: Option<String>,
 }
 

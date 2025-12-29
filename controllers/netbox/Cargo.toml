@@ -32,6 +32,9 @@ futures = "0.3"
 crds = { path = "../../crates/crds" }
 netbox-client = { path = "../../crates/netbox-client", features = ["test-util"] }
 
+# IP network types
+ipnet = { workspace = true }
+
 # Async trait support
 async-trait = "0.1"
 

@@ -3,143 +3,118 @@
 #[cfg(test)]
 mod tests {
     use crate::test_utils::*;
+    use crate::kube_api_trait::mock::MockKubeApi;
     use netbox_client::{MockNetBoxClient, AvailableIP};
+    use crds::{IPPool, NetBoxPrefix};
+    use kube::Client;
     
-    // Note: These tests require mocking the Kubernetes API (kube::Api) for full functionality.
-    // The NetBoxClient is already mocked via MockNetBoxClient.
-    // For now, these tests are structured but may need kube test framework integration.
-    
-    #[tokio::test]
-    #[ignore] // Ignored until Kubernetes API mocking is implemented
-    async fn test_reconcile_ip_pool_success() {
-        
-        // Setup: Create mock NetBoxClient
-        let _mock_client = MockNetBoxClient::new("http://test-netbox");
-        
-        // Setup: Create test prefix in mock using helper
-        let _test_prefix = create_test_prefix(1, "192.168.1.0/24", "http://test-netbox");
-        // Note: MockNetBoxClient needs to support add_prefix - this is a placeholder
-        // mock_client.add_prefix(test_prefix);
-        
-        // Setup: Add available IPs
-        let _available_ips = vec![
-            AvailableIP {
-                family: 4,
-                address: "192.168.1.1/24".to_string(),
-                vrf: None,
-                description: None,
-            },
-            AvailableIP {
-                family: 4,
-                address: "192.168.1.2/24".to_string(),
-                vrf: None,
-                description: None,
-            },
-        ];
-        // Note: MockNetBoxClient needs to support set_available_ips - this is a placeholder
-        // mock_client.set_available_ips(1, available_ips);
-        
-        // Setup: Create test IPPool CRD
-        let _ip_pool = create_test_ip_pool("test-pool", "default", "test-prefix", None);
-        
-        // Setup: Create test NetBoxPrefix with status
-        let _netbox_prefix = create_test_netbox_prefix(
+    /// Helper to set up test data for IP pool reconciliation
+    fn setup_ip_pool_test_data() -> (IPPool, NetBoxPrefix) {
+        // Create test NetBoxPrefix with status (required dependency)
+        let prefix = create_test_netbox_prefix(
             "test-prefix",
             "default",
             1,
             Some("http://test-netbox/api/ipam/prefixes/1/".to_string()),
         );
         
-        // TODO: Create reconciler with mock client
-        // Requires Kubernetes API mocking (kube::Api) - see kube test framework
-        // let kube_client = kube::Client::try_default().await?;
-        // let reconciler = create_test_reconciler(mock_client, kube_client, "default");
+        // Create test IPPool CRD
+        let pool = create_test_ip_pool("test-pool", "default", "test-prefix", None);
         
-        // TODO: Mock kube API to return the NetBoxPrefix CRD when get() is called
-        // TODO: Mock kube API to accept status patch when patch_status() is called
-        
-        // Execute: Reconcile
-        // let result = reconciler.reconcile_ip_pool(&ip_pool).await;
-        
-        // Assert: Should succeed
-        // assert!(result.is_ok());
-        
-        // Assert: Status should be updated with correct values
-        // TODO: Verify status patch was called with correct values (netbox_prefix_id: 1, total_ips: 2, etc.)
+        (pool, prefix)
     }
     
     #[tokio::test]
-    #[ignore] // Ignored until Kubernetes API mocking is implemented
-    async fn test_reconcile_ip_pool_prefix_not_found() {
-        // Setup: Create mock NetBoxClient that returns NotFound
-        let _mock_client = MockNetBoxClient::new("http://test-netbox");
-        
-        // Setup: Create test IPPool CRD
-        let _ip_pool = create_test_ip_pool("test-pool", "default", "test-prefix", None);
-        
-        // Setup: Create test NetBoxPrefix with status pointing to non-existent prefix
-        let _netbox_prefix = create_test_netbox_prefix(
-            "test-prefix",
-            "default",
-            999, // Non-existent ID
-            None,
-        );
-        
-        // TODO: Create reconciler with mock client
-        // TODO: Mock kube API to return the NetBoxPrefix CRD
-        
-        // Execute: Reconcile
-        // let result = reconciler.reconcile_ip_pool(&ip_pool).await;
-        
-        // Assert: Should fail with PrefixNotFound error
-        // assert!(matches!(result, Err(ControllerError::PrefixNotFound(_))));
-    }
-    
-    #[tokio::test]
-    #[ignore] // Ignored until Kubernetes API mocking is implemented
-    async fn test_reconcile_ip_pool_no_status_update_needed() {
-        use crate::test_utils::create_test_prefix;
-        
+    #[ignore] // Ignored until kube::Client mocking is implemented
+    async fn test_reconcile_ip_pool_success() {
         // Setup: Create mock NetBoxClient
-        let _mock_client = MockNetBoxClient::new("http://test-netbox");
+        let _mock_netbox = MockNetBoxClient::new("http://test-netbox");
         
-        // Setup: Create test prefix using helper
-        let _test_prefix = create_test_prefix(1, "192.168.1.0/24", "http://test-netbox");
-        // Note: MockNetBoxClient needs to support add_prefix - this is a placeholder
-        // mock_client.add_prefix(test_prefix);
+        // Setup: Create test data
+        let (pool, prefix) = setup_ip_pool_test_data();
         
-        // Setup: Add available IPs (same count as before)
-        let _available_ips = vec![AvailableIP {
-            family: 4,
-            address: "192.168.1.1/24".to_string(),
-            vrf: None,
-            description: None,
-        }];
-        // Note: MockNetBoxClient needs to support set_available_ips - this is a placeholder
-        // mock_client.set_available_ips(1, available_ips);
+        // Setup: Create mock Kubernetes APIs
+        let prefix_api = MockKubeApi::<NetBoxPrefix>::new();
+        // prefix_api.store("test-prefix".to_string(), prefix);
         
-        // Setup: Create IPPool with status that matches current state
-        let mut _ip_pool = create_test_ip_pool("test-pool", "default", "test-prefix", None);
-        _ip_pool.status = Some(crds::IPPoolStatus {
-            netbox_prefix_id: Some(1),
-            netbox_prefix_url: Some("http://test-netbox/api/ipam/prefixes/1/".to_string()),
-            total_ips: 2, // 1 allocated + 1 available
-            allocated_ips: 1,
-            available_ips: 1,
-            last_reconciled: None,
-        });
+        let pool_api = MockKubeApi::<IPPool>::new();
+        // pool_api.store("test-pool".to_string(), pool.clone());
         
-        // TODO: Create reconciler with mock client
-        // TODO: Mock kube API
+        // Setup: Create reconciler
+        let _kube_client = match Client::try_default().await {
+            Ok(client) => client,
+            Err(_) => return, // Skip test if no kube client available
+        };
         
-        // Execute: Reconcile
-        // let result = reconciler.reconcile_ip_pool(&ip_pool).await;
-        
-        // Assert: Should succeed
-        // assert!(result.is_ok());
-        
-        // Assert: Status should NOT be updated (no change needed)
-        // TODO: Verify status patch was NOT called
+        // TODO: Uncomment once kube::Client mocking is implemented
+        // let reconciler = create_test_reconciler(kube_client, "http://test-netbox".to_string());
+        // 
+        // // Setup: Add available IPs to mock NetBox
+        // let available_ips = vec![
+        //     AvailableIP {
+        //         family: 4,
+        //         address: "192.168.1.1/24".to_string(),
+        //         vrf: None,
+        //         description: None,
+        //     },
+        //     AvailableIP {
+        //         family: 4,
+        //         address: "192.168.1.2/24".to_string(),
+        //         vrf: None,
+        //         description: None,
+        //     },
+        // ];
+        // mock_netbox.set_available_ips(1, available_ips);
+        // 
+        // // Execute: Reconcile
+        // let result = reconciler.reconcile_ip_pool(&pool).await;
+        // 
+        // // Assert: Should succeed
+        // assert!(result.is_ok(), "Reconciliation should succeed: {:?}", result.err());
+        // 
+        // // Assert: Status should be updated with correct values
+        // let updated_crd = pool_api.get("test-pool").await.unwrap();
+        // assert!(updated_crd.status.is_some(), "Status should be set");
+        // let status = updated_crd.status.unwrap();
+        // assert_eq!(status.netbox_prefix_id, Some(1), "Prefix ID should be set");
+        // assert_eq!(status.total_ips, 2, "Total IPs should be 2");
+    }
+    
+    #[tokio::test]
+    #[ignore] // Ignored until kube::Client mocking is implemented
+    async fn test_reconcile_ip_pool_prefix_not_found() {
+        // TODO: Test error handling when prefix CRD is not found
+        // 1. Create IPPool with reference to non-existent prefix
+        // 2. Reconcile
+        // 3. Verify error is returned
+    }
+    
+    #[tokio::test]
+    #[ignore] // Ignored until kube::Client mocking is implemented
+    async fn test_reconcile_ip_pool_prefix_no_status() {
+        // TODO: Test error handling when prefix CRD has no status (not created yet)
+        // 1. Create IPPool with reference to prefix without status
+        // 2. Reconcile
+        // 3. Verify error is returned
+    }
+    
+    #[tokio::test]
+    #[ignore] // Ignored until kube::Client mocking is implemented
+    async fn test_reconcile_ip_pool_no_status_update_needed() {
+        // TODO: Test idempotent reconciliation
+        // 1. Create IPPool with status that matches current NetBox state
+        // 2. Reconcile
+        // 3. Verify status patch was NOT called (no change needed)
+    }
+    
+    #[tokio::test]
+    #[ignore] // Ignored until kube::Client mocking is implemented
+    async fn test_reconcile_ip_pool_status_update() {
+        // TODO: Test status update when IP counts change
+        // 1. Create IPPool with status
+        // 2. Change available IP count in NetBox
+        // 3. Reconcile
+        // 4. Verify status is updated with new counts
     }
 }
 

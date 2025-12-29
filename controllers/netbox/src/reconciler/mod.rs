@@ -478,7 +478,7 @@ impl Reconciler {
             
             // Try to find this prefix in NetBox by CIDR
             let prefix_cidr = &prefix_crd.spec.prefix;
-            info!("Mapping NetBoxPrefix {}/{} (prefix: {}) to NetBox resource...", namespace, name, prefix_cidr);
+            info!("Mapping NetBoxPrefix {}/{} (prefix: {}) to NetBox resource...", namespace, name, prefix_net);
             
             // Convert prefix_cidr string to IpNet for comparison (used in multiple places)
             use std::str::FromStr;

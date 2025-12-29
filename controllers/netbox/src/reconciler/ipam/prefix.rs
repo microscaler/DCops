@@ -388,7 +388,7 @@ impl Reconciler {
                 
                 let netbox_prefix = if let Some(existing) = existing_prefix {
                     // Prefix exists in NetBox - this is the idempotent case
-                    info!("Prefix {} already exists in NetBox (ID: {}), acknowledging existence (idempotency)", prefix_crd.spec.prefix, existing.id);
+                    info!("Prefix {} already exists in NetBox (ID: {}), acknowledging existence (idempotency)", prefix_net, existing.id);
                     
                     // Update prefix if needed (tenant, site, vlan, description, status)
                     // Note: Omitting role and tags for now (requires numeric IDs or string slugs)
@@ -404,7 +404,7 @@ impl Reconciler {
                         None, // tags - omit for now (requires numeric IDs or tag slugs)
                     ).await {
                         Ok(updated) => {
-                            info!("Updated prefix {} in NetBox (ID: {})", updated.prefix, updated.id);
+                            info!("Updated prefix {} in NetBox (ID: {})", updated.prefix.to_string(), updated.id);
                             updated
                         }
                         Err(e) => {
@@ -416,7 +416,7 @@ impl Reconciler {
                     }
                 } else {
                     // Prefix doesn't exist, create it
-                    debug!("Attempting to create prefix {} in NetBox", prefix_crd.spec.prefix);
+                    debug!("Attempting to create prefix {} in NetBox", prefix_net);
                     
                     // NetBox API requires site and role to be numeric IDs
                     // Tags must be numeric IDs or tag slugs
@@ -452,7 +452,7 @@ impl Reconciler {
                                             found.clone()
                                         } else {
                                             // Prefix exists but we can't find it - this is unusual
-                                            let error_msg = format!("Prefix {} already exists in NetBox but could not retrieve it: {}", prefix_crd.spec.prefix, e);
+                                            let error_msg = format!("Prefix {} already exists in NetBox but could not retrieve it: {}", prefix_net, e);
                                             error!("{}", error_msg);
                                             update_status_error(&*self.netbox_prefix_api, name, namespace, error_msg.clone(), prefix_crd.status.as_ref()).await;
                                             return Err(ControllerError::NetBox(e));

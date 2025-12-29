@@ -167,6 +167,11 @@ impl MockNetBoxClient {
         self.interfaces.lock().unwrap().insert(interface.id, interface);
     }
 
+    /// Add a location to the mock store (for test setup)
+    pub fn add_location(&self, location: Location) {
+        self.locations.lock().unwrap().insert(location.id, location);
+    }
+
     /// Generate next ID
     pub(crate) fn next_id(&self) -> u64 {
         let mut id = self.next_id.lock().unwrap();

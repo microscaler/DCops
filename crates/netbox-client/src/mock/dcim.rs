@@ -434,10 +434,29 @@ pub async fn create_site_group(client: &MockNetBoxClient, name: &str, slug: Opti
         Ok(site_group)
     }
 
-pub async fn query_locations(client: &MockNetBoxClient, _filters: &[(&str, &str)], _fetch_all: bool) -> Result<Vec<Location>, NetBoxError> {
+pub async fn query_locations(client: &MockNetBoxClient, filters: &[(&str, &str)], _fetch_all: bool) -> Result<Vec<Location>, NetBoxError> {
         let locations = client.locations.lock().unwrap();
-        Ok(locations.values().cloned().collect())
-}
+        let mut results: Vec<Location> = locations.values().cloned().collect();
+        
+        // Apply filters
+        for (key, value) in filters {
+            match *key {
+                "site_id" => {
+                    let site_id: u64 = value.parse().unwrap_or(0);
+                    results.retain(|l| l.site.id == site_id);
+                }
+                "name" => {
+                    results.retain(|l| l.name == *value);
+                }
+                "slug" => {
+                    results.retain(|l| l.slug == *value);
+                }
+                _ => {}
+            }
+        }
+        
+        Ok(results)
+    }
 
 pub async fn get_location(client: &MockNetBoxClient, id: u64) -> Result<Location, NetBoxError> {
         client.locations

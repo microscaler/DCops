@@ -7,7 +7,6 @@ pub mod site;
 pub mod site_test;
 pub mod region;
 pub mod site_group;
-pub mod location;
 pub mod device_role;
 #[cfg(test)]
 pub mod device_role_test;
@@ -26,6 +25,9 @@ pub mod device_test;
 pub mod interface;
 #[cfg(test)]
 pub mod interface_test;
+pub mod location;
+#[cfg(test)]
+pub mod location_test;
 pub mod mac_address;
 pub mod vlan;
 #[cfg(test)]

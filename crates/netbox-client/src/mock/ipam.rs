@@ -125,6 +125,8 @@ pub async fn query_prefixes(client: &MockNetBoxClient, _filters: &[(&str, &str)]
 }
 
 pub async fn create_ip_address(client: &MockNetBoxClient, address: &str, request: Option<AllocateIPRequest>) -> Result<IPAddress, NetBoxError> {
+        // Note: This function still accepts &str for internal mock use
+        // The trait method converts IpNet to string before calling this
         use std::str::FromStr;
         use ipnet::IpNet;
         
@@ -212,6 +214,8 @@ pub async fn delete_ip_address(client: &MockNetBoxClient, id: u64) -> Result<(),
 }
 
 pub async fn create_prefix(client: &MockNetBoxClient, prefix: &str, description: Option<String>, _site_id: Option<SiteId>, vlan_id: Option<VlanId>, status: Option<&str>, role_id: Option<RoleId>, tenant_id: Option<TenantId>, tags: Option<Vec<String>>) -> Result<Prefix, NetBoxError> {
+        // Note: This function still accepts &str for internal mock use
+        // The trait method converts IpNet to string before calling this
         let id = client.next_id();
         let status_str = status.unwrap_or("active");
         let prefix_status = match status_str {
@@ -268,6 +272,8 @@ pub async fn create_prefix(client: &MockNetBoxClient, prefix: &str, description:
     }
 
 pub async fn update_prefix(client: &MockNetBoxClient, id: PrefixId, prefix: Option<&str>, description: Option<String>, status: Option<&str>, role: Option<String>, tenant_id: Option<TenantId>, _site_id: Option<SiteId>, vlan_id: Option<VlanId>, tags: Option<Vec<String>>) -> Result<Prefix, NetBoxError> {
+        // Note: This function still accepts Option<&str> for internal mock use
+        // The trait method converts Option<&IpNet> to Option<&str> before calling this
         let id_value: u64 = id.into();
         let mut prefixes = client.prefixes.lock().unwrap();
         let prefix_obj = prefixes
@@ -338,6 +344,8 @@ pub async fn get_aggregate(client: &MockNetBoxClient, id: AggregateId) -> Result
 }
 
 pub async fn create_aggregate(client: &MockNetBoxClient, prefix: &str, rir_id: Option<RirId>, date_allocated: Option<&str>, description: Option<String>, comments: Option<String>) -> Result<Aggregate, NetBoxError> {
+        // Note: This function still accepts &str for internal mock use
+        // The trait method converts IpNet to string before calling this
         let id = client.next_id();
         use std::str::FromStr;
         use ipnet::IpNet;

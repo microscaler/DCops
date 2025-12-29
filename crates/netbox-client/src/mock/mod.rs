@@ -165,8 +165,8 @@ impl NetBoxClientTrait for MockNetBoxClient {
         ipam::query_prefixes(self, filters, fetch_all).await
     }
 
-    async fn create_ip_address(&self, address: &str, request: Option<AllocateIPRequest>) -> Result<IPAddress, NetBoxError> {
-        ipam::create_ip_address(self, address, request).await
+    async fn create_ip_address(&self, address: &ipnet::IpNet, request: Option<AllocateIPRequest>) -> Result<IPAddress, NetBoxError> {
+        ipam::create_ip_address(self, address.to_string().as_str(), request).await
     }
 
     async fn update_ip_address(&self, id: IpAddressId, request: AllocateIPRequest) -> Result<IPAddress, NetBoxError> {

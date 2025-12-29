@@ -422,7 +422,7 @@ impl Reconciler {
                     // Tags must be numeric IDs or tag slugs
                     // TODO: Add support for resolving tag names to tag slugs
                     match netbox_client.create_prefix(
-                        &prefix_crd.spec.prefix,
+                        &prefix_net,
                         prefix_crd.spec.description.clone(),
                         site_id.map(SiteId),
                         vlan_id.map(VlanId),

@@ -95,17 +95,18 @@ pub async fn get_aggregate(core: &NetBoxClientCore, id: AggregateId) -> Result<A
 /// Create a new aggregate
 pub async fn create_aggregate(
     core: &NetBoxClientCore,
-    prefix: &str,
+    prefix: &ipnet::IpNet,
     rir_id: Option<RirId>,
     date_allocated: Option<&str>, // ISO 8601 date
     description: Option<String>,
     comments: Option<String>,
 ) -> Result<Aggregate, NetBoxError> {
     let url = format!("{}/api/ipam/aggregates/", core.base_url);
-    debug!("Creating aggregate {} in NetBox", prefix);
+    let prefix_str = prefix.to_string();
+    debug!("Creating aggregate {} in NetBox", prefix_str);
     
     let mut body = serde_json::json!({
-        "prefix": prefix,
+        "prefix": prefix_str.clone(),
     });
     
     // RIR may be optional depending on deployment; if missing, proceed and let NetBox validation decide.

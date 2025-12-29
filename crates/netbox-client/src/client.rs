@@ -80,7 +80,7 @@ impl NetBoxClientTrait for NetBoxClient {
         ipam::query_prefixes(&self.core, filters, fetch_all).await
     }
 
-    async fn create_ip_address(&self, address: &str, request: Option<AllocateIPRequest>) -> Result<IPAddress, NetBoxError> {
+    async fn create_ip_address(&self, address: &ipnet::IpNet, request: Option<AllocateIPRequest>) -> Result<IPAddress, NetBoxError> {
         ipam::create_ip_address(&self.core, address, request).await
     }
 
@@ -92,11 +92,11 @@ impl NetBoxClientTrait for NetBoxClient {
         ipam::delete_ip_address(&self.core, id.into()).await
     }
 
-    async fn create_prefix(&self, prefix: &str, description: Option<String>, site_id: Option<SiteId>, vlan_id: Option<VlanId>, status: Option<&str>, role_id: Option<RoleId>, tenant_id: Option<TenantId>, tags: Option<Vec<String>>) -> Result<Prefix, NetBoxError> {
+    async fn create_prefix(&self, prefix: &ipnet::IpNet, description: Option<String>, site_id: Option<SiteId>, vlan_id: Option<VlanId>, status: Option<&str>, role_id: Option<RoleId>, tenant_id: Option<TenantId>, tags: Option<Vec<String>>) -> Result<Prefix, NetBoxError> {
         ipam::create_prefix(&self.core, prefix, description, site_id.map(|id| id.into()), vlan_id.map(|id| id.into()), status, role_id.map(|id| id.into()), tenant_id.map(|id| id.into()), tags).await
     }
 
-    async fn update_prefix(&self, id: PrefixId, prefix: Option<&str>, description: Option<String>, status: Option<&str>, role: Option<String>, tenant_id: Option<TenantId>, site_id: Option<SiteId>, vlan_id: Option<VlanId>, tags: Option<Vec<String>>) -> Result<Prefix, NetBoxError> {
+    async fn update_prefix(&self, id: PrefixId, prefix: Option<&ipnet::IpNet>, description: Option<String>, status: Option<&str>, role: Option<String>, tenant_id: Option<TenantId>, site_id: Option<SiteId>, vlan_id: Option<VlanId>, tags: Option<Vec<String>>) -> Result<Prefix, NetBoxError> {
         ipam::update_prefix(&self.core, id, prefix, description, status, role, tenant_id, site_id, vlan_id, tags).await
     }
 
@@ -108,7 +108,7 @@ impl NetBoxClientTrait for NetBoxClient {
         ipam::get_aggregate(&self.core, id).await
     }
 
-    async fn create_aggregate(&self, prefix: &str, rir_id: Option<RirId>, date_allocated: Option<&str>, description: Option<String>, comments: Option<String>) -> Result<Aggregate, NetBoxError> {
+    async fn create_aggregate(&self, prefix: &ipnet::IpNet, rir_id: Option<RirId>, date_allocated: Option<&str>, description: Option<String>, comments: Option<String>) -> Result<Aggregate, NetBoxError> {
         ipam::create_aggregate(&self.core, prefix, rir_id, date_allocated, description, comments).await
     }
 

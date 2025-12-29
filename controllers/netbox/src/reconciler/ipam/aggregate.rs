@@ -163,9 +163,15 @@ impl Reconciler {
                 if let Some(existing) = existing_aggregate {
                     existing
                 } else {
+                    // Convert CRD string to IpNet
+                    use std::str::FromStr;
+                    use ipnet::IpNet;
+                    let prefix_net = IpNet::from_str(&aggregate_crd.spec.prefix)
+                        .map_err(|e| ControllerError::InvalidIPFormat(format!("Invalid prefix format in CRD: {} - {}", aggregate_crd.spec.prefix, e)))?;
+                    
                     debug!("Attempting to create NetBoxAggregate {} in NetBox", aggregate_crd.spec.prefix);
                     match netbox_client.create_aggregate(
-                        &aggregate_crd.spec.prefix,
+                        &prefix_net,
                         rir_id.map(RirId),
                         aggregate_crd.spec.date_allocated.as_deref(),
                         aggregate_crd.spec.description.clone(),

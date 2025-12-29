@@ -57,7 +57,7 @@ impl NetBoxClientTrait for MockNetBoxClientWrapper {
         self.client.query_prefixes(filters, fetch_all).await
     }
 
-    async fn create_ip_address(&self, address: &str, request: Option<netbox_client::AllocateIPRequest>) -> Result<netbox_client::IPAddress, netbox_client::NetBoxError> {
+    async fn create_ip_address(&self, address: &ipnet::IpNet, request: Option<netbox_client::AllocateIPRequest>) -> Result<netbox_client::IPAddress, netbox_client::NetBoxError> {
         self.client.create_ip_address(address, request).await
     }
 
@@ -69,11 +69,11 @@ impl NetBoxClientTrait for MockNetBoxClientWrapper {
         self.client.delete_ip_address(id).await
     }
 
-    async fn create_prefix(&self, prefix: &str, description: Option<String>, site_id: Option<netbox_client::SiteId>, vlan_id: Option<netbox_client::VlanId>, status: Option<&str>, role_id: Option<netbox_client::RoleId>, tenant_id: Option<netbox_client::TenantId>, tags: Option<Vec<String>>) -> Result<netbox_client::Prefix, netbox_client::NetBoxError> {
+    async fn create_prefix(&self, prefix: &ipnet::IpNet, description: Option<String>, site_id: Option<netbox_client::SiteId>, vlan_id: Option<netbox_client::VlanId>, status: Option<&str>, role_id: Option<netbox_client::RoleId>, tenant_id: Option<netbox_client::TenantId>, tags: Option<Vec<String>>) -> Result<netbox_client::Prefix, netbox_client::NetBoxError> {
         self.client.create_prefix(prefix, description, site_id, vlan_id, status, role_id, tenant_id, tags).await
     }
 
-    async fn update_prefix(&self, id: netbox_client::PrefixId, prefix: Option<&str>, description: Option<String>, status: Option<&str>, role: Option<String>, tenant_id: Option<netbox_client::TenantId>, site_id: Option<netbox_client::SiteId>, vlan_id: Option<netbox_client::VlanId>, tags: Option<Vec<String>>) -> Result<netbox_client::Prefix, netbox_client::NetBoxError> {
+    async fn update_prefix(&self, id: netbox_client::PrefixId, prefix: Option<&ipnet::IpNet>, description: Option<String>, status: Option<&str>, role: Option<String>, tenant_id: Option<netbox_client::TenantId>, site_id: Option<netbox_client::SiteId>, vlan_id: Option<netbox_client::VlanId>, tags: Option<Vec<String>>) -> Result<netbox_client::Prefix, netbox_client::NetBoxError> {
         self.client.update_prefix(id, prefix, description, status, role, tenant_id, site_id, vlan_id, tags).await
     }
 
@@ -85,7 +85,7 @@ impl NetBoxClientTrait for MockNetBoxClientWrapper {
         self.client.get_aggregate(id).await
     }
 
-    async fn create_aggregate(&self, prefix: &str, rir_id: Option<netbox_client::RirId>, date_allocated: Option<&str>, description: Option<String>, comments: Option<String>) -> Result<netbox_client::Aggregate, netbox_client::NetBoxError> {
+    async fn create_aggregate(&self, prefix: &ipnet::IpNet, rir_id: Option<netbox_client::RirId>, date_allocated: Option<&str>, description: Option<String>, comments: Option<String>) -> Result<netbox_client::Aggregate, netbox_client::NetBoxError> {
         self.client.create_aggregate(prefix, rir_id, date_allocated, description, comments).await
     }
 

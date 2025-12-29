@@ -120,7 +120,7 @@ pub async fn get_available_ips(
 /// Create a new prefix in NetBox
 pub async fn create_prefix(
     core: &NetBoxClientCore,
-    prefix: &str,
+    prefix: &ipnet::IpNet,
     description: Option<String>,
     site_id: Option<u64>,
     vlan_id: Option<u32>,
@@ -130,10 +130,11 @@ pub async fn create_prefix(
     tags: Option<Vec<String>>,
 ) -> Result<Prefix, NetBoxError> {
     let url = format!("{}/api/ipam/prefixes/", core.base_url);
-    debug!("Creating prefix {} in NetBox", prefix);
+    let prefix_str = prefix.to_string();
+    debug!("Creating prefix {} in NetBox", prefix_str);
     
     let mut body = serde_json::json!({
-        "prefix": prefix,
+        "prefix": prefix_str,
     });
     
     if let Some(desc) = description {
@@ -172,7 +173,7 @@ pub async fn create_prefix(
         let body = response.text().await.unwrap_or_default();
         return Err(NetBoxError::Api(format!(
             "Failed to create prefix {}: {} - {}",
-            prefix, status, body
+            prefix_str, status, body
         )));
     }
     
@@ -185,7 +186,7 @@ pub async fn create_prefix(
 pub async fn update_prefix(
     core: &NetBoxClientCore,
     id: PrefixId,
-    prefix: Option<&str>,
+    prefix: Option<&ipnet::IpNet>,
     description: Option<String>,
     status: Option<&str>,
     role: Option<String>,
@@ -200,8 +201,8 @@ pub async fn update_prefix(
     
     let mut body = serde_json::json!({});
     
-    if let Some(prefix_str) = prefix {
-        body["prefix"] = serde_json::Value::String(prefix_str.to_string());
+    if let Some(prefix_net) = prefix {
+        body["prefix"] = serde_json::Value::String(prefix_net.to_string());
     }
     
     if let Some(desc) = description {

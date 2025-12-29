@@ -88,11 +88,12 @@ pub async fn query_ip_addresses(
 /// Create a new IP address
 pub async fn create_ip_address(
     core: &NetBoxClientCore,
-    address: &str,
+    address: &ipnet::IpNet,
     request: Option<AllocateIPRequest>,
 ) -> Result<IPAddress, NetBoxError> {
+    let address_str = address.to_string();
     let mut body = serde_json::json!({
-        "address": address,
+        "address": address_str,
     });
     
     if let Some(req) = request {

@@ -8,6 +8,7 @@
 use crate::error::NetBoxError;
 use crate::models::*;
 use crate::types::*;
+use ipnet::IpNet;
 
 /// Trait for NetBox API client operations
 ///
@@ -30,17 +31,17 @@ pub trait NetBoxClientTrait: Send + Sync {
     async fn get_ip_address(&self, id: IpAddressId) -> Result<IPAddress, NetBoxError>;
     async fn query_ip_addresses(&self, filters: &[(&str, &str)], fetch_all: bool) -> Result<Vec<IPAddress>, NetBoxError>;
     async fn query_prefixes(&self, filters: &[(&str, &str)], fetch_all: bool) -> Result<Vec<Prefix>, NetBoxError>;
-    async fn create_ip_address(&self, address: &str, request: Option<AllocateIPRequest>) -> Result<IPAddress, NetBoxError>;
+    async fn create_ip_address(&self, address: &IpNet, request: Option<AllocateIPRequest>) -> Result<IPAddress, NetBoxError>;
     async fn update_ip_address(&self, id: IpAddressId, request: AllocateIPRequest) -> Result<IPAddress, NetBoxError>;
     async fn delete_ip_address(&self, id: IpAddressId) -> Result<(), NetBoxError>;
     
     // Prefix operations - signatures match ipam::prefix module exactly
-    async fn create_prefix(&self, prefix: &str, description: Option<String>, site_id: Option<SiteId>, vlan_id: Option<VlanId>, status: Option<&str>, role_id: Option<RoleId>, tenant_id: Option<TenantId>, tags: Option<Vec<String>>) -> Result<Prefix, NetBoxError>;
-    async fn update_prefix(&self, id: PrefixId, prefix: Option<&str>, description: Option<String>, status: Option<&str>, role: Option<String>, tenant_id: Option<TenantId>, site_id: Option<SiteId>, vlan_id: Option<VlanId>, tags: Option<Vec<String>>) -> Result<Prefix, NetBoxError>;
+    async fn create_prefix(&self, prefix: &IpNet, description: Option<String>, site_id: Option<SiteId>, vlan_id: Option<VlanId>, status: Option<&str>, role_id: Option<RoleId>, tenant_id: Option<TenantId>, tags: Option<Vec<String>>) -> Result<Prefix, NetBoxError>;
+    async fn update_prefix(&self, id: PrefixId, prefix: Option<&IpNet>, description: Option<String>, status: Option<&str>, role: Option<String>, tenant_id: Option<TenantId>, site_id: Option<SiteId>, vlan_id: Option<VlanId>, tags: Option<Vec<String>>) -> Result<Prefix, NetBoxError>;
     
     async fn query_aggregates(&self, filters: &[(&str, &str)], fetch_all: bool) -> Result<Vec<Aggregate>, NetBoxError>;
     async fn get_aggregate(&self, id: AggregateId) -> Result<Aggregate, NetBoxError>;
-    async fn create_aggregate(&self, prefix: &str, rir_id: Option<RirId>, date_allocated: Option<&str>, description: Option<String>, comments: Option<String>) -> Result<Aggregate, NetBoxError>;
+    async fn create_aggregate(&self, prefix: &IpNet, rir_id: Option<RirId>, date_allocated: Option<&str>, description: Option<String>, comments: Option<String>) -> Result<Aggregate, NetBoxError>;
     
     async fn query_rirs(&self, filters: &[(&str, &str)], fetch_all: bool) -> Result<Vec<Rir>, NetBoxError>;
     async fn get_rir_by_name(&self, name: &str) -> Result<Option<Rir>, NetBoxError>;

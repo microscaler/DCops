@@ -52,7 +52,7 @@ jobs:
             type=raw,value={{date 'YYYYMMDD'}}-{{sha}}
       
       - name: Build and push Rust builder base image
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v6
         with:
           context: .
           file: ./dockerfiles/Dockerfile.base.rust-builder
@@ -72,7 +72,7 @@ jobs:
       
       - name: Also push to Docker Hub (docker.io)
         if: github.ref == 'refs/heads/main'
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v6
         with:
           context: .
           file: ./dockerfiles/Dockerfile.base.rust-builder
@@ -118,7 +118,7 @@ jobs:
             type=raw,value={{date 'YYYYMMDD'}}-{{sha}}
       
       - name: Build and push controller base image
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v6
         with:
           context: .
           file: ./dockerfiles/Dockerfile.base.controller
@@ -138,7 +138,7 @@ jobs:
       
       - name: Also push to Docker Hub (docker.io)
         if: github.ref == 'refs/heads/main'
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v6
         with:
           context: .
           file: ./dockerfiles/Dockerfile.base.controller

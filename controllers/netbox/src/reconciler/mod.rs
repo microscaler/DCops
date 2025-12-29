@@ -504,7 +504,7 @@ impl Reconciler {
                 }
             } else {
                 // Query failed (deserialization issue), try fallback: get by ID 1 and check
-                warn!("Query failed for prefix {}, trying fallback method", prefix_cidr);
+                warn!("Query failed for prefix {}, trying fallback method", prefix_net);
                 match netbox_client.get_prefix(PrefixId(1)).await {
                     Ok(prefix) if prefix.prefix == prefix_net => {
                         info!("Found prefix {} via fallback method (ID: 1)", prefix_net);

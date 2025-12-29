@@ -119,7 +119,7 @@ mod tests {
         let device_role_api = MockKubeApi::<NetBoxDeviceRole>::new();
         // device_role_api.store("test-device-role".to_string(), device_role);
         
-        let device_api = MockKubeApi::<NetBoxDevice>::new();
+        let _device_api = MockKubeApi::<NetBoxDevice>::new();
         // device_api.store("test-device".to_string(), device.clone());
         
         // Setup: Create reconciler

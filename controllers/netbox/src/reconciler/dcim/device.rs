@@ -42,6 +42,15 @@ impl Reconciler {
                 Some(device)
             }
             DriftCheckResult::StatusCleared { message } => {
+                // Status was cleared - drift detected
+                // Emit event for drift detection
+                use crate::events::reasons;
+                self.record_event_warning(
+                    reasons::DRIFT_DETECTED,
+                    &format!("NetBoxDevice {}/{} drift detected: {}", namespace, name, message),
+                    device_crd,
+                ).await;
+                
                 // Status was cleared - update it to Pending
                 let status_patch = Self::create_resource_status_patch(
                     0, // Clear netbox_id
@@ -109,43 +118,91 @@ impl Reconciler {
                 
                 // Validate and resolve DeviceType (required)
                 validate_reference_kind(&device_crd.spec.device_type, "NetBoxDeviceType", "device_type", name)?;
-                let device_type_id = resolve_required_dependency_id(
+                let device_type_id = match resolve_required_dependency_id(
                     &*self.netbox_device_type_api,
                     &device_crd.spec.device_type.name,
                     "DeviceType",
                     name,
                     |crd| crd.status.as_ref(),
-                ).await?;
+                ).await {
+                    Ok(id) => id,
+                    Err(e) => {
+                        // Emit event for dependency not found
+                        use crate::events::reasons;
+                        self.record_event_warning(
+                            reasons::DEPENDENCY_NOT_FOUND,
+                            &format!("DeviceType '{}' not found or not ready: {}", device_crd.spec.device_type.name, e),
+                            device_crd,
+                        ).await;
+                        return Err(e);
+                    }
+                };
                 
                 // Validate and resolve DeviceRole (required)
                 validate_reference_kind(&device_crd.spec.device_role, "NetBoxDeviceRole", "device_role", name)?;
-                let device_role_id = resolve_required_dependency_id(
+                let device_role_id = match resolve_required_dependency_id(
                     &*self.netbox_device_role_api,
                     &device_crd.spec.device_role.name,
                     "DeviceRole",
                     name,
                     |crd| crd.status.as_ref(),
-                ).await?;
+                ).await {
+                    Ok(id) => id,
+                    Err(e) => {
+                        // Emit event for dependency not found
+                        use crate::events::reasons;
+                        self.record_event_warning(
+                            reasons::DEPENDENCY_NOT_FOUND,
+                            &format!("DeviceRole '{}' not found or not ready: {}", device_crd.spec.device_role.name, e),
+                            device_crd,
+                        ).await;
+                        return Err(e);
+                    }
+                };
                 
                 // Validate and resolve Site (required)
                 validate_reference_kind(&device_crd.spec.site, "NetBoxSite", "site", name)?;
-                let site_id = resolve_required_dependency_id(
+                let site_id = match resolve_required_dependency_id(
                     &*self.netbox_site_api,
                     &device_crd.spec.site.name,
                     "Site",
                     name,
                     |crd| crd.status.as_ref(),
-                ).await?;
+                ).await {
+                    Ok(id) => id,
+                    Err(e) => {
+                        // Emit event for dependency not found
+                        use crate::events::reasons;
+                        self.record_event_warning(
+                            reasons::DEPENDENCY_NOT_FOUND,
+                            &format!("Site '{}' not found or not ready: {}", device_crd.spec.site.name, e),
+                            device_crd,
+                        ).await;
+                        return Err(e);
+                    }
+                };
                 
                 // Validate and resolve Tenant (required)
                 validate_reference_kind(&device_crd.spec.tenant, "NetBoxTenant", "tenant", name)?;
-                let tenant_id = resolve_required_dependency_id(
+                let tenant_id = match resolve_required_dependency_id(
                     &*self.netbox_tenant_api,
                     &device_crd.spec.tenant.name,
                     "Tenant",
                     name,
                     |crd| crd.status.as_ref(),
-                ).await?;
+                ).await {
+                    Ok(id) => id,
+                    Err(e) => {
+                        // Emit event for dependency not found
+                        use crate::events::reasons;
+                        self.record_event_warning(
+                            reasons::DEPENDENCY_NOT_FOUND,
+                            &format!("Tenant '{}' not found or not ready: {}", device_crd.spec.tenant.name, e),
+                            device_crd,
+                        ).await;
+                        return Err(e);
+                    }
+                };
                 
                 // Resolve optional dependencies using helper
                 let platform_id: Option<u64> = resolve_optional_dependency_id(
@@ -349,6 +406,13 @@ impl Reconciler {
                     ).await {
                         Ok(created) => {
                             info!("Created device {} in NetBox (ID: {})", device_crd.spec.name.as_deref().unwrap_or("<unnamed>"), created.id);
+                            // Emit event for successful creation
+                            use crate::events::reasons;
+                            self.record_event_normal(
+                                reasons::CREATED,
+                                &format!("Created device {} in NetBox (ID: {})", device_crd.spec.name.as_deref().unwrap_or("<unnamed>"), created.id),
+                                device_crd,
+                            ).await;
                             created
                         }
                         Err(e) => {

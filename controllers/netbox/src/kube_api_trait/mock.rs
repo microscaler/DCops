@@ -151,3 +151,29 @@ where
     }
 }
 
+// Implement KubeApiTrait for Arc<MockKubeApi<T>> to allow sharing APIs between reconciler and tests
+#[async_trait::async_trait]
+#[cfg(test)]
+impl<T> KubeApiTrait<T> for Arc<MockKubeApi<T>>
+where
+    T: Resource + Clone + Send + Sync + serde::Serialize + serde::de::DeserializeOwned + std::fmt::Debug + 'static,
+    <T as Resource>::DynamicType: Send + Sync,
+{
+    async fn get(&self, name: &str) -> Result<T, kube::Error> {
+        (**self).get(name).await
+    }
+
+    async fn patch_status(
+        &self,
+        name: &str,
+        params: &PatchParams,
+        patch: &Patch<serde_json::Value>,
+    ) -> Result<T, kube::Error> {
+        (**self).patch_status(name, params, patch).await
+    }
+
+    async fn list(&self, params: &ListParams) -> Result<kube::api::ObjectList<T>, kube::Error> {
+        (**self).list(params).await
+    }
+}
+

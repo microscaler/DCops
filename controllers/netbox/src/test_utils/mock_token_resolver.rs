@@ -447,44 +447,122 @@ impl TokenResolverTrait for MockTokenResolver {
     }
 }
 
+/// Test APIs structure to hold unboxed MockKubeApi instances
+/// 
+/// This allows tests to store data in the APIs before they're boxed and passed to the reconciler.
+#[cfg(test)]
+pub struct TestReconcilerApis {
+    pub prefix_api: std::sync::Arc<crate::kube_api_trait::mock::MockKubeApi<crds::NetBoxPrefix>>,
+    pub tenant_api: std::sync::Arc<crate::kube_api_trait::mock::MockKubeApi<crds::NetBoxTenant>>,
+    pub role_api: std::sync::Arc<crate::kube_api_trait::mock::MockKubeApi<crds::NetBoxRole>>,
+    pub tag_api: std::sync::Arc<crate::kube_api_trait::mock::MockKubeApi<crds::NetBoxTag>>,
+    pub aggregate_api: std::sync::Arc<crate::kube_api_trait::mock::MockKubeApi<crds::NetBoxAggregate>>,
+    pub vlan_api: std::sync::Arc<crate::kube_api_trait::mock::MockKubeApi<crds::NetBoxVLAN>>,
+    pub rir_api: std::sync::Arc<crate::kube_api_trait::mock::MockKubeApi<crds::NetBoxRIR>>,
+    pub site_api: std::sync::Arc<crate::kube_api_trait::mock::MockKubeApi<crds::NetBoxSite>>,
+    pub device_role_api: std::sync::Arc<crate::kube_api_trait::mock::MockKubeApi<crds::NetBoxDeviceRole>>,
+    pub manufacturer_api: std::sync::Arc<crate::kube_api_trait::mock::MockKubeApi<crds::NetBoxManufacturer>>,
+    pub platform_api: std::sync::Arc<crate::kube_api_trait::mock::MockKubeApi<crds::NetBoxPlatform>>,
+    pub device_type_api: std::sync::Arc<crate::kube_api_trait::mock::MockKubeApi<crds::NetBoxDeviceType>>,
+    pub device_api: std::sync::Arc<crate::kube_api_trait::mock::MockKubeApi<crds::NetBoxDevice>>,
+    pub interface_api: std::sync::Arc<crate::kube_api_trait::mock::MockKubeApi<crds::NetBoxInterface>>,
+    pub mac_address_api: std::sync::Arc<crate::kube_api_trait::mock::MockKubeApi<crds::NetBoxMACAddress>>,
+    pub region_api: std::sync::Arc<crate::kube_api_trait::mock::MockKubeApi<crds::NetBoxRegion>>,
+    pub site_group_api: std::sync::Arc<crate::kube_api_trait::mock::MockKubeApi<crds::NetBoxSiteGroup>>,
+    pub location_api: std::sync::Arc<crate::kube_api_trait::mock::MockKubeApi<crds::NetBoxLocation>>,
+    pub ip_pool_api: std::sync::Arc<crate::kube_api_trait::mock::MockKubeApi<crds::IPPool>>,
+    pub ip_claim_api: std::sync::Arc<crate::kube_api_trait::mock::MockKubeApi<crds::IPClaim>>,
+}
+
 /// Helper to create a test reconciler with MockTokenResolver
 ///
 /// This creates a Reconciler with a MockTokenResolver instead of a real TokenResolver,
 /// allowing tests to run without a real kube::Client.
+///
+/// Returns both the Reconciler and the unboxed MockKubeApi instances so tests can
+/// store data in them before reconciliation.
 #[cfg(test)]
 pub fn create_test_reconciler_with_mock_token_resolver(
     mock_token_resolver: Arc<MockTokenResolver>,
-) -> crate::reconciler::Reconciler {
+) -> (crate::reconciler::Reconciler, TestReconcilerApis) {
     use crate::kube_api_trait::mock::MockKubeApi;
     use crate::reconciler::Reconciler;
     use crds::*;
+    use std::sync::Arc;
     
-    Reconciler::new(
+    // Create all the mock APIs as Arc so we can share them
+    let prefix_api = Arc::new(MockKubeApi::<NetBoxPrefix>::new());
+    let role_api = Arc::new(MockKubeApi::<NetBoxRole>::new());
+    let tag_api = Arc::new(MockKubeApi::<NetBoxTag>::new());
+    let aggregate_api = Arc::new(MockKubeApi::<NetBoxAggregate>::new());
+    let vlan_api = Arc::new(MockKubeApi::<NetBoxVLAN>::new());
+    let rir_api = Arc::new(MockKubeApi::<NetBoxRIR>::new());
+    let tenant_api = Arc::new(MockKubeApi::<NetBoxTenant>::new());
+    let site_api = Arc::new(MockKubeApi::<NetBoxSite>::new());
+    let device_role_api = Arc::new(MockKubeApi::<NetBoxDeviceRole>::new());
+    let manufacturer_api = Arc::new(MockKubeApi::<NetBoxManufacturer>::new());
+    let platform_api = Arc::new(MockKubeApi::<NetBoxPlatform>::new());
+    let device_type_api = Arc::new(MockKubeApi::<NetBoxDeviceType>::new());
+    let device_api = Arc::new(MockKubeApi::<NetBoxDevice>::new());
+    let interface_api = Arc::new(MockKubeApi::<NetBoxInterface>::new());
+    let mac_address_api = Arc::new(MockKubeApi::<NetBoxMACAddress>::new());
+    let region_api = Arc::new(MockKubeApi::<NetBoxRegion>::new());
+    let site_group_api = Arc::new(MockKubeApi::<NetBoxSiteGroup>::new());
+    let location_api = Arc::new(MockKubeApi::<NetBoxLocation>::new());
+    let ip_pool_api = Arc::new(MockKubeApi::<IPPool>::new());
+    let ip_claim_api = Arc::new(MockKubeApi::<IPClaim>::new());
+    
+    let reconciler = Reconciler::new(
         // Now that Reconciler uses TokenResolverTrait, we can use MockTokenResolver!
         mock_token_resolver as Arc<dyn TokenResolverTrait>,
-        // IPAM APIs
-        MockKubeApi::new(), // netbox_prefix_api
-        MockKubeApi::new(), // netbox_role_api
-        MockKubeApi::new(), // netbox_tag_api
-        MockKubeApi::new(), // netbox_aggregate_api
-        MockKubeApi::new(), // netbox_vlan_api
-        MockKubeApi::new(), // netbox_rir_api
+        // IPAM APIs - clone Arc and pass directly (Reconciler::new boxes them internally)
+        prefix_api.clone(),
+        role_api.clone(),
+        tag_api.clone(),
+        aggregate_api.clone(),
+        vlan_api.clone(),
+        rir_api.clone(),
         // Tenancy APIs
-        MockKubeApi::new(), // netbox_tenant_api
+        tenant_api.clone(),
         // DCIM APIs
-        MockKubeApi::new(), // netbox_site_api
-        MockKubeApi::new(), // netbox_device_role_api
-        MockKubeApi::new(), // netbox_manufacturer_api
-        MockKubeApi::new(), // netbox_platform_api
-        MockKubeApi::new(), // netbox_device_type_api
-        MockKubeApi::new(), // netbox_device_api
-        MockKubeApi::new(), // netbox_interface_api
-        MockKubeApi::new(), // netbox_mac_address_api
-        MockKubeApi::new(), // netbox_region_api
-        MockKubeApi::new(), // netbox_site_group_api
-        MockKubeApi::new(), // netbox_location_api
+        site_api.clone(),
+        device_role_api.clone(),
+        manufacturer_api.clone(),
+        platform_api.clone(),
+        device_type_api.clone(),
+        device_api.clone(),
+        interface_api.clone(),
+        mac_address_api.clone(),
+        region_api.clone(),
+        site_group_api.clone(),
+        location_api.clone(),
         // Custom CRDs
-        MockKubeApi::new(), // ip_pool_api
-        MockKubeApi::new(), // ip_claim_api
-    )
+        ip_pool_api.clone(),
+        ip_claim_api.clone(),
+    );
+    
+    let apis = TestReconcilerApis {
+        prefix_api,
+        tenant_api,
+        role_api,
+        tag_api,
+        aggregate_api,
+        vlan_api,
+        rir_api,
+        site_api,
+        device_role_api,
+        manufacturer_api,
+        platform_api,
+        device_type_api,
+        device_api,
+        interface_api,
+        mac_address_api,
+        region_api,
+        site_group_api,
+        location_api,
+        ip_pool_api,
+        ip_claim_api,
+    };
+    
+    (reconciler, apis)
 }

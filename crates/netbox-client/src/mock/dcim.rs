@@ -145,9 +145,26 @@ pub async fn update_device(client: &MockNetBoxClient, id: u64, name: Option<&str
         Ok(device.clone())
     }
 
-pub async fn query_interfaces(_client: &MockNetBoxClient, _filters: &[(&str, &str)], _fetch_all: bool) -> Result<Vec<Interface>, NetBoxError> {
-        Ok(vec![])
-}
+pub async fn query_interfaces(client: &MockNetBoxClient, filters: &[(&str, &str)], _fetch_all: bool) -> Result<Vec<Interface>, NetBoxError> {
+        let interfaces = client.interfaces.lock().unwrap();
+        let mut results: Vec<Interface> = interfaces.values().cloned().collect();
+        
+        // Apply filters
+        for (key, value) in filters {
+            match *key {
+                "device_id" => {
+                    let device_id: u64 = value.parse().unwrap_or(0);
+                    results.retain(|i| i.device.id == device_id);
+                }
+                "name" => {
+                    results.retain(|i| i.name == *value);
+                }
+                _ => {}
+            }
+        }
+        
+        Ok(results)
+    }
 
 pub async fn get_interface(client: &MockNetBoxClient, id: u64) -> Result<Interface, NetBoxError> {
         client.interfaces
@@ -158,8 +175,48 @@ pub async fn get_interface(client: &MockNetBoxClient, id: u64) -> Result<Interfa
             .ok_or_else(|| NetBoxError::NotFound(format!("Interface {} not found", id)))
 }
 
-pub async fn create_interface(_client: &MockNetBoxClient, _device_id: u64, _name: &str, _interface_type: &str, _enabled: Option<bool>, _mac_address: Option<&str>, _mtu: Option<u16>, _description: Option<String>) -> Result<Interface, NetBoxError> {
-        Err(NetBoxError::Api("Not implemented in mock".to_string()))
+pub async fn create_interface(client: &MockNetBoxClient, device_id: u64, name: &str, interface_type: &str, enabled: Option<bool>, mac_address: Option<&str>, mtu: Option<u16>, description: Option<String>) -> Result<Interface, NetBoxError> {
+        use chrono::Utc;
+        
+        // Verify device exists
+        let device = client.devices
+            .lock()
+            .unwrap()
+            .get(&device_id)
+            .cloned()
+            .ok_or_else(|| NetBoxError::NotFound(format!("Device {} not found", device_id)))?;
+        
+        let id = client.next_id();
+        let interface = Interface {
+            id,
+            url: format!("{}/api/dcim/interfaces/{}/", client.base_url, id),
+            display: name.to_string(),
+            device: crate::models::NestedDevice {
+                id: device_id,
+                url: format!("{}/api/dcim/devices/{}/", client.base_url, device_id),
+                display: device.display.clone(),
+                name: device.name.clone().unwrap_or_default(),
+            },
+            vdcs: vec![],
+            module: None,
+            name: name.to_string(),
+            label: None,
+            r#type: interface_type.to_string(),
+            enabled: enabled.unwrap_or(true),
+            parent: None,
+            bridge: None,
+            lag: None,
+            mac_address: mac_address.map(|s| s.to_string()),
+            mtu,
+            description,
+            ip_addresses: vec![],
+            tags: vec![],
+            created: Utc::now().to_rfc3339(),
+            last_updated: Utc::now().to_rfc3339(),
+        };
+        
+        client.interfaces.lock().unwrap().insert(id, interface.clone());
+        Ok(interface)
     }
 
 pub async fn update_interface(_client: &MockNetBoxClient, _id: u64, _name: Option<&str>, _interface_type: Option<&str>, _enabled: Option<bool>, _mac_address: Option<&str>, _mtu: Option<u16>, _description: Option<String>) -> Result<Interface, NetBoxError> {

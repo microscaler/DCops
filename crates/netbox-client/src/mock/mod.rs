@@ -162,6 +162,11 @@ impl MockNetBoxClient {
         self.vlans.lock().unwrap().insert(vlan.id, vlan);
     }
 
+    /// Add an interface to the mock store (for test setup)
+    pub fn add_interface(&self, interface: Interface) {
+        self.interfaces.lock().unwrap().insert(interface.id, interface);
+    }
+
     /// Generate next ID
     pub(crate) fn next_id(&self) -> u64 {
         let mut id = self.next_id.lock().unwrap();

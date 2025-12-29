@@ -24,6 +24,8 @@ pub mod device;
 #[cfg(test)]
 pub mod device_test;
 pub mod interface;
+#[cfg(test)]
+pub mod interface_test;
 pub mod mac_address;
 pub mod vlan;
 #[cfg(test)]

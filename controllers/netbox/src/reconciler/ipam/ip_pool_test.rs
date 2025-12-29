@@ -287,7 +287,10 @@ mod tests {
             url: format!("{}/api/ipam/ip-addresses/1/", netbox_url),
             display: "192.168.1.2/24".to_string(),
             family: 4,
-            address: "192.168.1.2/24".to_string(),
+            address: {
+                use std::str::FromStr;
+                ipnet::IpNet::from_str("192.168.1.2/24").unwrap()
+            },
             vrf: None,
             tenant: None,
             status: netbox_client::IPAddressStatus::Active,

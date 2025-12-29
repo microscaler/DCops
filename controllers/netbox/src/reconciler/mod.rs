@@ -62,6 +62,7 @@ impl BackoffState {
 pub struct Reconciler {
     pub(crate) token_resolver: Arc<dyn TokenResolverTrait>,
     pub(crate) secret_fetcher: Option<Arc<dyn SecretFetcher>>, // Optional for testing
+    pub(crate) event_recorder: Option<kube::runtime::events::Recorder>, // Optional for testing
     // IPAM APIs
     pub(crate) netbox_prefix_api: Box<dyn KubeApiTrait<NetBoxPrefix> + Send + Sync>,
     pub(crate) netbox_role_api: Box<dyn KubeApiTrait<NetBoxRole> + Send + Sync>,
@@ -373,6 +374,7 @@ impl Reconciler {
     pub fn new(
         token_resolver: Arc<dyn TokenResolverTrait>,
         secret_fetcher: Option<Arc<dyn SecretFetcher>>,
+        event_recorder: Option<kube::runtime::events::Recorder>,
         // IPAM APIs
         netbox_prefix_api: impl KubeApiTrait<NetBoxPrefix> + Send + Sync + 'static,
         netbox_role_api: impl KubeApiTrait<NetBoxRole> + Send + Sync + 'static,
@@ -401,6 +403,7 @@ impl Reconciler {
         Self {
             token_resolver,
             secret_fetcher,
+            event_recorder,
             // IPAM
             netbox_prefix_api: Box::new(netbox_prefix_api),
             netbox_role_api: Box::new(netbox_role_api),

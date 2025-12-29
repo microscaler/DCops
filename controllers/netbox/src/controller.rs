@@ -19,6 +19,7 @@ use crds::{
     NetBoxDevice, NetBoxInterface, NetBoxMACAddress, NetBoxRegion, NetBoxSiteGroup, NetBoxLocation,
 };
 use kube::{Api, Client};
+use kube::runtime::events::Recorder;
 use std::sync::Arc;
 use tokio::task::JoinHandle;
 use tracing::{info, warn};
@@ -103,9 +104,18 @@ impl Controller {
         use crate::secret_fetcher::RealSecretFetcher;
         let secret_fetcher = Arc::new(RealSecretFetcher::new(kube_client.clone()));
         
+        // Create EventRecorder for emitting Kubernetes events
+        use kube::runtime::events::Reporter;
+        let reporter = Reporter {
+            controller: "netbox-controller".to_string(),
+            instance: Some("netbox-controller".to_string()),
+        };
+        let event_recorder = Recorder::new(kube_client.clone(), reporter);
+        
         let reconciler = Reconciler::new(
             token_resolver.clone(),
             Some(secret_fetcher), // Use RealSecretFetcher for production
+            Some(event_recorder), // Use EventRecorder for production
             // IPAM
             KubeApiWrapper::new(netbox_prefix_api.clone()), // Wraps REAL Api<T> - zero overhead
             KubeApiWrapper::new(netbox_role_api.clone()),

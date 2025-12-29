@@ -131,6 +131,7 @@ pub fn create_test_reconciler(
     Reconciler::new(
         token_resolver,
         None, // No secret_fetcher for this test helper (uses real kube_client)
+        None, // No event_recorder for tests
         // IPAM APIs (21 total including netbox_rir_api)
         MockKubeApi::new(), // netbox_prefix_api
         MockKubeApi::new(), // netbox_role_api

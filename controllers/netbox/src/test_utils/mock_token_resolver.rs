@@ -614,6 +614,7 @@ pub fn create_test_reconciler_with_mock_token_resolver(
         // Now that Reconciler uses TokenResolverTrait, we can use MockTokenResolver!
         mock_token_resolver as Arc<dyn TokenResolverTrait>,
         Some(secret_fetcher), // Use MockSecretFetcher for testing
+        None, // No event_recorder for tests
         // IPAM APIs - clone Arc and pass directly (Reconciler::new boxes them internally)
         prefix_api.clone(),
         role_api.clone(),

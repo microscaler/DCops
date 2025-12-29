@@ -81,7 +81,10 @@ mod tests {
         let available_ips = vec![
             netbox_client::AvailableIP {
                 family: 4,
-                address: ipnet::IpNet::from_str("192.168.1.1/24").unwrap(),
+                address: {
+                    use std::str::FromStr;
+                    ipnet::IpNet::from_str("192.168.1.1/24").unwrap()
+                },
                 vrf: None,
                 description: None,
             },
@@ -198,7 +201,10 @@ mod tests {
         let available_ips = vec![
             netbox_client::AvailableIP {
                 family: 4,
-                address: ipnet::IpNet::from_str("192.168.1.1/24").unwrap(),
+                address: {
+                    use std::str::FromStr;
+                    ipnet::IpNet::from_str("192.168.1.1/24").unwrap()
+                },
                 vrf: None,
                 description: None,
             },

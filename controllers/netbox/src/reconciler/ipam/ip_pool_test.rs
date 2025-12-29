@@ -3,10 +3,8 @@
 #[cfg(test)]
 mod tests {
     use crate::test_utils::*;
-    use crate::kube_api_trait::mock::MockKubeApi;
-    use netbox_client::{MockNetBoxClient, AvailableIP};
+    use netbox_client::AvailableIP;
     use crds::{IPPool, NetBoxPrefix};
-    use kube::Client;
     
     /// Helper to set up test data for IP pool reconciliation
     fn setup_ip_pool_test_data() -> (IPPool, NetBoxPrefix) {
@@ -25,59 +23,70 @@ mod tests {
     }
     
     #[tokio::test]
-    #[ignore] // Ignored until kube::Client mocking is implemented
     async fn test_reconcile_ip_pool_success() {
-        // Setup: Create mock NetBoxClient
-        let _mock_netbox = MockNetBoxClient::new("http://test-netbox");
+        use crate::test_utils::mock_token_resolver::{MockTokenResolver, create_test_reconciler_with_mock_token_resolver};
+        use crate::kube_api_trait::KubeApiTrait;
+        use std::sync::Arc;
+        
+        // Setup: Create mock TokenResolver with MockNetBoxClient
+        let netbox_url = "http://test-netbox".to_string();
+        let mock_token_resolver = Arc::new(MockTokenResolver::new(netbox_url.clone()));
+        
+        // Setup: Add secret for tenant
+        mock_token_resolver.add_secret("default", "netbox-token-datacenter-tenant", "test-token".to_string());
+        
+        // Setup: Get MockNetBoxClient to set up test data
+        let mock_client = mock_token_resolver.mock_client();
         
         // Setup: Create test data
         let (pool, prefix) = setup_ip_pool_test_data();
         
-        // Setup: Create mock Kubernetes APIs
-        let prefix_api = MockKubeApi::<NetBoxPrefix>::new();
-        // prefix_api.store("test-prefix".to_string(), prefix);
+        // Setup: Create reconciler with MockTokenResolver
+        let (reconciler, apis) = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
         
-        let pool_api = MockKubeApi::<IPPool>::new();
-        // pool_api.store("test-pool".to_string(), pool.clone());
+        // Setup: Store test data in the APIs before reconciliation
+        apis.tenant_api.store("datacenter-tenant".to_string(), create_test_netbox_tenant(
+            "datacenter-tenant",
+            "default",
+            Some(1),
+            Some("http://test-netbox/api/tenancy/tenants/1/".to_string()),
+        ));
+        apis.prefix_api.store("test-prefix".to_string(), prefix);
+        apis.ip_pool_api.store("test-pool".to_string(), pool.clone());
         
-        // Setup: Create reconciler
-        let _kube_client = match Client::try_default().await {
-            Ok(client) => client,
-            Err(_) => return, // Skip test if no kube client available
-        };
+        // Setup: Add prefix to mock NetBox (required for get_prefix call)
+        let netbox_prefix = create_test_prefix(1, "192.168.1.0/24", &netbox_url);
+        mock_client.add_prefix(netbox_prefix);
         
-        // TODO: Uncomment once kube::Client mocking is implemented
-        // let reconciler = create_test_reconciler(kube_client, "http://test-netbox".to_string());
-        // 
-        // // Setup: Add available IPs to mock NetBox
-        // let available_ips = vec![
-        //     AvailableIP {
-        //         family: 4,
-        //         address: "192.168.1.1/24".to_string(),
-        //         vrf: None,
-        //         description: None,
-        //     },
-        //     AvailableIP {
-        //         family: 4,
-        //         address: "192.168.1.2/24".to_string(),
-        //         vrf: None,
-        //         description: None,
-        //     },
-        // ];
-        // mock_netbox.set_available_ips(1, available_ips);
-        // 
-        // // Execute: Reconcile
-        // let result = reconciler.reconcile_ip_pool(&pool).await;
-        // 
-        // // Assert: Should succeed
-        // assert!(result.is_ok(), "Reconciliation should succeed: {:?}", result.err());
-        // 
-        // // Assert: Status should be updated with correct values
-        // let updated_crd = pool_api.get("test-pool").await.unwrap();
-        // assert!(updated_crd.status.is_some(), "Status should be set");
-        // let status = updated_crd.status.unwrap();
-        // assert_eq!(status.netbox_prefix_id, Some(1), "Prefix ID should be set");
-        // assert_eq!(status.total_ips, 2, "Total IPs should be 2");
+        // Setup: Add available IPs to mock NetBox
+        let available_ips = vec![
+            AvailableIP {
+                family: 4,
+                address: "192.168.1.1/24".to_string(),
+                vrf: None,
+                description: None,
+            },
+            AvailableIP {
+                family: 4,
+                address: "192.168.1.2/24".to_string(),
+                vrf: None,
+                description: None,
+            },
+        ];
+        mock_client.set_available_ips(1, available_ips);
+        
+        // Execute: Reconcile
+        let result = reconciler.reconcile_ip_pool(&pool).await;
+        
+        // Assert: Should succeed
+        assert!(result.is_ok(), "Reconciliation should succeed: {:?}", result.err());
+        
+        // Assert: Status should be updated with correct values
+        let updated_crd = apis.ip_pool_api.get("test-pool").await.unwrap();
+        assert!(updated_crd.status.is_some(), "Status should be set");
+        let status = updated_crd.status.unwrap();
+        assert_eq!(status.netbox_prefix_id, Some(1), "Prefix ID should be set");
+        assert_eq!(status.total_ips, 2, "Total IPs should be 2");
     }
     
     #[tokio::test]

@@ -12,7 +12,7 @@ use kube::Client;
 #[cfg(test)]
 use tower_test::mock;
 #[cfg(test)]
-use http::Request;
+use hyper::http::Request;
 #[cfg(test)]
 use kube::client::Body as KubeBody;
 

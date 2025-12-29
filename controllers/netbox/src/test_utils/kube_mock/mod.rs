@@ -15,6 +15,8 @@ pub mod service;
 pub mod store;
 pub mod client;
 pub mod helpers;
+#[cfg(test)]
+pub mod test_example;
 
 pub use service::MockKubeService;
 pub use store::MockKubeStore;

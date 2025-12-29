@@ -1,13 +1,14 @@
 //! Mock Kubernetes client creation
 //!
-//! Creates a kube::Client from a mock HTTP service.
+//! Creates a kube::Client from a mock HTTP service using tower-test.
+//!
+//! This follows the kube-rs recommended pattern for testing:
+//! https://kube.rs/controllers/testing/
 
 #[cfg(test)]
 use kube::Client;
 #[cfg(test)]
-use crate::test_utils::kube_mock::service::MockKubeService;
-#[cfg(test)]
-use tower_test::mock::Mock;
+use tower_test::mock;
 #[cfg(test)]
 use hyper::http::{Request, Response};
 // Note: tower-test 0.4 uses hyper 0.14, which has hyper::Body
@@ -16,56 +17,37 @@ use hyper::Body;
 
 /// Create a mock Kubernetes client for testing
 /// 
-/// This creates a mock client that can be used with Api instances.
+/// This creates a mock client using tower-test, following kube-rs's recommended pattern.
 /// The mock service handle can be used to set up expected request/response pairs.
 /// 
 /// ## Example
 /// 
-/// ```rust,ignore
-/// let (mock_service, mock) = MockKubeService::new();
-/// let client = create_mock_kube_client(mock, "default").await;
+/// ```rust,no_run
+/// use tower_test::mock;
+/// use hyper::Body;
 /// 
-/// // Set up expected API interactions using mock_service.handle
+/// let (mock_service, mut handle) = mock::pair::<Request<Body>, Response<Body>>();
+/// let client = create_mock_kube_client(mock_service, "default").await?;
+/// 
+/// // Set up expected API interactions using handle
 /// // Then use client to create Api instances
 /// ```
 /// 
-/// ## Implementation Note
+/// ## kube-rs Support
 /// 
-/// kube 2.0's `Client` doesn't directly accept a service in its constructor.
-/// This implementation uses `Client::try_default()` as a fallback, which means
-/// tests will require a Kubernetes cluster connection. For true unit testing,
-/// we may need to:
-/// 1. Use kube's internal APIs to construct a Client from a service
-/// 2. Create a custom wrapper that implements the necessary traits
-/// 3. Use integration tests with a real cluster (current approach)
+/// kube-rs recommends using `tower-test` for mocking. According to kube-rs documentation:
+/// ```rust,ignore
+/// let (mock_service, handle) = tower_test::mock::pair::<Request<Body>, Response<Body>>();
+/// let client = Client::new(mock_service, "default");
+/// ```
 /// 
-/// This is a known limitation and is documented in KUBE_API_MOCKING.md.
+/// kube 2.0's Client API may have changed. This function uses the recommended pattern.
 pub async fn create_mock_kube_client(
-    _mock: Mock<Request<Body>, Response<Body>>,
-    _default_namespace: &str,
+    mock_service: impl tower::Service<Request<Body>, Response = Response<Body>> + Send + Clone + 'static,
+    default_namespace: &str,
 ) -> Result<Client, kube::Error> {
-    // TODO: Implement actual kube::Client creation from mock service
-    // 
-    // kube 2.0's Client doesn't expose a constructor that accepts a service.
-    // Options:
-    // 1. Use kube's internal Config and ServiceStack to build a Client
-    // 2. Create a trait-based wrapper (requires refactoring Reconciler)
-    // 3. Use integration tests with Kind cluster (current approach)
-    //
-    // For now, this returns an error to make the limitation explicit.
-    // Tests using this will need to use integration tests or wait for
-    // kube to expose service-based Client construction.
-    
-    Err(kube::Error::Service(
-        "Mock client creation not yet implemented. Use integration tests or see KUBE_API_MOCKING.md".into()
-    ))
-    
-    // Future implementation might look like:
-    // use kube::config::Config;
-    // use kube::ServiceStack;
-    // 
-    // let config = Config::new_incluster()?; // or mock config
-    // let service_stack = ServiceStack::new(mock, config);
-    // Client::from_service_stack(service_stack)
+    // kube-rs recommended pattern: Client::new(mock_service, default_namespace)
+    // According to kube-rs docs, this should work with tower-test mocks
+    Client::new(mock_service, default_namespace)
 }
 

@@ -33,18 +33,24 @@ pub async fn allocate_ip(client: &MockNetBoxClient, prefix_id: PrefixId, request
         // Verify prefix exists
         get_prefix(client, prefix_id).await?;
 
+        use std::str::FromStr;
+        use ipnet::IpNet;
+        
         let id = client.next_id();
-        let address = request
+        let address_str = request
             .as_ref()
-            .and_then(|r| r.address.clone())
-            .unwrap_or_else(|| format!("192.168.1.{}", id));
+            .and_then(|r| r.address.as_ref().map(|a| a.to_string()))
+            .unwrap_or_else(|| format!("192.168.1.{}/24", id));
+        
+        let address_net = IpNet::from_str(&address_str)
+            .map_err(|e| NetBoxError::Api(format!("Invalid IP address format: {} - {}", address_str, e)))?;
 
         let ip = IPAddress {
             id,
             url: format!("{}/api/ipam/ip-addresses/{}/", client.base_url, id),
-            display: address.clone(),
+            display: address_str.clone(),
             family: 4, // Default to IPv4
-            address: address.clone(),
+            address: address_net,
             vrf: None,
             tenant: None, // AllocateIPRequest doesn't have tenant field
             status: request
@@ -97,23 +103,15 @@ pub async fn query_ip_addresses(client: &MockNetBoxClient, filters: &[(&str, &st
                 let prefix_net = match ipnet::IpNet::from_str(value) {
                     Ok(net) => net,
                     Err(_) => {
-                        // If prefix parsing fails, fall back to string matching
-                        results.retain(|ip| ip.address.starts_with(value));
+                        // If prefix parsing fails, skip this filter (invalid prefix format)
                         continue;
                     }
                 };
                 
                 // Filter IPs that are within the prefix network
                 results.retain(|ip| {
-                    // Parse the IP address from the address string (e.g., "192.168.1.2/24")
-                    // Extract just the IP part before the "/"
-                    if let Some(ip_part) = ip.address.split('/').next() {
-                        if let Ok(ip_addr) = ip_part.parse::<std::net::IpAddr>() {
-                            return prefix_net.contains(&ip_addr);
-                        }
-                    }
-                    // Fallback to string matching if parsing fails
-                    ip.address.starts_with(value)
+                    // Check if the IP address network is contained within the prefix network
+                    prefix_net.contains(&ip.address.addr())
                 });
             }
         }
@@ -127,13 +125,18 @@ pub async fn query_prefixes(client: &MockNetBoxClient, _filters: &[(&str, &str)]
 }
 
 pub async fn create_ip_address(client: &MockNetBoxClient, address: &str, request: Option<AllocateIPRequest>) -> Result<IPAddress, NetBoxError> {
+        use std::str::FromStr;
+        use ipnet::IpNet;
+        
         let id = client.next_id();
+        let address_net = IpNet::from_str(address)
+            .map_err(|e| NetBoxError::InvalidInput(format!("Invalid IP address format: {} - {}", address, e)))?;
         let ip = IPAddress {
             id,
             url: format!("{}/api/ipam/ip-addresses/{}/", client.base_url, id),
             display: address.to_string(),
             family: if address.contains(':') { 6 } else { 4 },
-            address: address.to_string(),
+            address: address_net,
             vrf: None,
             tenant: None, // AllocateIPRequest doesn't have tenant field
             status: request
@@ -229,12 +232,17 @@ pub async fn create_prefix(client: &MockNetBoxClient, prefix: &str, description:
             Vec::new()
         };
         
+        use std::str::FromStr;
+        use ipnet::IpNet;
+        
+        let prefix_net = IpNet::from_str(prefix)
+            .map_err(|e| NetBoxError::Api(format!("Invalid prefix format: {} - {}", prefix, e)))?;
         let prefix_obj = Prefix {
             id,
             url: format!("{}/api/ipam/prefixes/{}/", client.base_url, id),
             display: prefix.to_string(),
             family: if prefix.contains(':') { 6 } else { 4 },
-            prefix: prefix.to_string(),
+            prefix: prefix_net,
             vrf: None,
             tenant: tenant_id.map(|id| client.helpers().create_nested_tenant(id.into(), None)),
             vlan: vlan_id.map(|id| {
@@ -267,7 +275,11 @@ pub async fn update_prefix(client: &MockNetBoxClient, id: PrefixId, prefix: Opti
             .ok_or_else(|| NetBoxError::NotFound(format!("Prefix {} not found", id)))?;
 
         if let Some(prefix_str) = prefix {
-            prefix_obj.prefix = prefix_str.to_string();
+            use std::str::FromStr;
+            use ipnet::IpNet;
+            let prefix_net = IpNet::from_str(prefix_str)
+                .map_err(|e| NetBoxError::InvalidInput(format!("Invalid prefix format: {} - {}", prefix_str, e)))?;
+            prefix_obj.prefix = prefix_net;
             prefix_obj.display = prefix_str.to_string();
         }
         if let Some(tenant) = tenant_id {
@@ -327,11 +339,16 @@ pub async fn get_aggregate(client: &MockNetBoxClient, id: AggregateId) -> Result
 
 pub async fn create_aggregate(client: &MockNetBoxClient, prefix: &str, rir_id: Option<RirId>, date_allocated: Option<&str>, description: Option<String>, comments: Option<String>) -> Result<Aggregate, NetBoxError> {
         let id = client.next_id();
+        use std::str::FromStr;
+        use ipnet::IpNet;
+        
+        let prefix_net = IpNet::from_str(prefix)
+            .map_err(|e| NetBoxError::Api(format!("Invalid prefix format: {} - {}", prefix, e)))?;
         let aggregate = Aggregate {
             id,
             url: format!("{}/api/ipam/aggregates/{}/", client.base_url, id),
             display: prefix.to_string(),
-            prefix: prefix.to_string(),
+            prefix: prefix_net,
             rir: rir_id.map(|id| {
                 let rir_id_value: u64 = id.into();
                 NestedRir {

@@ -239,7 +239,7 @@ pub async fn allocate_ip(
     
     // Build request body
     let mut body = serde_json::json!({
-        "address": available_ip.address.clone(),
+        "address": available_ip.address.to_string(),
     });
     
     if let Some(req) = request {

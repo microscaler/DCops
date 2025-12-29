@@ -3,7 +3,51 @@
 //! These models match the NetBox REST API serializers.
 //! See: netbox/netbox/ipam/api/serializers_/ip.py
 
-use serde::{Deserialize, Serialize};
+use std::str::FromStr;
+use ipnet::IpNet;
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+/// Custom serializer for IpNet that converts to string for NetBox API
+pub fn serialize_ipnet<S>(ipnet: &IpNet, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    serializer.serialize_str(&ipnet.to_string())
+}
+
+/// Custom deserializer for IpNet that parses from string
+pub fn deserialize_ipnet<'de, D>(deserializer: D) -> Result<IpNet, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let s = String::deserialize(deserializer)?;
+    IpNet::from_str(&s).map_err(serde::de::Error::custom)
+}
+
+/// Custom serializer for Option<IpNet>
+pub fn serialize_option_ipnet<S>(ipnet: &Option<IpNet>, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    match ipnet {
+        Some(net) => serializer.serialize_some(&net.to_string()),
+        None => serializer.serialize_none(),
+    }
+}
+
+/// Custom deserializer for Option<IpNet>
+pub fn deserialize_option_ipnet<'de, D>(deserializer: D) -> Result<Option<IpNet>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let opt = Option::<String>::deserialize(deserializer)?;
+    match opt {
+        Some(s) => IpNet::from_str(&s)
+            .map(Some)
+            .map_err(serde::de::Error::custom),
+        None => Ok(None),
+    }
+}
 
 /// NetBox API response wrapper (for paginated responses)
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -31,7 +75,8 @@ pub struct Prefix {
     pub display: String,
     #[serde(deserialize_with = "deserialize_family")]
     pub family: u8, // 4 or 6 (extracted from ChoiceField)
-    pub prefix: String, // e.g., "192.168.1.0/24"
+    #[serde(serialize_with = "serialize_ipnet", deserialize_with = "deserialize_ipnet")]
+    pub prefix: IpNet, // e.g., "192.168.1.0/24"
     pub vrf: Option<NestedVrf>,
     pub tenant: Option<NestedTenant>,
     pub vlan: Option<NestedVlan>,
@@ -83,7 +128,8 @@ pub struct IPAddress {
     pub url: String,
     pub display: String,
     pub family: u8, // 4 or 6
-    pub address: String, // e.g., "192.168.1.1/24"
+    #[serde(serialize_with = "serialize_ipnet", deserialize_with = "deserialize_ipnet")]
+    pub address: IpNet, // e.g., "192.168.1.1/24"
     pub vrf: Option<NestedVrf>,
     pub tenant: Option<NestedTenant>,
     pub status: IPAddressStatus,
@@ -107,7 +153,8 @@ pub struct IPAddress {
 #[serde(rename_all = "snake_case")]
 pub struct AvailableIP {
     pub family: u8,
-    pub address: String, // e.g., "192.168.1.1/24"
+    #[serde(serialize_with = "serialize_ipnet", deserialize_with = "deserialize_ipnet")]
+    pub address: IpNet, // e.g., "192.168.1.1/24"
     pub vrf: Option<NestedVrf>,
     pub description: Option<String>,
 }
@@ -116,7 +163,8 @@ pub struct AvailableIP {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub struct AllocateIPRequest {
-    pub address: Option<String>, // Optional: specific IP to allocate
+    #[serde(serialize_with = "serialize_option_ipnet", deserialize_with = "deserialize_option_ipnet", skip_serializing_if = "Option::is_none")]
+    pub address: Option<IpNet>, // Optional: specific IP to allocate
     pub description: Option<String>,
     pub status: Option<IPAddressStatus>,
     pub role: Option<String>,
@@ -296,7 +344,8 @@ pub struct NestedIPAddress {
     pub id: u64,
     pub url: String,
     pub display: String,
-    pub address: String,
+    #[serde(serialize_with = "serialize_ipnet", deserialize_with = "deserialize_ipnet")]
+    pub address: IpNet,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -545,7 +594,8 @@ pub struct Aggregate {
     pub id: u64,
     pub url: String,
     pub display: String,
-    pub prefix: String,
+    #[serde(serialize_with = "serialize_ipnet", deserialize_with = "deserialize_ipnet")]
+    pub prefix: IpNet,
     pub rir: Option<NestedRir>,
     pub date_allocated: Option<String>,
     pub description: Option<String>,

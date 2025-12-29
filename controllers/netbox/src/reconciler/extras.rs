@@ -45,6 +45,14 @@ impl Reconciler {
         let netbox_role = match drift_result {
             DriftCheckResult::UseExisting(role) => Some(role),
             DriftCheckResult::StatusCleared { message } => {
+                // Emit event for drift detection
+                use crate::events::reasons;
+                self.record_event_warning(
+                    reasons::DRIFT_DETECTED,
+                    &format!("NetBoxRole {}/{} drift detected: {}", namespace, name, message),
+                    role_crd,
+                ).await;
+                
                 let status_patch = Self::create_typed_role_status_patch(
                     0, String::new(), ResourceState::Pending,
                     Some(message),
@@ -123,6 +131,13 @@ impl Reconciler {
                     ).await {
                         Ok(created) => {
                             info!("Created role {} in NetBox (ID: {})", created.name, created.id);
+                            // Emit event for successful creation
+                            use crate::events::reasons;
+                            self.record_event_normal(
+                                reasons::CREATED,
+                                &format!("Created role {} in NetBox (ID: {})", created.name, created.id),
+                                role_crd,
+                            ).await;
                             created
                         }
                         Err(e) => {
@@ -177,6 +192,13 @@ impl Reconciler {
                             } else {
                                 let error_msg = format!("Failed to create role in NetBox: {}", e);
                                 error!("{}", error_msg);
+                                // Emit event for reconciliation failure
+                                use crate::events::reasons;
+                                self.record_event_warning(
+                                    reasons::RECONCILIATION_FAILED,
+                                    &error_msg,
+                                    role_crd,
+                                ).await;
                                 return Err(ControllerError::NetBox(e));
                             }
                         }
@@ -242,6 +264,14 @@ impl Reconciler {
         let netbox_tag = match drift_result {
             DriftCheckResult::UseExisting(tag) => Some(tag),
             DriftCheckResult::StatusCleared { message } => {
+                // Emit event for drift detection
+                use crate::events::reasons;
+                self.record_event_warning(
+                    reasons::DRIFT_DETECTED,
+                    &format!("NetBoxTag {}/{} drift detected: {}", namespace, name, message),
+                    tag_crd,
+                ).await;
+                
                 let status_patch = Self::create_typed_tag_status_patch(
                     0, String::new(), ResourceState::Pending,
                     Some(message),
@@ -374,6 +404,13 @@ impl Reconciler {
                             } else {
                                 let error_msg = format!("Failed to create tag in NetBox: {}", e);
                                 error!("{}", error_msg);
+                                // Emit event for reconciliation failure
+                                use crate::events::reasons;
+                                self.record_event_warning(
+                                    reasons::RECONCILIATION_FAILED,
+                                    &error_msg,
+                                    tag_crd,
+                                ).await;
                                 return Err(ControllerError::NetBox(e));
                             }
                         }

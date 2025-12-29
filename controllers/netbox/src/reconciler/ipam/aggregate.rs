@@ -69,12 +69,26 @@ impl Reconciler {
                     let error_msg = format!("RIR '{}' not found in NetBox for aggregate {}", rir_name, name);
                     warn!("{} — will not create until RIR exists or spec.rir is removed", error_msg);
                     update_status_error(&*self.netbox_aggregate_api, name, namespace, error_msg.clone(), aggregate_crd.status.as_ref()).await;
+                    // Emit event for dependency not found
+                    use crate::events::reasons;
+                    self.record_event_warning(
+                        reasons::DEPENDENCY_NOT_FOUND,
+                        &error_msg,
+                        aggregate_crd,
+                    ).await;
                     return Err(ControllerError::InvalidConfig(error_msg));
                 }
                 Err(e) => {
                     let error_msg = format!("Failed to get RIR '{}' for aggregate {}: {}", rir_name, name, e);
                     warn!("{} — will not create until resolved", error_msg);
                     update_status_error(&*self.netbox_aggregate_api, name, namespace, error_msg.clone(), aggregate_crd.status.as_ref()).await;
+                    // Emit event for reconciliation failure
+                    use crate::events::reasons;
+                    self.record_event_warning(
+                        reasons::RECONCILIATION_FAILED,
+                        &error_msg,
+                        aggregate_crd,
+                    ).await;
                     return Err(ControllerError::NetBox(e));
                 }
             }
@@ -104,6 +118,14 @@ impl Reconciler {
         let netbox_aggregate = match drift_result {
             DriftCheckResult::UseExisting(aggregate) => Some(aggregate),
             DriftCheckResult::StatusCleared { message } => {
+                // Emit event for drift detection
+                use crate::events::reasons;
+                self.record_event_warning(
+                    reasons::DRIFT_DETECTED,
+                    &format!("NetBoxAggregate {}/{} drift detected: {}", namespace, name, message),
+                    aggregate_crd,
+                ).await;
+                
                 let status_patch = Self::create_resource_status_patch(
                     0, String::new(), ResourceState::Pending,
                     Some(message),

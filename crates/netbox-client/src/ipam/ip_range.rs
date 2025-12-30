@@ -67,18 +67,27 @@ pub async fn query_ip_ranges(
             .header("Authorization", format!("Token {}", core.token))
             .header("Accept", "application/json")
             .send()
-            .await?;
+            .await
+            .map_err(|e| NetBoxError::Http(e))?;
         
-        if !response.status().is_success() {
-            let status = response.status();
-            let body = response.text().await.unwrap_or_default();
+        let status = response.status();
+        let response_body = response.text().await.unwrap_or_default();
+        
+        if !status.is_success() {
             return Err(NetBoxError::Api(format!(
                 "Failed to query IP ranges: {} - {}",
-                status, body
+                status, response_body
             )));
         }
         
-        let result: PaginatedResponse<IPRange> = response.json().await?;
+        // Parse JSON response, handling empty responses gracefully
+        if response_body.is_empty() {
+            debug!("Empty response body for IP range query, returning empty list");
+            return Ok(Vec::new());
+        }
+        
+        let result: PaginatedResponse<IPRange> = serde_json::from_str(&response_body)
+            .map_err(|e| NetBoxError::Serialization(e))?;
         Ok(result.results)
     }
 }

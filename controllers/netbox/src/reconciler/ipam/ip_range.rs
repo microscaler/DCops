@@ -296,11 +296,12 @@ impl Reconciler {
         };
         
         // Check for existing IP range before creating (idempotency)
+        // Use fetch_all=true to ensure we check ALL ranges for conflicts
         let filters: Vec<(&str, &str)> = vec![
             ("start_address", &ip_range_crd.spec.start_address),
             ("end_address", &ip_range_crd.spec.end_address),
         ];
-        let (existing_range_opt, was_pre_existing) = match netbox_client.query_ip_ranges(&filters, false).await {
+        let (existing_range_opt, was_pre_existing) = match netbox_client.query_ip_ranges(&filters, true).await {
             Ok(ranges) => {
                 if let Some(existing) = ranges.into_iter()
                     .find(|r| r.start_address == start_ip_net && r.end_address == end_ip_net) {
@@ -339,7 +340,8 @@ impl Reconciler {
                 Err(e) if is_conflict_error(&e) => {
                     // Conflict detected - try to find existing range
                     warn!("NetBoxIPRange {}/{} creation conflict - querying for existing", namespace, name);
-                    match netbox_client.query_ip_ranges(&filters, false).await {
+                    // Use fetch_all=true to ensure we check ALL ranges for conflicts
+                    match netbox_client.query_ip_ranges(&filters, true).await {
                         Ok(existing_ranges) => {
                             if let Some(existing) = existing_ranges.into_iter()
                                 .find(|r| r.start_address == start_ip_net && r.end_address == end_ip_net) {

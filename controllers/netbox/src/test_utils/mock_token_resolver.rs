@@ -553,6 +553,7 @@ pub struct TestReconcilerApis {
     pub aggregate_api: std::sync::Arc<crate::kube_api_trait::mock::MockKubeApi<crds::NetBoxAggregate>>,
     pub vlan_api: std::sync::Arc<crate::kube_api_trait::mock::MockKubeApi<crds::NetBoxVLAN>>,
     pub rir_api: std::sync::Arc<crate::kube_api_trait::mock::MockKubeApi<crds::NetBoxRIR>>,
+    pub ip_address_api: std::sync::Arc<crate::kube_api_trait::mock::MockKubeApi<crds::NetBoxIPAddress>>,
     pub site_api: std::sync::Arc<crate::kube_api_trait::mock::MockKubeApi<crds::NetBoxSite>>,
     pub device_role_api: std::sync::Arc<crate::kube_api_trait::mock::MockKubeApi<crds::NetBoxDeviceRole>>,
     pub manufacturer_api: std::sync::Arc<crate::kube_api_trait::mock::MockKubeApi<crds::NetBoxManufacturer>>,
@@ -591,6 +592,8 @@ pub fn create_test_reconciler_with_mock_token_resolver(
     let aggregate_api = Arc::new(MockKubeApi::<NetBoxAggregate>::new());
     let vlan_api = Arc::new(MockKubeApi::<NetBoxVLAN>::new());
     let rir_api = Arc::new(MockKubeApi::<NetBoxRIR>::new());
+    let ip_address_api = Arc::new(MockKubeApi::<NetBoxIPAddress>::new());
+    let ip_range_api = Arc::new(MockKubeApi::<NetBoxIPRange>::new());
     let tenant_api = Arc::new(MockKubeApi::<NetBoxTenant>::new());
     let site_api = Arc::new(MockKubeApi::<NetBoxSite>::new());
     let device_role_api = Arc::new(MockKubeApi::<NetBoxDeviceRole>::new());
@@ -627,6 +630,8 @@ pub fn create_test_reconciler_with_mock_token_resolver(
         aggregate_api.clone(),
         vlan_api.clone(),
         rir_api.clone(),
+        ip_address_api.clone(),
+        ip_range_api.clone(),
         // Tenancy APIs
         tenant_api.clone(),
         // DCIM APIs
@@ -654,6 +659,8 @@ pub fn create_test_reconciler_with_mock_token_resolver(
         aggregate_api,
         vlan_api,
         rir_api,
+        ip_address_api,
+        ip_range_api,
         site_api,
         device_role_api,
         manufacturer_api,

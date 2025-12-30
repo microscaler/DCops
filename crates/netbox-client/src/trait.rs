@@ -35,6 +35,13 @@ pub trait NetBoxClientTrait: Send + Sync {
     async fn update_ip_address(&self, id: IpAddressId, request: AllocateIPRequest) -> Result<IPAddress, NetBoxError>;
     async fn delete_ip_address(&self, id: IpAddressId) -> Result<(), NetBoxError>;
     
+    // IP Range operations - signatures match ipam::ip_range module exactly
+    async fn get_ip_range(&self, id: IPRangeId) -> Result<IPRange, NetBoxError>;
+    async fn query_ip_ranges(&self, filters: &[(&str, &str)], fetch_all: bool) -> Result<Vec<IPRange>, NetBoxError>;
+    async fn create_ip_range(&self, start_address: &IpNet, end_address: &IpNet, vrf_id: Option<u64>, tenant_id: Option<TenantId>, role_id: Option<RoleId>, status: Option<IPRangeStatus>, description: Option<String>, mark_utilized: Option<bool>, mark_populated: Option<bool>, tags: Option<Vec<String>>) -> Result<IPRange, NetBoxError>;
+    async fn update_ip_range(&self, id: IPRangeId, start_address: Option<&IpNet>, end_address: Option<&IpNet>, vrf_id: Option<u64>, tenant_id: Option<TenantId>, role_id: Option<RoleId>, status: Option<IPRangeStatus>, description: Option<String>, mark_utilized: Option<bool>, mark_populated: Option<bool>, tags: Option<Vec<String>>) -> Result<IPRange, NetBoxError>;
+    async fn delete_ip_range(&self, id: IPRangeId) -> Result<(), NetBoxError>;
+    
     // Prefix operations - signatures match ipam::prefix module exactly
     async fn create_prefix(&self, prefix: &IpNet, description: Option<String>, site_id: Option<SiteId>, vlan_id: Option<VlanId>, status: Option<&str>, role_id: Option<RoleId>, tenant_id: Option<TenantId>, tags: Option<Vec<String>>) -> Result<Prefix, NetBoxError>;
     async fn update_prefix(&self, id: PrefixId, prefix: Option<&IpNet>, description: Option<String>, status: Option<&str>, role: Option<String>, tenant_id: Option<TenantId>, site_id: Option<SiteId>, vlan_id: Option<VlanId>, tags: Option<Vec<String>>) -> Result<Prefix, NetBoxError>;

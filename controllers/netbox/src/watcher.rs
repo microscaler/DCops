@@ -10,7 +10,7 @@ use crate::reconciler::Reconciler;
 use crate::error::ControllerError;
 use crds::{
     IPClaim, IPPool, NetBoxPrefix, NetBoxTenant, NetBoxSite, NetBoxRole, NetBoxTag, NetBoxAggregate,
-    NetBoxVLAN, NetBoxRIR, NetBoxDeviceRole, NetBoxManufacturer, NetBoxPlatform, NetBoxDeviceType,
+    NetBoxVLAN, NetBoxRIR, NetBoxIPAddress, NetBoxIPRange, NetBoxDeviceRole, NetBoxManufacturer, NetBoxPlatform, NetBoxDeviceType,
     NetBoxDevice, NetBoxInterface, NetBoxMACAddress, NetBoxRegion, NetBoxSiteGroup, NetBoxLocation,
 };
 use kube::Api;
@@ -146,6 +146,8 @@ pub struct Watcher {
     netbox_aggregate_api: Api<NetBoxAggregate>,
     netbox_vlan_api: Api<NetBoxVLAN>,
     netbox_rir_api: Api<NetBoxRIR>,
+    netbox_ip_address_api: Api<NetBoxIPAddress>,
+    netbox_ip_range_api: Api<NetBoxIPRange>,
     // Tenancy APIs
     netbox_tenant_api: Api<NetBoxTenant>,
     // DCIM APIs
@@ -176,6 +178,8 @@ impl Watcher {
         netbox_aggregate_api: Api<NetBoxAggregate>,
         netbox_vlan_api: Api<NetBoxVLAN>,
         netbox_rir_api: Api<NetBoxRIR>,
+        netbox_ip_address_api: Api<NetBoxIPAddress>,
+        netbox_ip_range_api: Api<NetBoxIPRange>,
         // Tenancy APIs
         netbox_tenant_api: Api<NetBoxTenant>,
         // DCIM APIs
@@ -203,6 +207,8 @@ impl Watcher {
             netbox_aggregate_api,
             netbox_vlan_api,
             netbox_rir_api,
+            netbox_ip_address_api,
+            netbox_ip_range_api,
             // Tenancy
             netbox_tenant_api,
             // DCIM
@@ -471,6 +477,39 @@ impl Watcher {
                 })
             },
             "NetBoxRIR",
+        ).await
+    }
+    
+    pub async fn watch_netbox_ip_addresses(&self) -> Result<(), ControllerError> {
+        watch_resource(
+            self.netbox_ip_address_api.clone(),
+            self.reconciler.clone(),
+            |reconciler, resource| {
+                Box::pin(async move {
+                    match reconciler.reconcile_netbox_ip_address(&*resource).await {
+                        Ok(()) => Ok(Action::await_change()),
+                        Err(e) => Err(e),
+                    }
+                })
+            },
+            "NetBoxIPAddress",
+        ).await
+    }
+    
+    /// Starts watching NetBoxIPRange resources.
+    pub async fn watch_netbox_ip_ranges(&self) -> Result<(), ControllerError> {
+        watch_resource(
+            self.netbox_ip_range_api.clone(),
+            self.reconciler.clone(),
+            |reconciler, resource| {
+                Box::pin(async move {
+                    match reconciler.reconcile_netbox_ip_range(&*resource).await {
+                        Ok(()) => Ok(Action::await_change()),
+                        Err(e) => Err(e),
+                    }
+                })
+            },
+            "NetBoxIPRange",
         ).await
     }
     

@@ -1,0 +1,53 @@
+apiVersion: dcops.microscaler.io/v1alpha1
+kind: NetBoxIPAddress
+metadata:
+  name: web-server-ip
+  namespace: default
+spec:
+  # IP address with CIDR (required)
+  # Must be a valid CIDR notation (IP address with prefix length)
+  address: "192.168.1.10/24"
+  
+  # Tenant reference (required)
+  tenant:
+    apiGroup: dcops.microscaler.io
+    kind: NetBoxTenant
+    name: datacenter-tenant
+    namespace: default
+  
+  # VLAN reference (optional)
+  vlan:
+    apiGroup: dcops.microscaler.io
+    kind: NetBoxVLAN
+    name: web-vlan
+    namespace: default
+  
+  # IP address status: active (for statically assigned addresses)
+  # Options: active, reserved, deprecated, dhcp, slaac
+  # See netbox-ip-address-dhcp-example.yaml for DHCP status example
+  status: active
+  
+  # IP address role (optional)
+  # Options: loopback, secondary, anycast, vip, vrrp, hsrp, glbp, carp
+  role: vip
+  
+  # DNS name (optional)
+  dnsName: "web-server.example.com"
+  
+  # Description (optional)
+  description: "Web server primary IP address"
+  
+  # Tag references (optional)
+  tags:
+    - apiGroup: dcops.microscaler.io
+      kind: NetBoxTag
+      name: production
+      namespace: default
+    - apiGroup: dcops.microscaler.io
+      kind: NetBoxTag
+      name: web-tier
+      namespace: default
+  
+  # Comments (optional)
+  comments: "Assigned to web-server-01 for production traffic"
+

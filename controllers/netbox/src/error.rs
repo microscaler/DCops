@@ -49,6 +49,10 @@ pub enum ControllerError {
     #[allow(dead_code)] // Reserved for future use
     InvalidIPFormat(String),
     
+    /// Invalid input
+    #[error("Invalid input: {0}")]
+    InvalidInput(String),
+    
     /// Reconciliation failed
     #[error("Reconciliation failed: {0}")]
     #[allow(dead_code)] // Reserved for future use

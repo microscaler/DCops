@@ -15,12 +15,10 @@ use crate::kube_api_trait::KubeApiWrapper;
 use crate::token_resolver::TokenResolver;
 use crds::{
     IPClaim, IPPool, NetBoxPrefix, NetBoxTenant, NetBoxSite, NetBoxRole, NetBoxTag, NetBoxAggregate,
-    NetBoxVLAN, NetBoxRIR, NetBoxDeviceRole, NetBoxManufacturer, NetBoxPlatform, NetBoxDeviceType,
+    NetBoxVLAN, NetBoxRIR, NetBoxIPAddress, NetBoxIPRange, NetBoxDeviceRole, NetBoxManufacturer, NetBoxPlatform, NetBoxDeviceType,
     NetBoxDevice, NetBoxInterface, NetBoxMACAddress, NetBoxRegion, NetBoxSiteGroup, NetBoxLocation,
 };
 use kube::{Api, Client};
-use kube::runtime::events::Recorder;
-use std::sync::Arc;
 use tokio::task::JoinHandle;
 use tracing::{info, warn};
 
@@ -33,6 +31,8 @@ pub struct Controller {
     netbox_aggregate_watcher: JoinHandle<Result<(), ControllerError>>,
     netbox_vlan_watcher: JoinHandle<Result<(), ControllerError>>,
     netbox_rir_watcher: JoinHandle<Result<(), ControllerError>>,
+    netbox_ip_address_watcher: JoinHandle<Result<(), ControllerError>>,
+    netbox_ip_range_watcher: JoinHandle<Result<(), ControllerError>>,
     // Tenancy watchers
     netbox_tenant_watcher: JoinHandle<Result<(), ControllerError>>,
     // DCIM watchers
@@ -79,6 +79,8 @@ impl Controller {
         let netbox_aggregate_api: Api<NetBoxAggregate> = Api::namespaced(kube_client.clone(), ns);
         let netbox_vlan_api: Api<NetBoxVLAN> = Api::namespaced(kube_client.clone(), ns);
         let netbox_rir_api: Api<NetBoxRIR> = Api::namespaced(kube_client.clone(), ns);
+        let netbox_ip_address_api: Api<NetBoxIPAddress> = Api::namespaced(kube_client.clone(), ns);
+        let netbox_ip_range_api: Api<NetBoxIPRange> = Api::namespaced(kube_client.clone(), ns);
         // Tenancy APIs
         let netbox_tenant_api: Api<NetBoxTenant> = Api::namespaced(kube_client.clone(), ns);
         // DCIM APIs
@@ -126,6 +128,8 @@ impl Controller {
             KubeApiWrapper::new(netbox_aggregate_api.clone()),
             KubeApiWrapper::new(netbox_vlan_api.clone()),
             KubeApiWrapper::new(netbox_rir_api.clone()),
+            KubeApiWrapper::new(netbox_ip_address_api.clone()),
+            KubeApiWrapper::new(netbox_ip_range_api.clone()),
             // Tenancy
             KubeApiWrapper::new(netbox_tenant_api.clone()),
             // DCIM
@@ -166,6 +170,8 @@ impl Controller {
             netbox_aggregate_api.clone(),
             netbox_vlan_api.clone(),
             netbox_rir_api.clone(),
+            netbox_ip_address_api.clone(),
+            netbox_ip_range_api.clone(),
             // Tenancy
             netbox_tenant_api.clone(),
             // DCIM
@@ -239,6 +245,20 @@ impl Controller {
             let watcher = watcher_instance.clone();
             tokio::spawn(async move {
                 watcher.watch_netbox_rirs().await
+            })
+        };
+        
+        let netbox_ip_address_watcher = {
+            let watcher = watcher_instance.clone();
+            tokio::spawn(async move {
+                watcher.watch_netbox_ip_addresses().await
+            })
+        };
+        
+        let netbox_ip_range_watcher = {
+            let watcher = watcher_instance.clone();
+            tokio::spawn(async move {
+                watcher.watch_netbox_ip_ranges().await
             })
         };
         
@@ -334,6 +354,8 @@ impl Controller {
             netbox_aggregate_watcher,
             netbox_vlan_watcher,
             netbox_rir_watcher,
+            netbox_ip_address_watcher,
+            netbox_ip_range_watcher,
             // Tenancy watchers
             netbox_tenant_watcher,
             // DCIM watchers
@@ -391,6 +413,14 @@ impl Controller {
             result = &mut self.netbox_rir_watcher => {
                 result.map_err(|e| ControllerError::Watch(format!("NetBoxRIR watcher panicked: {}", e)))?
                     .map_err(|e| ControllerError::Watch(format!("NetBoxRIR watcher error: {}", e)))?;
+            }
+            result = &mut self.netbox_ip_address_watcher => {
+                result.map_err(|e| ControllerError::Watch(format!("NetBoxIPAddress watcher panicked: {}", e)))?
+                    .map_err(|e| ControllerError::Watch(format!("NetBoxIPAddress watcher error: {}", e)))?;
+            }
+            result = &mut self.netbox_ip_range_watcher => {
+                result.map_err(|e| ControllerError::Watch(format!("NetBoxIPRange watcher panicked: {}", e)))?
+                    .map_err(|e| ControllerError::Watch(format!("NetBoxIPRange watcher error: {}", e)))?;
             }
             result = &mut self.netbox_device_role_watcher => {
                 result.map_err(|e| ControllerError::Watch(format!("NetBoxDeviceRole watcher panicked: {}", e)))?

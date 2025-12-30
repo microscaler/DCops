@@ -1,0 +1,62 @@
+apiVersion: dcops.microscaler.io/v1alpha1
+kind: NetBoxIPRange
+metadata:
+  name: dhcp-pool-range
+  namespace: default
+spec:
+  # Start IP address with CIDR (required)
+  # Must be a valid CIDR notation (IP address with prefix length)
+  startAddress: "192.168.1.100/24"
+
+  # End IP address with CIDR (required)
+  # Must be a valid CIDR notation (IP address with prefix length)
+  # Must be in the same family (IPv4 or IPv6) as startAddress
+  endAddress: "192.168.1.200/24"
+
+  # Tenant reference (required)
+  tenant:
+    apiGroup: dcops.microscaler.io
+    kind: NetBoxTenant
+    name: datacenter-tenant
+    namespace: default
+
+  # VRF reference (optional - not yet implemented)
+  # vrf:
+  #   apiGroup: dcops.microscaler.io
+  #   kind: NetBoxVRF
+  #   name: production-vrf
+  #   namespace: default
+
+  # IP range status (default: active)
+  # Options: active, reserved, deprecated
+  status: active
+
+  # IP range role reference (optional)
+  # role:
+  #   apiGroup: dcops.microscaler.io
+  #   kind: NetBoxRole
+  #   name: dhcp-pool
+  #   namespace: default
+
+  # Description (optional)
+  description: "DHCP pool range for client devices"
+
+  # Mark as utilized (for DHCP ranges, set to true)
+  # When true, all IPs in the range are considered utilized
+  markUtilized: true
+
+  # Mark as populated (for DHCP ranges, set to true)
+  # When true, all IPs in the range are considered populated
+  markPopulated: true
+
+  # Tag references (optional)
+  # tags:
+  #   - apiGroup: dcops.microscaler.io
+  #     kind: NetBoxTag
+  #     name: dhcp-managed
+  #     namespace: default
+  #   - apiGroup: dcops.microscaler.io
+  #     kind: NetBoxTag
+  #     name: client-network
+  #     namespace: default
+

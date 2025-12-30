@@ -341,6 +341,34 @@ impl NetBoxStatusCheck for crds::NetBoxPrefixStatus {
     fn error(&self) -> Option<&str> { self.error.as_deref() }
 }
 
+impl NetBoxStatusCheck for crds::NetBoxIPAddressStatus {
+    fn netbox_id(&self) -> Option<u64> { self.netbox_id }
+    fn netbox_url(&self) -> Option<&str> { self.netbox_url.as_deref() }
+    fn state_str(&self) -> &str {
+        match self.state {
+            crds::ResourceState::Pending => "Pending",
+            crds::ResourceState::Created => "Created",
+            crds::ResourceState::Updated => "Updated",
+            crds::ResourceState::Failed => "Failed",
+        }
+    }
+    fn error(&self) -> Option<&str> { self.error.as_deref() }
+}
+
+impl NetBoxStatusCheck for crds::NetBoxIPRangeStatus {
+    fn netbox_id(&self) -> Option<u64> { self.netbox_id }
+    fn netbox_url(&self) -> Option<&str> { self.netbox_url.as_deref() }
+    fn state_str(&self) -> &str {
+        match self.state {
+            crds::ResourceState::Pending => "Pending",
+            crds::ResourceState::Created => "Created",
+            crds::ResourceState::Updated => "Updated",
+            crds::ResourceState::Failed => "Failed",
+        }
+    }
+    fn error(&self) -> Option<&str> { self.error.as_deref() }
+}
+
 impl NetBoxStatusCheck for crds::IPClaimStatus {
     fn netbox_id(&self) -> Option<u64> { None }  // IPClaim doesn't have netbox_id
     fn netbox_url(&self) -> Option<&str> { self.netbox_ip_ref.as_deref() }
@@ -1231,7 +1259,9 @@ pub fn is_conflict_error(error: &netbox_client::NetBoxError) -> bool {
     error_str.contains("tenant with this name already exists") ||
     error_str.contains("tenant with this slug already exists") ||
     (error_str.contains("slug") && error_str.contains("already")) ||
-    error_str.contains("asset tag")
+    error_str.contains("asset tag") ||
+    error_str.contains("overlap") || // IP ranges/addresses that overlap with existing ranges
+    (error_str.contains("range") && error_str.contains("in VRF")) // IP range already exists
 }
 
 // Handle CREATE conflict errors by trying multiple query strategies (GitOps idempotency)

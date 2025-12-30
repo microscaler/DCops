@@ -159,6 +159,40 @@ pub struct AvailableIP {
     pub description: Option<String>,
 }
 
+/// IP Range model (from IPAM API)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub struct IPRange {
+    pub id: u64,
+    pub url: String,
+    pub display: String,
+    pub family: u8, // 4 or 6
+    #[serde(serialize_with = "serialize_ipnet", deserialize_with = "deserialize_ipnet")]
+    pub start_address: IpNet, // e.g., "192.168.1.100/24"
+    #[serde(serialize_with = "serialize_ipnet", deserialize_with = "deserialize_ipnet")]
+    pub end_address: IpNet, // e.g., "192.168.1.200/24"
+    pub vrf: Option<NestedVrf>,
+    pub tenant: Option<NestedTenant>,
+    pub status: IPRangeStatus,
+    pub role: Option<NestedRole>,
+    pub description: String,
+    pub mark_utilized: bool, // For DHCP ranges, set to true
+    pub mark_populated: bool, // For DHCP ranges, set to true
+    pub tags: Vec<NestedTag>,
+    pub custom_fields: serde_json::Value,
+    pub created: String, // ISO 8601 datetime
+    pub last_updated: String, // ISO 8601 datetime
+}
+
+/// IP Range status choices
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "kebab-case")]
+pub enum IPRangeStatus {
+    Active,
+    Reserved,
+    Deprecated,
+}
+
 /// Request body for allocating an IP address
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]

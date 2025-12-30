@@ -109,6 +109,11 @@ pub struct VlanGroupId(pub u64);
 #[serde(transparent)]
 pub struct TenantGroupId(pub u64);
 
+/// IP Range ID
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct IPRangeId(pub u64);
+
 // ============================================================================
 // Conversion traits for convenience
 // ============================================================================
@@ -360,6 +365,19 @@ impl From<TenantGroupId> for u64 {
     }
 }
 
+// IPRangeId conversions
+impl From<u64> for IPRangeId {
+    fn from(id: u64) -> Self {
+        IPRangeId(id)
+    }
+}
+
+impl From<IPRangeId> for u64 {
+    fn from(id: IPRangeId) -> Self {
+        id.0
+    }
+}
+
 // ============================================================================
 // Display implementations for formatting
 // ============================================================================
@@ -371,6 +389,12 @@ impl fmt::Display for SiteId {
 }
 
 impl fmt::Display for PrefixId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+impl fmt::Display for IPRangeId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.0)
     }

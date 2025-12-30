@@ -96,7 +96,7 @@ impl EventRecorderExt for Recorder {
             type_: EventType::Normal,
             reason: reason.to_string(),
             note: Some(message.to_string()),
-            action: String::new(),
+            action: "Reconcile".to_string(),
             secondary: None,
         };
         
@@ -127,7 +127,7 @@ impl EventRecorderExt for Recorder {
             type_: EventType::Warning,
             reason: reason.to_string(),
             note: Some(message.to_string()),
-            action: String::new(),
+            action: "Reconcile".to_string(),
             secondary: None,
         };
         
@@ -162,7 +162,7 @@ impl EventRecorderExt for crate::test_utils::mock_event_recorder::MockEventRecor
             type_: EventType::Normal,
             reason: reason.to_string(),
             note: Some(message.to_string()),
-            action: String::new(),
+            action: "Reconcile".to_string(),
             secondary: None,
         };
         
@@ -193,7 +193,7 @@ impl EventRecorderExt for crate::test_utils::mock_event_recorder::MockEventRecor
             type_: EventType::Warning,
             reason: reason.to_string(),
             note: Some(message.to_string()),
-            action: String::new(),
+            action: "Reconcile".to_string(),
             secondary: None,
         };
         
@@ -229,7 +229,7 @@ pub(crate) async fn record_event_normal_helper<K: Resource>(
         type_: EventType::Normal,
         reason: reason.to_string(),
         note: Some(message.to_string()),
-        action: String::new(),
+        action: "Reconcile".to_string(),
         secondary: None,
     };
     
@@ -262,7 +262,7 @@ pub(crate) async fn record_event_warning_helper<K: Resource>(
         type_: EventType::Warning,
         reason: reason.to_string(),
         note: Some(message.to_string()),
-        action: String::new(),
+        action: "Reconcile".to_string(),
         secondary: None,
     };
     

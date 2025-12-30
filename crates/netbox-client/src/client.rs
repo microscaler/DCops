@@ -92,6 +92,27 @@ impl NetBoxClientTrait for NetBoxClient {
         ipam::delete_ip_address(&self.core, id.into()).await
     }
 
+    // IP Range operations - signatures match ipam::ip_range module exactly
+    async fn get_ip_range(&self, id: IPRangeId) -> Result<IPRange, NetBoxError> {
+        ipam::get_ip_range(&self.core, id).await
+    }
+    
+    async fn query_ip_ranges(&self, filters: &[(&str, &str)], fetch_all: bool) -> Result<Vec<IPRange>, NetBoxError> {
+        ipam::query_ip_ranges(&self.core, filters, fetch_all).await
+    }
+    
+    async fn create_ip_range(&self, start_address: &ipnet::IpNet, end_address: &ipnet::IpNet, vrf_id: Option<u64>, tenant_id: Option<TenantId>, role_id: Option<RoleId>, status: Option<IPRangeStatus>, description: Option<String>, mark_utilized: Option<bool>, mark_populated: Option<bool>, tags: Option<Vec<String>>) -> Result<IPRange, NetBoxError> {
+        ipam::create_ip_range(&self.core, start_address, end_address, vrf_id, tenant_id, role_id, status, description, mark_utilized, mark_populated, tags).await
+    }
+    
+    async fn update_ip_range(&self, id: IPRangeId, start_address: Option<&ipnet::IpNet>, end_address: Option<&ipnet::IpNet>, vrf_id: Option<u64>, tenant_id: Option<TenantId>, role_id: Option<RoleId>, status: Option<IPRangeStatus>, description: Option<String>, mark_utilized: Option<bool>, mark_populated: Option<bool>, tags: Option<Vec<String>>) -> Result<IPRange, NetBoxError> {
+        ipam::update_ip_range(&self.core, id, start_address, end_address, vrf_id, tenant_id, role_id, status, description, mark_utilized, mark_populated, tags).await
+    }
+    
+    async fn delete_ip_range(&self, id: IPRangeId) -> Result<(), NetBoxError> {
+        ipam::delete_ip_range(&self.core, id).await
+    }
+
     async fn create_prefix(&self, prefix: &ipnet::IpNet, description: Option<String>, site_id: Option<SiteId>, vlan_id: Option<VlanId>, status: Option<&str>, role_id: Option<RoleId>, tenant_id: Option<TenantId>, tags: Option<Vec<String>>) -> Result<Prefix, NetBoxError> {
         ipam::create_prefix(&self.core, prefix, description, site_id.map(|id| id.into()), vlan_id.map(|id| id.into()), status, role_id.map(|id| id.into()), tenant_id.map(|id| id.into()), tags).await
     }

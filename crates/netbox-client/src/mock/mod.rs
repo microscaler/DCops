@@ -33,6 +33,7 @@ pub struct MockNetBoxClient {
     // In-memory storage for resources
     pub(crate) prefixes: Arc<Mutex<HashMap<u64, Prefix>>>,
     pub(crate) ip_addresses: Arc<Mutex<HashMap<u64, IPAddress>>>,
+    pub(crate) ip_ranges: Arc<Mutex<HashMap<u64, IPRange>>>,
     pub(crate) available_ips: Arc<Mutex<HashMap<u64, Vec<AvailableIP>>>>,
     pub(crate) aggregates: Arc<Mutex<HashMap<u64, Aggregate>>>,
     pub(crate) rirs: Arc<Mutex<HashMap<String, Rir>>>,
@@ -63,6 +64,7 @@ impl MockNetBoxClient {
             base_url: base_url.into(),
             prefixes: Arc::new(Mutex::new(HashMap::new())),
             ip_addresses: Arc::new(Mutex::new(HashMap::new())),
+            ip_ranges: Arc::new(Mutex::new(HashMap::new())),
             available_ips: Arc::new(Mutex::new(HashMap::new())),
             aggregates: Arc::new(Mutex::new(HashMap::new())),
             rirs: Arc::new(Mutex::new(HashMap::new())),
@@ -94,6 +96,11 @@ impl MockNetBoxClient {
     /// Add an IP address to the mock store (for test setup)
     pub fn add_ip_address(&self, ip: IPAddress) {
         self.ip_addresses.lock().unwrap().insert(ip.id, ip);
+    }
+
+    /// Add an IP range to the mock store (for test setup)
+    pub fn add_ip_range(&self, range: IPRange) {
+        self.ip_ranges.lock().unwrap().insert(range.id, range);
     }
 
     /// Add available IPs for a prefix (for test setup)
@@ -246,6 +253,27 @@ impl NetBoxClientTrait for MockNetBoxClient {
 
     async fn delete_ip_address(&self, id: IpAddressId) -> Result<(), NetBoxError> {
         ipam::delete_ip_address(self, id.into()).await
+    }
+
+    // IP Range operations - delegated to ipam module
+    async fn get_ip_range(&self, id: IPRangeId) -> Result<IPRange, NetBoxError> {
+        ipam::get_ip_range(self, id).await
+    }
+    
+    async fn query_ip_ranges(&self, filters: &[(&str, &str)], fetch_all: bool) -> Result<Vec<IPRange>, NetBoxError> {
+        ipam::query_ip_ranges(self, filters, fetch_all).await
+    }
+    
+    async fn create_ip_range(&self, start_address: &ipnet::IpNet, end_address: &ipnet::IpNet, vrf_id: Option<u64>, tenant_id: Option<TenantId>, role_id: Option<RoleId>, status: Option<IPRangeStatus>, description: Option<String>, mark_utilized: Option<bool>, mark_populated: Option<bool>, tags: Option<Vec<String>>) -> Result<IPRange, NetBoxError> {
+        ipam::create_ip_range(self, start_address, end_address, vrf_id, tenant_id, role_id, status, description, mark_utilized, mark_populated, tags).await
+    }
+    
+    async fn update_ip_range(&self, id: IPRangeId, start_address: Option<&ipnet::IpNet>, end_address: Option<&ipnet::IpNet>, vrf_id: Option<u64>, tenant_id: Option<TenantId>, role_id: Option<RoleId>, status: Option<IPRangeStatus>, description: Option<String>, mark_utilized: Option<bool>, mark_populated: Option<bool>, tags: Option<Vec<String>>) -> Result<IPRange, NetBoxError> {
+        ipam::update_ip_range(self, id, start_address, end_address, vrf_id, tenant_id, role_id, status, description, mark_utilized, mark_populated, tags).await
+    }
+    
+    async fn delete_ip_range(&self, id: IPRangeId) -> Result<(), NetBoxError> {
+        ipam::delete_ip_range(self, id.into()).await
     }
 
     async fn create_prefix(&self, prefix: &ipnet::IpNet, description: Option<String>, site_id: Option<SiteId>, vlan_id: Option<VlanId>, status: Option<&str>, role_id: Option<RoleId>, tenant_id: Option<TenantId>, tags: Option<Vec<String>>) -> Result<Prefix, NetBoxError> {

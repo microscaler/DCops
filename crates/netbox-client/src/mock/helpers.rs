@@ -1,7 +1,6 @@
 //! Helper functions for creating nested NetBox model types
 
 use crate::models::*;
-use ipnet::IpNet;
 
 /// Helper functions for creating nested types in mock implementations
 pub struct Helpers {

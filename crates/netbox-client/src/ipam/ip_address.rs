@@ -129,8 +129,8 @@ pub async fn create_ip_address(
         .await
         .map_err(|e| NetBoxError::Http(e))?;
     
-    if !response.status().is_success() {
-        let status = response.status();
+    let status = response.status();
+    if !status.is_success() {
         let body = response.text().await.unwrap_or_default();
         return Err(NetBoxError::Api(format!(
             "Failed to create IP address: {} - {}",
@@ -138,8 +138,17 @@ pub async fn create_ip_address(
         )));
     }
     
-    let ip: IPAddress = response.json().await
+    // Try to decode the response, with better error handling
+    let response_text = response.text().await
         .map_err(|e| NetBoxError::Http(e))?;
+    
+    let ip: IPAddress = serde_json::from_str(&response_text)
+        .map_err(|e| {
+            NetBoxError::Api(format!(
+                "Failed to decode IP address response: {} - Response body: {}",
+                e, response_text
+            ))
+        })?;
     Ok(ip)
 }
 

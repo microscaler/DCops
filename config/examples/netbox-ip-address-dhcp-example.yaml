@@ -4,15 +4,23 @@ metadata:
   name: dhcp-client-ip
   namespace: default
 spec:
-  # IP address with CIDR (required)
+  # IP range reference (required for DHCP IPs)
+  # Reference the NetBoxIPRange CRD that defines the DHCP pool from which this IP was assigned.
+  # This links the IP address to its DHCP pool for proper tracking and management.
+  ipRange:
+    apiGroup: dcops.microscaler.io
+    kind: NetBoxIPRange
+    name: dhcp-pool-range
+    namespace: default
+  
+  # IP address with CIDR (optional for DHCP IPs when ipRange is specified)
+  # If tracking an already-assigned DHCP IP, specify the address here.
+  # If not specified and ipRange is provided, the reconciler will allocate an IP from the range.
+  # Must be a valid CIDR notation (IP address with prefix length)
+  # 
   # NOTE: For DHCP addresses, this represents the IP that was assigned by DHCP
   # and is being tracked in NetBox. DHCP does not pre-allocate specific IPs.
   # This CR should be created AFTER a DHCP server has assigned an IP to track it.
-  # Must be a valid CIDR notation (IP address with prefix length)
-  # 
-  # TODO: Once NetBoxIPRange reconciler is implemented, DHCP IPs should reference
-  # an IP range instead of specifying a specific address. The IP range defines
-  # the pool from which DHCP assigns IPs (e.g., 192.168.1.100-192.168.1.200).
   address: "192.168.1.100/24"
   
   # Tenant reference (required)
@@ -61,4 +69,9 @@ spec:
   
   # Comments (optional)
   comments: "IP was dynamically assigned via DHCP. This CR tracks the assigned IP in NetBox for inventory purposes."
+
+  # NOTE: For proper DHCP IP management, create a NetBoxIPRange CR first
+  # that defines the DHCP pool (e.g., 192.168.1.100-200/24).
+  # DHCP IP addresses should reference the IP range for proper tracking.
+  # See netbox-ip-range-example.yaml for an example IP range CR.
 

@@ -53,8 +53,11 @@ spec:
                 - name
                 type: object
               preferredIp:
-                description: Preferred IP (hint, not guarantee)
+                description: |-
+                  Preferred IP (hint, not guarantee)
+                  Must be a valid CIDR notation (IP address with prefix length, e.g., "192.168.1.10/24")
                 nullable: true
+                pattern: ^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)/(?:[0-9]|[12][0-9]|3[0-2])$|^(?:[0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}/(?:[0-9]|[1-9][0-9]|1[0-2][0-8])$
                 type: string
             required:
             - deviceRef
@@ -261,7 +264,10 @@ spec:
                 nullable: true
                 type: string
               prefix:
-                description: Prefix CIDR (e.g., "192.168.1.0/24")
+                description: |-
+                  Prefix CIDR (e.g., "192.168.1.0/24" or "2001:db8::/64")
+                  Must be a valid CIDR notation (IP address with prefix length)
+                pattern: ^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)/(?:[0-9]|[12][0-9]|3[0-2])$|^(?:[0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}/(?:[0-9]|[1-9][0-9]|1[0-2][0-8])$
                 type: string
               role:
                 description: Role reference (references NetBoxRole CRD)
@@ -1131,6 +1137,454 @@ spec:
 apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
+  name: netboxipaddresses.dcops.microscaler.io
+spec:
+  group: dcops.microscaler.io
+  names:
+    categories: []
+    kind: NetBoxIPAddress
+    plural: netboxipaddresses
+    shortNames: []
+    singular: netboxipaddress
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns: []
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: Auto-generated derived type for NetBoxIPAddressSpec via `CustomResource`
+        properties:
+          spec:
+            description: NetBoxIPAddressSpec defines the desired state of a NetBox IP address
+            properties:
+              address:
+                description: |-
+                  IP address with CIDR (e.g., "192.168.1.10/24" or "2001:db8::1/64")
+                  Must be a valid CIDR notation (IP address with prefix length)
+
+                  For DHCP-assigned IPs:
+                  - If tracking an already-assigned IP, specify the address here
+                  - If using an IP range reference, address is optional (will be allocated from range)
+                  - At least one of `address` or `ip_range` must be specified
+                nullable: true
+                pattern: ^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)/(?:[0-9]|[12][0-9]|3[0-2])$|^(?:[0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}/(?:[0-9]|[1-9][0-9]|1[0-2][0-8])$
+                type: string
+              comments:
+                description: Comments
+                nullable: true
+                type: string
+              description:
+                description: Description
+                nullable: true
+                type: string
+              dnsName:
+                description: DNS name
+                nullable: true
+                type: string
+              ipRange:
+                description: |-
+                  IP range reference (references NetBoxIPRange CRD, optional)
+
+                  For DHCP-assigned IPs, reference the IP range pool from which the IP was assigned.
+                  This links the IP address to its DHCP pool for proper tracking and management.
+
+                  If `ip_range` is specified and `address` is not, the reconciler will allocate
+                  an IP from the range. If both are specified, the address must be within the range.
+                nullable: true
+                properties:
+                  apiGroup:
+                    description: API group of the referenced resource (e.g., "dcops.microscaler.io")
+                    type: string
+                  kind:
+                    description: Kind of the referenced resource (e.g., "NetBoxSite", "NetBoxTenant")
+                    type: string
+                  name:
+                    description: Name of the referenced NetBox CRD resource
+                    type: string
+                  namespace:
+                    description: Namespace of the referenced resource (defaults to same namespace as the referencing resource)
+                    nullable: true
+                    type: string
+                required:
+                - apiGroup
+                - kind
+                - name
+                type: object
+              role:
+                description: IP address role (loopback, secondary, anycast, vip, vrrp, hsrp, glbp, carp)
+                nullable: true
+                type: string
+              status:
+                default: active
+                description: IP address status (active, reserved, deprecated, dhcp, slaac)
+                enum:
+                - active
+                - reserved
+                - deprecated
+                - dhcp
+                - slaac
+                type: string
+              tags:
+                description: Tag references (references NetBoxTag CRDs)
+                items:
+                  description: |-
+                    Kubernetes-compliant resource reference for NetBox CRDs
+
+                    This follows the Kubernetes `TypedLocalObjectReference` pattern, which includes:
+                    - `apiGroup`: The API group of the referenced resource (e.g., "dcops.microscaler.io")
+                    - `kind`: The kind of the referenced resource (e.g., "NetBoxSite")
+                    - `name`: The name of the referenced resource (required)
+                    - `namespace`: The namespace of the referenced resource (optional, defaults to same namespace)
+
+                    This enables Kubernetes to validate reference types and provides clear documentation
+                    of what resource type is expected.
+                  properties:
+                    apiGroup:
+                      description: API group of the referenced resource (e.g., "dcops.microscaler.io")
+                      type: string
+                    kind:
+                      description: Kind of the referenced resource (e.g., "NetBoxSite", "NetBoxTenant")
+                      type: string
+                    name:
+                      description: Name of the referenced NetBox CRD resource
+                      type: string
+                    namespace:
+                      description: Namespace of the referenced resource (defaults to same namespace as the referencing resource)
+                      nullable: true
+                      type: string
+                  required:
+                  - apiGroup
+                  - kind
+                  - name
+                  type: object
+                nullable: true
+                type: array
+              tenant:
+                description: |-
+                  Tenant reference (references NetBoxTenant CRD, required)
+                  Tenant is required in NetBox for proper resource organization and access control
+                properties:
+                  apiGroup:
+                    description: API group of the referenced resource (e.g., "dcops.microscaler.io")
+                    type: string
+                  kind:
+                    description: Kind of the referenced resource (e.g., "NetBoxSite", "NetBoxTenant")
+                    type: string
+                  name:
+                    description: Name of the referenced NetBox CRD resource
+                    type: string
+                  namespace:
+                    description: Namespace of the referenced resource (defaults to same namespace as the referencing resource)
+                    nullable: true
+                    type: string
+                required:
+                - apiGroup
+                - kind
+                - name
+                type: object
+              vlan:
+                description: VLAN reference (references NetBoxVLAN CRD, optional)
+                nullable: true
+                properties:
+                  apiGroup:
+                    description: API group of the referenced resource (e.g., "dcops.microscaler.io")
+                    type: string
+                  kind:
+                    description: Kind of the referenced resource (e.g., "NetBoxSite", "NetBoxTenant")
+                    type: string
+                  name:
+                    description: Name of the referenced NetBox CRD resource
+                    type: string
+                  namespace:
+                    description: Namespace of the referenced resource (defaults to same namespace as the referencing resource)
+                    nullable: true
+                    type: string
+                required:
+                - apiGroup
+                - kind
+                - name
+                type: object
+              vrf:
+                description: VRF reference (references NetBoxVRF CRD, optional - not yet implemented)
+                nullable: true
+                properties:
+                  apiGroup:
+                    description: API group of the referenced resource (e.g., "dcops.microscaler.io")
+                    type: string
+                  kind:
+                    description: Kind of the referenced resource (e.g., "NetBoxSite", "NetBoxTenant")
+                    type: string
+                  name:
+                    description: Name of the referenced NetBox CRD resource
+                    type: string
+                  namespace:
+                    description: Namespace of the referenced resource (defaults to same namespace as the referencing resource)
+                    nullable: true
+                    type: string
+                required:
+                - apiGroup
+                - kind
+                - name
+                type: object
+            required:
+            - tenant
+            type: object
+          status:
+            description: NetBoxIPAddressStatus defines the observed state of a NetBox IP address
+            nullable: true
+            properties:
+              error:
+                description: Error message if reconciliation failed
+                nullable: true
+                type: string
+              lastReconciled:
+                description: Last reconciliation timestamp
+                format: date-time
+                nullable: true
+                type: string
+              netboxId:
+                description: NetBox IP address ID (set after creation)
+                format: uint64
+                minimum: 0.0
+                nullable: true
+                type: integer
+              netboxUrl:
+                description: NetBox IP address URL
+                nullable: true
+                type: string
+              state:
+                description: Current state of the IP address
+                enum:
+                - Pending
+                - Created
+                - Updated
+                - Failed
+                type: string
+            required:
+            - state
+            type: object
+        required:
+        - spec
+        title: NetBoxIPAddress
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: netboxipranges.dcops.microscaler.io
+spec:
+  group: dcops.microscaler.io
+  names:
+    categories: []
+    kind: NetBoxIPRange
+    plural: netboxipranges
+    shortNames: []
+    singular: netboxiprange
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns: []
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: Auto-generated derived type for NetBoxIPRangeSpec via `CustomResource`
+        properties:
+          spec:
+            description: NetBoxIPRangeSpec defines the desired state of a NetBox IP range
+            properties:
+              description:
+                description: Description
+                nullable: true
+                type: string
+              endAddress:
+                description: |-
+                  End IP address with CIDR (e.g., "192.168.1.200/24" or "2001:db8::200/64")
+                  Must be a valid CIDR notation (IP address with prefix length)
+                  Must be in the same family (IPv4 or IPv6) as start_address
+                pattern: ^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)/(?:[0-9]|[12][0-9]|3[0-2])$|^(?:[0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}/(?:[0-9]|[1-9][0-9]|1[0-2][0-8])$
+                type: string
+              markPopulated:
+                default: false
+                description: |-
+                  Mark as populated (for DHCP ranges, set to true)
+                  When true, all IPs in the range are considered populated
+                type: boolean
+              markUtilized:
+                default: false
+                description: |-
+                  Mark as utilized (for DHCP ranges, set to true)
+                  When true, all IPs in the range are considered utilized
+                type: boolean
+              role:
+                description: IP range role reference (references NetBoxRole CRD, optional)
+                nullable: true
+                properties:
+                  apiGroup:
+                    description: API group of the referenced resource (e.g., "dcops.microscaler.io")
+                    type: string
+                  kind:
+                    description: Kind of the referenced resource (e.g., "NetBoxSite", "NetBoxTenant")
+                    type: string
+                  name:
+                    description: Name of the referenced NetBox CRD resource
+                    type: string
+                  namespace:
+                    description: Namespace of the referenced resource (defaults to same namespace as the referencing resource)
+                    nullable: true
+                    type: string
+                required:
+                - apiGroup
+                - kind
+                - name
+                type: object
+              startAddress:
+                description: |-
+                  Start IP address with CIDR (e.g., "192.168.1.100/24" or "2001:db8::100/64")
+                  Must be a valid CIDR notation (IP address with prefix length)
+                pattern: ^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)/(?:[0-9]|[12][0-9]|3[0-2])$|^(?:[0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}/(?:[0-9]|[1-9][0-9]|1[0-2][0-8])$
+                type: string
+              status:
+                default: active
+                description: IP range status (active, reserved, deprecated)
+                enum:
+                - active
+                - reserved
+                - deprecated
+                type: string
+              tags:
+                description: Tag references (references NetBoxTag CRDs)
+                items:
+                  description: |-
+                    Kubernetes-compliant resource reference for NetBox CRDs
+
+                    This follows the Kubernetes `TypedLocalObjectReference` pattern, which includes:
+                    - `apiGroup`: The API group of the referenced resource (e.g., "dcops.microscaler.io")
+                    - `kind`: The kind of the referenced resource (e.g., "NetBoxSite")
+                    - `name`: The name of the referenced resource (required)
+                    - `namespace`: The namespace of the referenced resource (optional, defaults to same namespace)
+
+                    This enables Kubernetes to validate reference types and provides clear documentation
+                    of what resource type is expected.
+                  properties:
+                    apiGroup:
+                      description: API group of the referenced resource (e.g., "dcops.microscaler.io")
+                      type: string
+                    kind:
+                      description: Kind of the referenced resource (e.g., "NetBoxSite", "NetBoxTenant")
+                      type: string
+                    name:
+                      description: Name of the referenced NetBox CRD resource
+                      type: string
+                    namespace:
+                      description: Namespace of the referenced resource (defaults to same namespace as the referencing resource)
+                      nullable: true
+                      type: string
+                  required:
+                  - apiGroup
+                  - kind
+                  - name
+                  type: object
+                nullable: true
+                type: array
+              tenant:
+                description: |-
+                  Tenant reference (references NetBoxTenant CRD, required)
+                  Tenant is required in NetBox for proper resource organization and access control
+                properties:
+                  apiGroup:
+                    description: API group of the referenced resource (e.g., "dcops.microscaler.io")
+                    type: string
+                  kind:
+                    description: Kind of the referenced resource (e.g., "NetBoxSite", "NetBoxTenant")
+                    type: string
+                  name:
+                    description: Name of the referenced NetBox CRD resource
+                    type: string
+                  namespace:
+                    description: Namespace of the referenced resource (defaults to same namespace as the referencing resource)
+                    nullable: true
+                    type: string
+                required:
+                - apiGroup
+                - kind
+                - name
+                type: object
+              vrf:
+                description: VRF reference (references NetBoxVRF CRD, optional - not yet implemented)
+                nullable: true
+                properties:
+                  apiGroup:
+                    description: API group of the referenced resource (e.g., "dcops.microscaler.io")
+                    type: string
+                  kind:
+                    description: Kind of the referenced resource (e.g., "NetBoxSite", "NetBoxTenant")
+                    type: string
+                  name:
+                    description: Name of the referenced NetBox CRD resource
+                    type: string
+                  namespace:
+                    description: Namespace of the referenced resource (defaults to same namespace as the referencing resource)
+                    nullable: true
+                    type: string
+                required:
+                - apiGroup
+                - kind
+                - name
+                type: object
+            required:
+            - endAddress
+            - startAddress
+            - tenant
+            type: object
+          status:
+            description: NetBoxIPRangeStatus defines the observed state of a NetBox IP range
+            nullable: true
+            properties:
+              error:
+                description: Error message if reconciliation failed
+                nullable: true
+                type: string
+              lastReconciled:
+                description: Last reconciliation timestamp
+                format: date-time
+                nullable: true
+                type: string
+              netboxId:
+                description: NetBox IP range ID (set after creation)
+                format: uint64
+                minimum: 0.0
+                nullable: true
+                type: integer
+              netboxUrl:
+                description: NetBox IP range URL
+                nullable: true
+                type: string
+              state:
+                description: Current state of the IP range
+                enum:
+                - Pending
+                - Created
+                - Updated
+                - Failed
+                type: string
+            required:
+            - state
+            type: object
+        required:
+        - spec
+        title: NetBoxIPRange
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
   name: netboxroles.dcops.microscaler.io
 spec:
   group: dcops.microscaler.io
@@ -1343,7 +1797,10 @@ spec:
                 nullable: true
                 type: string
               prefix:
-                description: Aggregate prefix (e.g., "192.168.0.0/16")
+                description: |-
+                  Aggregate prefix (e.g., "192.168.0.0/16" or "2001:db8::/32")
+                  Must be a valid CIDR notation (IP address with prefix length)
+                pattern: ^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)/(?:[0-9]|[12][0-9]|3[0-2])$|^(?:[0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}/(?:[0-9]|[1-9][0-9]|1[0-2][0-8])$
                 type: string
               rir:
                 description: RIR (Regional Internet Registry) - ARIN, RIPE, APNIC, etc.
@@ -2364,7 +2821,9 @@ spec:
                       Direct IP address string (e.g., "192.168.1.10/24" or "2001:db8::1/64")
                       Used as fallback when IPClaim CRD is not available
                       Set this when providing a direct IP address
+                      Must be a valid CIDR notation (IP address with prefix length)
                     nullable: true
+                    pattern: ^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)/(?:[0-9]|[12][0-9]|3[0-2])$|^(?:[0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}/(?:[0-9]|[1-9][0-9]|1[0-2][0-8])$
                     type: string
                   ipClaimRef:
                     description: |-
@@ -2405,7 +2864,9 @@ spec:
                       Direct IP address string (e.g., "192.168.1.10/24" or "2001:db8::1/64")
                       Used as fallback when IPClaim CRD is not available
                       Set this when providing a direct IP address
+                      Must be a valid CIDR notation (IP address with prefix length)
                     nullable: true
+                    pattern: ^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)/(?:[0-9]|[12][0-9]|3[0-2])$|^(?:[0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}/(?:[0-9]|[1-9][0-9]|1[0-2][0-8])$
                     type: string
                   ipClaimRef:
                     description: |-

@@ -43,6 +43,8 @@ use crds::dcim::{
 
 // IPAM resources
 use crds::ipam::{
+    NetBoxIPAddress,
+    NetBoxIPRange,
     NetBoxPrefix,
     NetBoxAggregate,
     NetBoxRole,
@@ -74,6 +76,8 @@ fn main() {
     crds.push(NetBoxSite::crd());
     
     // IPAM resources
+    crds.push(NetBoxIPAddress::crd());
+    crds.push(NetBoxIPRange::crd());
     crds.push(NetBoxRole::crd());
     crds.push(NetBoxTag::crd());
     crds.push(NetBoxAggregate::crd());

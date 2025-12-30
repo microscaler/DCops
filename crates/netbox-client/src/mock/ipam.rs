@@ -213,6 +213,188 @@ pub async fn delete_ip_address(client: &MockNetBoxClient, id: u64) -> Result<(),
             .map(|_| ())
 }
 
+// IP Range operations
+pub async fn get_ip_range(client: &MockNetBoxClient, id: IPRangeId) -> Result<IPRange, NetBoxError> {
+    let id_value: u64 = id.into();
+    client.ip_ranges
+        .lock()
+        .unwrap()
+        .get(&id_value)
+        .cloned()
+        .ok_or_else(|| NetBoxError::NotFound(format!("IP range {} not found", id_value)))
+}
+
+pub async fn query_ip_ranges(client: &MockNetBoxClient, filters: &[(&str, &str)], _fetch_all: bool) -> Result<Vec<IPRange>, NetBoxError> {
+    let ranges = client.ip_ranges.lock().unwrap();
+    let mut results: Vec<IPRange> = ranges.values().cloned().collect();
+    
+    // Apply filters (simplified - just check tenant_id for now)
+    if !filters.is_empty() {
+        results = results.into_iter()
+            .filter(|range| {
+                filters.iter().all(|(key, value)| {
+                    match *key {
+                        "tenant_id" => {
+                            range.tenant.as_ref()
+                                .map(|t| t.id.to_string() == *value)
+                                .unwrap_or(false)
+                        }
+                        _ => true, // Ignore unknown filters
+                    }
+                })
+            })
+            .collect();
+    }
+    
+    Ok(results)
+}
+
+pub async fn create_ip_range(client: &MockNetBoxClient, start_address: &ipnet::IpNet, end_address: &ipnet::IpNet, vrf_id: Option<u64>, tenant_id: Option<TenantId>, role_id: Option<RoleId>, status: Option<IPRangeStatus>, description: Option<String>, mark_utilized: Option<bool>, mark_populated: Option<bool>, tags: Option<Vec<String>>) -> Result<IPRange, NetBoxError> {
+    let id = client.next_id();
+    let status_value = status.unwrap_or(IPRangeStatus::Active);
+    
+    let vrf = vrf_id.map(|id| {
+        use crate::models::NestedVrf;
+        NestedVrf {
+            id,
+            url: format!("{}/api/ipam/vrfs/{}/", client.base_url, id),
+            display: format!("VRF {}", id),
+            name: format!("VRF {}", id),
+        }
+    });
+    
+    let tenant = tenant_id.map(|id| {
+        use crate::models::NestedTenant;
+        let id_u64 = u64::from(id);
+        NestedTenant {
+            id: id_u64,
+            url: format!("{}/api/tenancy/tenants/{}/", client.base_url, id_u64),
+            display: format!("Tenant {}", id_u64),
+            name: format!("Tenant {}", id_u64),
+            slug: format!("tenant-{}", id_u64),
+        }
+    });
+    
+    let role = role_id.map(|id| {
+        use crate::models::NestedRole;
+        let id_u64 = u64::from(id);
+        NestedRole {
+            id: id_u64,
+            url: format!("{}/api/ipam/roles/{}/", client.base_url, id_u64),
+            display: format!("Role {}", id_u64),
+            name: format!("Role {}", id_u64),
+            slug: format!("role-{}", id_u64),
+        }
+    });
+    
+    let tags_vec: Vec<NestedTag> = if let Some(tags) = tags {
+        let tags_json: Vec<serde_json::Value> = tags.into_iter()
+            .map(|s| serde_json::Value::String(s))
+            .collect();
+        client.helpers().convert_tags(tags_json)
+    } else {
+        Vec::new()
+    };
+    
+    let ip_range = IPRange {
+        id,
+        url: format!("{}/api/ipam/ip-ranges/{}/", client.base_url, id),
+        display: format!("{} - {}", start_address, end_address),
+        family: if start_address.addr().is_ipv6() { 6 } else { 4 },
+        start_address: *start_address,
+        end_address: *end_address,
+        vrf,
+        tenant,
+        status: status_value,
+        role,
+        description: description.unwrap_or_default(),
+        mark_utilized: mark_utilized.unwrap_or(false),
+        mark_populated: mark_populated.unwrap_or(false),
+        tags: tags_vec,
+        custom_fields: serde_json::json!({}),
+        created: chrono::Utc::now().to_rfc3339(),
+        last_updated: chrono::Utc::now().to_rfc3339(),
+    };
+    
+    client.ip_ranges.lock().unwrap().insert(id, ip_range.clone());
+    Ok(ip_range)
+}
+
+pub async fn update_ip_range(client: &MockNetBoxClient, id: IPRangeId, start_address: Option<&ipnet::IpNet>, end_address: Option<&ipnet::IpNet>, vrf_id: Option<u64>, tenant_id: Option<TenantId>, role_id: Option<RoleId>, status: Option<IPRangeStatus>, description: Option<String>, mark_utilized: Option<bool>, mark_populated: Option<bool>, tags: Option<Vec<String>>) -> Result<IPRange, NetBoxError> {
+    let id_value: u64 = id.into();
+    let mut ranges = client.ip_ranges.lock().unwrap();
+    let range = ranges.get_mut(&id_value)
+        .ok_or_else(|| NetBoxError::NotFound(format!("IP range {} not found", id_value)))?;
+    
+    if let Some(start) = start_address {
+        range.start_address = *start;
+    }
+    if let Some(end) = end_address {
+        range.end_address = *end;
+    }
+    if let Some(vrf) = vrf_id {
+        use crate::models::NestedVrf;
+        range.vrf = Some(NestedVrf {
+            id: vrf,
+            url: format!("{}/api/ipam/vrfs/{}/", client.base_url, vrf),
+            display: format!("VRF {}", vrf),
+            name: format!("VRF {}", vrf),
+        });
+    }
+    if let Some(tenant) = tenant_id {
+        use crate::models::NestedTenant;
+        let tenant_u64 = u64::from(tenant);
+        range.tenant = Some(NestedTenant {
+            id: tenant_u64,
+            url: format!("{}/api/tenancy/tenants/{}/", client.base_url, tenant_u64),
+            display: format!("Tenant {}", tenant_u64),
+            name: format!("Tenant {}", tenant_u64),
+            slug: format!("tenant-{}", tenant_u64),
+        });
+    }
+    if let Some(role) = role_id {
+        use crate::models::NestedRole;
+        let role_u64 = u64::from(role);
+        range.role = Some(NestedRole {
+            id: role_u64,
+            url: format!("{}/api/ipam/roles/{}/", client.base_url, role_u64),
+            display: format!("Role {}", role_u64),
+            name: format!("Role {}", role_u64),
+            slug: format!("role-{}", role_u64),
+        });
+    }
+    if let Some(status_value) = status {
+        range.status = status_value;
+    }
+    if let Some(desc) = description {
+        range.description = desc;
+    }
+    if let Some(utilized) = mark_utilized {
+        range.mark_utilized = utilized;
+    }
+    if let Some(populated) = mark_populated {
+        range.mark_populated = populated;
+    }
+    if let Some(tags) = tags {
+        let tags_json: Vec<serde_json::Value> = tags.into_iter()
+            .map(|s| serde_json::Value::String(s))
+            .collect();
+        range.tags = client.helpers().convert_tags(tags_json);
+    }
+    
+    range.last_updated = chrono::Utc::now().to_rfc3339();
+    Ok(range.clone())
+}
+
+pub async fn delete_ip_range(client: &MockNetBoxClient, id: u64) -> Result<(), NetBoxError> {
+    client.ip_ranges
+        .lock()
+        .unwrap()
+        .remove(&id)
+        .ok_or_else(|| NetBoxError::NotFound(format!("IP range {} not found", id)))
+        .map(|_| ())
+}
+
 pub async fn create_prefix(client: &MockNetBoxClient, prefix: &str, description: Option<String>, _site_id: Option<SiteId>, vlan_id: Option<VlanId>, status: Option<&str>, role_id: Option<RoleId>, tenant_id: Option<TenantId>, tags: Option<Vec<String>>) -> Result<Prefix, NetBoxError> {
         // Note: This function still accepts &str for internal mock use
         // The trait method converts IpNet to string before calling this

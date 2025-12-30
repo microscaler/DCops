@@ -13,7 +13,8 @@ The `netbox-client` crate provides client methods for the following NetBox API r
 - ✅ **Aggregate** - `query_aggregates`, `get_aggregate`, `create_aggregate`
 - ✅ **RIR** - `query_rirs`, `get_rir_by_name`, `create_rir`
 - ✅ **VLAN** - `query_vlans`, `get_vlan`, `create_vlan`, `update_vlan`
-- ❌ **IPAddress** - `query_ip_addresses`, `get_ip_address`, `create_ip_address`, `update_ip_address`, `delete_ip_address`, `allocate_ip`, `get_available_ips`
+- ✅ **IPAddress** - `query_ip_addresses`, `get_ip_address`, `create_ip_address`, `update_ip_address`, `delete_ip_address`, `allocate_ip`, `get_available_ips`
+- ❌ **IPRange** - Missing client methods - `query_ip_ranges`, `get_ip_range`, `create_ip_range`, `update_ip_range`, `delete_ip_range` (Required for DHCP IP management)
 
 #### DCIM (Data Center Infrastructure Management)
 - ✅ **Site** - `query_sites`, `get_site`, `create_site`, `update_site`
@@ -47,7 +48,8 @@ Current reconcilers implemented:
 - ✅ `NetBoxVLAN` - `controllers/netbox/src/reconciler/dcim/vlan.rs`
 - ✅ `IPPool` (Custom) - `controllers/netbox/src/reconciler/ipam/ip_pool.rs`
 - ✅ `IPClaim` (Custom) - `controllers/netbox/src/reconciler/ipam/ip_claim.rs`
-- ❌ **NetBoxIPAddress** - Missing
+- ✅ `NetBoxIPAddress` - `controllers/netbox/src/reconciler/ipam/ip_address.rs`
+- ❌ **NetBoxIPRange** - Missing (Required for DHCP IP management)
 
 #### DCIM
 - ✅ `NetBoxSite` - `controllers/netbox/src/reconciler/dcim/site.rs`
@@ -74,7 +76,40 @@ Current reconcilers implemented:
 
 Based on the analysis, the following reconcilers are missing to complete full NetBox support:
 
-### 1. NetBoxIPAddress (IPAM)
+### 1. NetBoxIPRange (IPAM) - **NEWLY IDENTIFIED**
+
+**Status:** ❌ Missing (Client methods also missing)
+
+**NetBox API Endpoint:** `/api/ipam/ip-ranges/`
+
+**Why It's Needed:**
+- IP Ranges are used for DHCP IP management
+- Represent contiguous sequences of IP addresses (e.g., 192.168.1.100-192.168.1.200)
+- Can be marked as "populated" (treats all IPs in range as created) and "utilized" (100% utilization)
+- Essential for managing DHCP-assigned IP addresses
+- DHCP IP addresses should reference an IP range, not be individually allocated
+
+**Client Methods Needed:**
+- `query_ip_ranges(filters, fetch_all) -> Result<Vec<IPRange>>`
+- `get_ip_range(id) -> Result<IPRange>`
+- `create_ip_range(start_address, end_address, ...) -> Result<IPRange>`
+- `update_ip_range(id, ...) -> Result<IPRange>`
+- `delete_ip_range(id) -> Result<()>`
+
+**NetBox Model:** `IPRange` (needs to be added to `crates/netbox-client/src/models.rs`)
+
+**Complexity:** Medium
+- Has dependencies: `vrf`, `tenant`, `role`, `tags`
+- Requires start and end address validation
+- Supports "populated" and "utilized" flags for DHCP scenarios
+- Has update and delete operations
+
+**Priority:** High (for DHCP support)
+- Required for proper DHCP IP management
+- DHCP IP addresses should reference IP ranges, not be individually allocated
+- Enables testing both static and DHCP IP allocation paths
+
+### 2. NetBoxIPAddress (IPAM)
 
 **Status:** ❌ Missing
 
@@ -99,7 +134,7 @@ Based on the analysis, the following reconcilers are missing to complete full Ne
 - Direct IPAddress CRD would be useful for static IP management
 - Supports update and delete operations (unlike most other resources)
 
-### 2. NetBoxTenantGroup (Tenancy)
+### 3. NetBoxTenantGroup (Tenancy)
 
 **Status:** ❌ Missing
 
@@ -122,7 +157,65 @@ Based on the analysis, the following reconcilers are missing to complete full Ne
 
 ## Implementation Plan
 
-### Phase 1: NetBoxIPAddress Reconciler (Priority: Medium)
+### Phase 0: NetBoxIPRange Client & Reconciler (Priority: High - Required for DHCP)
+
+**Status:** ❌ Not Started
+
+**Why First:**
+- Required for proper DHCP IP management
+- DHCP IP addresses should reference IP ranges, not be individually allocated
+- The DHCP example CR needs to reference an IP range
+
+#### 0.1 NetBox Client Implementation
+- [ ] Add `IPRange` model to `crates/netbox-client/src/models.rs`
+  - Fields: `id`, `url`, `display`, `family`, `start_address`, `end_address`, `vrf`, `tenant`, `role`, `status`, `description`, `tags`, `custom_fields`, `mark_utilized`, `mark_populated`, `created`, `last_updated`
+- [ ] Create `crates/netbox-client/src/ipam/ip_range.rs` with:
+  - `query_ip_ranges(filters, fetch_all) -> Result<Vec<IPRange>>`
+  - `get_ip_range(id) -> Result<IPRange>`
+  - `create_ip_range(start_address, end_address, vrf_id, tenant_id, role_id, status, description, tags, mark_utilized, mark_populated) -> Result<IPRange>`
+  - `update_ip_range(id, ...) -> Result<IPRange>`
+  - `delete_ip_range(id) -> Result<()>`
+- [ ] Add to `crates/netbox-client/src/ipam/mod.rs`
+- [ ] Add methods to `NetBoxClientTrait` in `crates/netbox-client/src/trait.rs`
+- [ ] Implement in `NetBoxClient` in `crates/netbox-client/src/client.rs`
+- [ ] Add mock implementation in `crates/netbox-client/src/mock/ipam.rs`
+
+#### 0.2 CRD Definition
+- [ ] Create `crates/crds/src/ipam/netbox_ip_range.rs`
+- [ ] Define `NetBoxIPRangeSpec` with:
+  - `start_address: String` (required) - Start IP address with CIDR
+  - `end_address: String` (required) - End IP address with CIDR
+  - `tenant: Option<NetBoxResourceReference>` (optional)
+  - `vrf: Option<NetBoxResourceReference>` (optional)
+  - `role: Option<NetBoxResourceReference>` (optional)
+  - `status: IPRangeStatus` (default: Active)
+  - `description: Option<String>`
+  - `mark_utilized: bool` (default: false) - For DHCP ranges, set to true
+  - `mark_populated: bool` (default: false) - For DHCP ranges, set to true
+  - `tags: Option<Vec<NetBoxResourceReference>>`
+  - `comments: Option<String>`
+- [ ] Define `NetBoxIPRangeStatus` with standard fields
+- [ ] Update `crates/crds/src/ipam/mod.rs`
+- [ ] Add to `crates/crds/src/bin/crdgen.rs`
+
+#### 0.3 Reconciler Implementation
+- [ ] Create `controllers/netbox/src/reconciler/ipam/ip_range.rs`
+- [ ] Implement create/update/delete logic
+- [ ] Add to `controllers/netbox/src/reconciler/ipam/mod.rs`
+- [ ] Add API client to `Reconciler` struct
+- [ ] Add watcher setup
+- [ ] Integrate with `Controller`
+
+#### 0.4 RBAC & Examples
+- [ ] Add RBAC permissions to `config/netbox-controller/role.yaml`
+- [ ] Create `config/examples/netbox-ip-range-example.yaml` (DHCP range example)
+- [ ] Update `config/examples/netbox-ip-address-dhcp-example.yaml` to reference IP range instead of specific IP
+
+#### 0.5 Tests
+- [ ] Write comprehensive tests for IP range reconciler
+- [ ] Test DHCP-specific scenarios (populated, utilized flags)
+
+### Phase 1: NetBoxIPAddress Reconciler (Priority: Medium) - ✅ COMPLETE
 
 #### 1.1 CRD Definition
 - [ ] Create `crates/crds/src/ipam/netbox_ip_address.rs`

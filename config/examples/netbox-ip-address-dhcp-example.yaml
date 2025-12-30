@@ -1,0 +1,64 @@
+apiVersion: dcops.microscaler.io/v1alpha1
+kind: NetBoxIPAddress
+metadata:
+  name: dhcp-client-ip
+  namespace: default
+spec:
+  # IP address with CIDR (required)
+  # NOTE: For DHCP addresses, this represents the IP that was assigned by DHCP
+  # and is being tracked in NetBox. DHCP does not pre-allocate specific IPs.
+  # This CR should be created AFTER a DHCP server has assigned an IP to track it.
+  # Must be a valid CIDR notation (IP address with prefix length)
+  # 
+  # TODO: Once NetBoxIPRange reconciler is implemented, DHCP IPs should reference
+  # an IP range instead of specifying a specific address. The IP range defines
+  # the pool from which DHCP assigns IPs (e.g., 192.168.1.100-192.168.1.200).
+  address: "192.168.1.100/24"
+  
+  # Tenant reference (required)
+  tenant:
+    apiGroup: dcops.microscaler.io
+    kind: NetBoxTenant
+    name: datacenter-tenant
+    namespace: default
+  
+  # VLAN reference (optional)
+  vlan:
+    apiGroup: dcops.microscaler.io
+    kind: NetBoxVLAN
+    name: client-vlan
+    namespace: default
+  
+  # IP address status: dhcp (for DHCP-assigned addresses)
+  # This indicates the IP was assigned via DHCP, not statically configured
+  # Options: active, reserved, deprecated, dhcp, slaac
+  # 
+  # NOTE: For proper DHCP management, use NetBoxIPRange CRD to define the DHCP
+  # IP range pool. Individual DHCP-assigned IPs are tracked via NetBoxIPAddress
+  # CRs created after DHCP assignment.
+  status: dhcp
+  
+  # IP address role (optional)
+  # Options: loopback, secondary, anycast, vip, vrrp, hsrp, glbp, carp
+  # DHCP addresses typically don't have a role
+  
+  # DNS name (optional)
+  dnsName: "dhcp-client.example.com"
+  
+  # Description (optional)
+  description: "DHCP-assigned IP address - tracking IP assigned by DHCP server"
+  
+  # Tag references (optional)
+  tags:
+    - apiGroup: dcops.microscaler.io
+      kind: NetBoxTag
+      name: dhcp-managed
+      namespace: default
+    - apiGroup: dcops.microscaler.io
+      kind: NetBoxTag
+      name: client-device
+      namespace: default
+  
+  # Comments (optional)
+  comments: "IP was dynamically assigned via DHCP. This CR tracks the assigned IP in NetBox for inventory purposes."
+

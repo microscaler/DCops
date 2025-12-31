@@ -2,29 +2,61 @@
 
 Configure PXE boot behavior with DCops.
 
-## PXE Intent
+> **⚠️ Status: Coming Soon**
+> 
+> PXE boot control is planned for future implementation. This guide will be updated when the feature is available.
 
-Control when devices boot from PXE:
+## Overview
+
+When implemented, PXE configuration will allow you to:
+- Define boot profiles declaratively
+- Control PXE boot behavior per device
+- Prevent infinite boot loops
+- Enable safe cluster rebuilds
+
+## Planned Features
+
+### Boot Profiles
+
+Define reusable boot profiles:
 
 ```yaml
 apiVersion: dcops.microscaler.io/v1alpha1
-kind: PXEIntent
+kind: BootProfile
+metadata:
+  name: talos-install
+spec:
+  name: "Talos Linux Installation"
+  # Profile configuration will be defined here
+```
+
+### Boot Intents
+
+Control boot behavior for specific devices:
+
+```yaml
+apiVersion: dcops.microscaler.io/v1alpha1
+kind: BootIntent
 metadata:
   name: install-cluster
 spec:
   deviceRef:
-    name: server-01
-  profile: "talos-install"
+    apiGroup: "dcops.microscaler.io"
+    kind: "NetBoxDevice"
+    name: "server-01"
+  profile:
+    apiGroup: "dcops.microscaler.io"
+    kind: "BootProfile"
+    name: "talos-install"
   enabled: true
 ```
 
-## Boot Profiles
+## Current Status
 
-Define boot profiles in your PXE server configuration.
+The PXE Intent Controller is not yet implemented. The CRDs are defined but reconciliation logic is not functional.
 
-## Safety
+## Related Resources
 
-- Automatic disable after completion
-- Prevents infinite boot loops
-- Safe cluster rebuilds
-
+- [PXE Boot Control](../concepts/pxe-boot.md) - Conceptual overview
+- [Infrastructure Inventory](../concepts/infrastructure-inventory.md) - Device management
+- [CRD Reference](../api-reference/crd-reference.md) - Complete CRD documentation

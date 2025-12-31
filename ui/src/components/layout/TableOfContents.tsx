@@ -14,31 +14,127 @@ const TableOfContents: Component<TableOfContentsProps> = (props) => {
   const [headings, setHeadings] = createSignal<Heading[]>([]);
   const [activeId, setActiveId] = createSignal<string>('');
 
-  createEffect(() => {
-    // Extract headings from content after a short delay to allow DOM updates
-    setTimeout(() => {
-      const headingElements = document.querySelectorAll('main h1, main h2, main h3, main h4, main h5, main h6');
-      const extracted: Heading[] = [];
-      
-      headingElements.forEach((el) => {
-        const id = el.id || el.textContent?.toLowerCase().replace(/\s+/g, '-').replace(/[^\w-]/g, '') || '';
-        if (id) {
-          el.id = id;
-          extracted.push({
-            id,
-            text: el.textContent || '',
-            level: parseInt(el.tagName.charAt(1)),
-          });
-        }
-      });
-      
+  const extractHeadings = () => {
+    // Look for headings in the markdown content area
+    const markdownContent = document.querySelector('main .markdown-content');
+    const container = markdownContent || document.querySelector('main');
+    
+    if (!container) {
+      return;
+    }
+    
+    const headingElements = container.querySelectorAll('h1, h2, h3, h4, h5, h6');
+    const extracted: Heading[] = [];
+    
+    headingElements.forEach((el) => {
+      const id = el.id || el.textContent?.toLowerCase().replace(/\s+/g, '-').replace(/[^\w-]/g, '') || '';
+      if (id) {
+        el.id = id;
+        extracted.push({
+          id,
+          text: el.textContent || '',
+          level: parseInt(el.tagName.charAt(1)),
+        });
+      }
+    });
+    
+    if (extracted.length > 0) {
       setHeadings(extracted);
-    }, 100);
+    }
+  };
+
+  createEffect(() => {
+    // Reset headings when content changes
+    setHeadings([]);
+    
+    if (!props.content) {
+      return;
+    }
+    
+    let extractTimeout: ReturnType<typeof setTimeout> | null = null;
+    let observer: MutationObserver | null = null;
+    
+    const scheduleExtraction = () => {
+      if (extractTimeout) {
+        clearTimeout(extractTimeout);
+      }
+      extractTimeout = setTimeout(() => {
+        extractHeadings();
+      }, 50);
+    };
+    
+    // Use MutationObserver to watch for DOM changes
+    const mainElement = document.querySelector('main');
+    if (!mainElement) {
+      // Retry mechanism for initial load
+      let retries = 0;
+      const maxRetries = 20;
+      const retryInterval = setInterval(() => {
+        retries++;
+        const main = document.querySelector('main');
+        if (main) {
+          clearInterval(retryInterval);
+          scheduleExtraction();
+          
+          // Set up observer once main exists
+          observer = new MutationObserver(() => {
+            scheduleExtraction();
+          });
+          observer.observe(main, {
+            childList: true,
+            subtree: true,
+          });
+        } else if (retries >= maxRetries) {
+          clearInterval(retryInterval);
+        }
+      }, 100);
+      
+      return () => {
+        clearInterval(retryInterval);
+        if (extractTimeout) clearTimeout(extractTimeout);
+        if (observer) observer.disconnect();
+      };
+    }
+
+    // Extract headings immediately if content is already rendered
+    scheduleExtraction();
+
+    // Watch for changes to the main element's children
+    observer = new MutationObserver(() => {
+      scheduleExtraction();
+    });
+
+    observer.observe(mainElement, {
+      childList: true,
+      subtree: true,
+    });
+
+    // Fallback timeouts to catch different render timings
+    const timeouts: ReturnType<typeof setTimeout>[] = [];
+    [100, 300, 600].forEach((delay) => {
+      const timeout = setTimeout(() => {
+        extractHeadings();
+      }, delay);
+      timeouts.push(timeout);
+    });
+
+    return () => {
+      if (observer) observer.disconnect();
+      if (extractTimeout) clearTimeout(extractTimeout);
+      timeouts.forEach(clearTimeout);
+    };
   });
 
   createEffect(() => {
     const handleScroll = () => {
-      const headingElements = document.querySelectorAll('main h1, main h2, main h3, main h4, main h5, main h6');
+      const markdownContent = document.querySelector('main .markdown-content');
+      const container = markdownContent || document.querySelector('main');
+      
+      if (!container) {
+        return;
+      }
+      
+      const headingElements = container.querySelectorAll('h1, h2, h3, h4, h5, h6');
       let current = '';
       
       headingElements.forEach((el) => {

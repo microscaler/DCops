@@ -9,4 +9,16 @@ spec:
   description: "IP addresses for Kubernetes control plane nodes"
   weight: 10
   comments: "Managed by DCops"
+  # Tag references (optional)
+  # Tags must exist in NetBox before they can be referenced
+  # See netbox-tag-example.yaml for creating tags
+  tags:
+    - apiGroup: dcops.microscaler.io
+      kind: NetBoxTag
+      name: managed-by-dcops
+      namespace: default
+    - apiGroup: dcops.microscaler.io
+      kind: NetBoxTag
+      name: production
+      namespace: default
 

@@ -7,4 +7,16 @@ spec:
   name: "Raspberry Pi"
   slug: "raspberry-pi"
   description: "Raspberry Pi Foundation single-board computers"
+  # Tag references (optional)
+  # Tags must exist in NetBox before they can be referenced
+  # See netbox-tag-example.yaml for creating tags
+  tags:
+    - apiGroup: dcops.microscaler.io
+      kind: NetBoxTag
+      name: managed-by-dcops
+      namespace: default
+    - apiGroup: dcops.microscaler.io
+      kind: NetBoxTag
+      name: client-device
+      namespace: default
 

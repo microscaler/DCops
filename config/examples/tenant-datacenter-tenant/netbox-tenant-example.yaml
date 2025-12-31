@@ -21,4 +21,16 @@ spec:
   # Defaults to 300 seconds (5 minutes) if not specified.
   # Set to 0 to disable periodic reconciliation (only reconcile on changes).
   reconcileInterval: 300  # Check for drift every 5 minutes
+  # Tag references (optional)
+  # Tags must exist in NetBox before they can be referenced
+  # See netbox-tag-example.yaml for creating tags
+  tags:
+    - apiGroup: dcops.microscaler.io
+      kind: NetBoxTag
+      name: managed-by-dcops
+      namespace: default
+    - apiGroup: dcops.microscaler.io
+      kind: NetBoxTag
+      name: production
+      namespace: default
 

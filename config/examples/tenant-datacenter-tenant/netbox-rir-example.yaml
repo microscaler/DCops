@@ -7,4 +7,12 @@ spec:
   name: "ARIN"
   slug: "arin"
   description: "Seeded Regional Internet Registry for private network aggregate examples"
+  # Tag references (optional)
+  # Tags must exist in NetBox before they can be referenced
+  # See netbox-tag-example.yaml for creating tags
+  tags:
+    - apiGroup: dcops.microscaler.io
+      kind: NetBoxTag
+      name: managed-by-dcops
+      namespace: default
 

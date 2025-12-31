@@ -3,9 +3,6 @@
 //! This module provides reusable functions to eliminate code duplication
 //! across all reconcilers.
 
-#[cfg(test)]
-mod tests;
-
 use crate::error::ControllerError;
 use tracing::{debug, info, warn, error};
 use crds;
@@ -1303,6 +1300,91 @@ pub fn convert_tags_to_strings(tags_json: Option<Vec<serde_json::Value>>) -> Opt
             })
             .collect()
     })
+}
+
+/// Trait for NetBox resources that have tags
+pub trait HasTags {
+    fn tags(&self) -> &[netbox_client::NestedTag];
+}
+
+// Implement for common NetBox resource types
+impl HasTags for netbox_client::DeviceRole {
+    fn tags(&self) -> &[netbox_client::NestedTag] { &self.tags }
+}
+impl HasTags for netbox_client::DeviceType {
+    fn tags(&self) -> &[netbox_client::NestedTag] { &self.tags }
+}
+impl HasTags for netbox_client::Manufacturer {
+    fn tags(&self) -> &[netbox_client::NestedTag] { &self.tags }
+}
+impl HasTags for netbox_client::Role {
+    fn tags(&self) -> &[netbox_client::NestedTag] { &self.tags }
+}
+impl HasTags for netbox_client::Rir {
+    fn tags(&self) -> &[netbox_client::NestedTag] { &self.tags }
+}
+impl HasTags for netbox_client::Region {
+    fn tags(&self) -> &[netbox_client::NestedTag] { &self.tags }
+}
+impl HasTags for netbox_client::SiteGroup {
+    fn tags(&self) -> &[netbox_client::NestedTag] { &self.tags }
+}
+impl HasTags for netbox_client::Location {
+    fn tags(&self) -> &[netbox_client::NestedTag] { &self.tags }
+}
+impl HasTags for netbox_client::Platform {
+    fn tags(&self) -> &[netbox_client::NestedTag] { &self.tags }
+}
+
+/// Update tags on an existing NetBox resource if they differ
+/// 
+/// This helper handles the common pattern of:
+/// 1. Checking if tags differ between existing resource and desired CRD spec
+/// 2. If they differ, calling the update function with resolved tags
+/// 3. Returning the updated resource or the existing one if no update was needed
+/// 
+/// # Parameters
+/// - `existing`: The existing NetBox resource with current tags
+/// - `desired_tag_refs`: The desired tags from the CRD spec
+/// - `resolved_tags`: Already resolved tags as Option<Vec<String>> (from `convert_tags_to_strings`)
+/// - `update_fn`: Async closure that takes resolved tags and returns the updated resource
+/// - `resource_name`: Name of the resource for logging (e.g., "NetBoxDeviceType namespace/name")
+/// 
+/// # Returns
+/// - `Ok(Some(updated_resource))` if tags were updated
+/// - `Ok(None)` if tags are already up-to-date (no update needed)
+/// - `Err(e)` if the update failed
+pub async fn update_tags_if_differ<FUpdate, Resource, Fut>(
+    existing: Resource,
+    desired_tag_refs: &Option<Vec<crds::NetBoxResourceReference>>,
+    resolved_tags: Option<Vec<String>>,
+    update_fn: FUpdate,
+    resource_name: &str,
+) -> Result<Option<Resource>, netbox_client::NetBoxError>
+where
+    FUpdate: FnOnce(Option<Vec<String>>) -> Fut,
+    Fut: std::future::Future<Output = Result<Resource, netbox_client::NetBoxError>> + Send,
+    Resource: Clone + HasTags,
+{
+    // Check if tags need updating
+    let tags_need_update = tags_differ(existing.tags(), desired_tag_refs);
+    
+    if tags_need_update {
+        info!("{} tags differ, updating in NetBox", resource_name);
+        match update_fn(resolved_tags).await {
+            Ok(updated) => {
+                info!("Updated {} tags in NetBox", resource_name);
+                Ok(Some(updated))
+            }
+            Err(e) => {
+                warn!("Failed to update {} tags: {}", resource_name, e);
+                Ok(Some(existing)) // Return existing if update fails
+            }
+        }
+    } else {
+        // Tags are up-to-date
+        Ok(None)
+    }
 }
 
 #[cfg(test)]

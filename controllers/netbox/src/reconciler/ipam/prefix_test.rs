@@ -108,6 +108,7 @@ mod tests {
             description: Some("Primary tenant for datacenter operations".to_string()),
             comments: Some(String::new()),
             group: None,
+            tags: vec![],
             created: Utc::now().to_rfc3339(),
             last_updated: Utc::now().to_rfc3339(),
         };
@@ -189,6 +190,7 @@ mod tests {
             description: Some("Primary tenant for datacenter operations".to_string()),
             comments: Some(String::new()),
             group: None,
+            tags: vec![],
             created: Utc::now().to_rfc3339(),
             last_updated: Utc::now().to_rfc3339(),
         };

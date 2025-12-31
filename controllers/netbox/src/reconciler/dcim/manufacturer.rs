@@ -81,67 +81,72 @@ impl Reconciler {
                 // Convert resolved tags from Vec<serde_json::Value> to Vec<String>
                 let resolved_tags = crate::reconcile_helpers::convert_tags_to_strings(resolved_tags_json);
                 
-                // Check if tags need updating
-                let tags_need_update = crate::reconcile_helpers::tags_differ(&manufacturer.tags, &manufacturer_crd.spec.tags);
-                
-                if tags_need_update {
-                    info!("NetBoxManufacturer {}/{} tags differ, updating in NetBox", namespace, name);
-                    use netbox_client::ManufacturerId;
-                    match netbox_client.update_manufacturer(
-                        ManufacturerId(manufacturer.id),
-                        Some(&manufacturer_crd.spec.name),
-                        manufacturer_crd.spec.slug.as_deref(),
-                        manufacturer_crd.spec.description.clone(),
-                        resolved_tags,
-                    ).await {
-                        Ok(updated) => {
-                            info!("Updated NetBoxManufacturer {}/{} tags in NetBox (ID: {})", namespace, name, updated.id);
-                            use crate::events::reasons;
-                            self.record_event_normal(
-                                reasons::UPDATED,
-                                &format!("Updated NetBoxManufacturer {}/{} tags in NetBox", namespace, name),
-                                manufacturer_crd,
-                            ).await;
-                            updated
-                        }
-                        Err(e) => {
-                            warn!("Failed to update NetBoxManufacturer {}/{} tags: {}", namespace, name, e);
-                            manufacturer // Use existing manufacturer if update fails
-                        }
+                // Update tags if they differ
+                use netbox_client::ManufacturerId;
+                let manufacturer_id = manufacturer.id;
+                let manufacturer_clone = manufacturer.clone();
+                let manufacturer = match crate::reconcile_helpers::update_tags_if_differ(
+                    manufacturer,
+                    &manufacturer_crd.spec.tags,
+                    resolved_tags.clone(),
+                    |tags| async move {
+                        netbox_client.update_manufacturer(
+                            ManufacturerId(manufacturer_id),
+                            Some(&manufacturer_crd.spec.name),
+                            manufacturer_crd.spec.slug.as_deref(),
+                            manufacturer_crd.spec.description.clone(),
+                            tags,
+                        ).await
+                    },
+                    &format!("NetBoxManufacturer {}/{}", namespace, name),
+                ).await {
+                    Ok(Some(updated)) => {
+                        use crate::events::reasons;
+                        self.record_event_normal(
+                            reasons::UPDATED,
+                            &format!("Updated NetBoxManufacturer {}/{} tags in NetBox", namespace, name),
+                            manufacturer_crd,
+                        ).await;
+                        updated
                     }
-                } else {
-                    // Tags are up-to-date - check if status needs updating
-                    use crate::reconcile_helpers::status_needs_update;
-                    let needs_status_update = status_needs_update(
-                        manufacturer_crd.status.as_ref(),
+                    Ok(None) => manufacturer_clone, // Tags are up-to-date
+                    Err(e) => {
+                        warn!("Failed to update NetBoxManufacturer {}/{} tags: {}", namespace, name, e);
+                        manufacturer_clone // Use existing if update fails
+                    }
+                };
+                
+                // Check if status needs updating
+                use crate::reconcile_helpers::status_needs_update;
+                let needs_status_update = status_needs_update(
+                    manufacturer_crd.status.as_ref(),
+                    manufacturer.id,
+                    &manufacturer.url,
+                    "Created",
+                    None,
+                );
+                
+                if needs_status_update {
+                    use crate::reconcile_helpers::update_resource_status;
+                    let status_patch = Self::create_typed_manufacturer_status_patch(
                         manufacturer.id,
-                        &manufacturer.url,
-                        "Created",
+                        manufacturer.url.clone(),
+                        ResourceState::Created,
                         None,
                     );
-                    
-                    if needs_status_update {
-                        use crate::reconcile_helpers::update_resource_status;
-                        let status_patch = Self::create_typed_manufacturer_status_patch(
-                            manufacturer.id,
-                            manufacturer.url.clone(),
-                            ResourceState::Created,
-                            None,
-                        );
-                        update_resource_status(
-                            &*self.netbox_manufacturer_api,
-                            name,
-                            namespace,
-                            &status_patch,
-                            "NetBoxManufacturer",
-                            manufacturer.id,
-                        ).await?;
-                        debug!("Updated NetBoxManufacturer {}/{} status: NetBox ID {}", namespace, name, manufacturer.id);
-                    } else {
-                        debug!("NetBoxManufacturer {}/{} already has correct status (ID: {}), skipping update", namespace, name, manufacturer.id);
-                    }
-                    manufacturer // Return existing manufacturer
+                    update_resource_status(
+                        &*self.netbox_manufacturer_api,
+                        name,
+                        namespace,
+                        &status_patch,
+                        "NetBoxManufacturer",
+                        manufacturer.id,
+                    ).await?;
+                    debug!("Updated NetBoxManufacturer {}/{} status: NetBox ID {}", namespace, name, manufacturer.id);
+                } else {
+                    debug!("NetBoxManufacturer {}/{} already has correct status (ID: {}), skipping update", namespace, name, manufacturer.id);
                 }
+                manufacturer // Return existing manufacturer
             }
             None => {
                 let existing_manufacturer = match netbox_client.get_manufacturer_by_name(&manufacturer_crd.spec.name).await {
@@ -157,7 +162,49 @@ impl Reconciler {
                 };
                 
                 if let Some(existing) = existing_manufacturer {
-                    existing
+                    // Resource exists but no status - check if tags need updating
+                    let resolved_tags_json = self.resolve_tag_references(
+                        netbox_client.as_ref(),
+                        &manufacturer_crd.spec.tags,
+                        namespace,
+                        name,
+                    ).await;
+                    let resolved_tags = crate::reconcile_helpers::convert_tags_to_strings(resolved_tags_json);
+                    
+                    // Update tags if they differ
+                    use netbox_client::ManufacturerId;
+                    let existing_id = existing.id;
+                    let existing_clone = existing.clone();
+                    match crate::reconcile_helpers::update_tags_if_differ(
+                        existing,
+                        &manufacturer_crd.spec.tags,
+                        resolved_tags,
+                        |tags| async move {
+                            netbox_client.update_manufacturer(
+                                ManufacturerId(existing_id),
+                                Some(&manufacturer_crd.spec.name),
+                                manufacturer_crd.spec.slug.as_deref(),
+                                manufacturer_crd.spec.description.clone(),
+                                tags,
+                            ).await
+                        },
+                        &format!("NetBoxManufacturer {}/{} (idempotency path)", namespace, name),
+                    ).await {
+                        Ok(Some(updated)) => {
+                            use crate::events::reasons;
+                            self.record_event_normal(
+                                reasons::UPDATED,
+                                &format!("Updated NetBoxManufacturer {}/{} tags in NetBox", namespace, name),
+                                manufacturer_crd,
+                            ).await;
+                            updated
+                        }
+                        Ok(None) => existing_clone, // Tags are up-to-date
+                        Err(e) => {
+                            warn!("Failed to update NetBoxManufacturer {}/{} tags: {}", namespace, name, e);
+                            existing_clone // Use existing if update fails
+                        }
+                    }
                 } else {
                     // Resolve tags before create
                     let resolved_tags_json = self.resolve_tag_references(

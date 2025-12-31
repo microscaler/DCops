@@ -69,7 +69,7 @@ mod tests {
         ip_address.status = None; // Clear status to test create path
         
         // Setup: Create reconciler with MockTokenResolver
-        let (reconciler, apis, _mock_event_recorder, _mock_secret_fetcher) = 
+        let (reconciler, apis, _mock_event_recorder) = 
             create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
         
         // Setup: Store test data in the APIs before reconciliation
@@ -87,6 +87,7 @@ mod tests {
             description: None,
             comments: None,
             group: None,
+            tags: vec![],
             created: "2024-01-01T00:00:00Z".to_string(),
             last_updated: "2024-01-01T00:00:00Z".to_string(),
         };
@@ -178,6 +179,7 @@ mod tests {
             description: None,
             comments: None,
             group: None,
+            tags: vec![],
             created: "2024-01-01T00:00:00Z".to_string(),
             last_updated: "2024-01-01T00:00:00Z".to_string(),
         };
@@ -410,7 +412,7 @@ mod tests {
         ]);
         
         // Setup: Create reconciler
-        let (reconciler, apis, _mock_event_recorder, _mock_secret_fetcher) = 
+        let (reconciler, apis, _mock_event_recorder) = 
             create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
         
         // Setup: Store test data
@@ -460,6 +462,7 @@ mod tests {
             description: None,
             comments: None,
             group: None,
+            tags: vec![],
             created: "2024-01-01T00:00:00Z".to_string(),
             last_updated: "2024-01-01T00:00:00Z".to_string(),
         };
@@ -550,7 +553,7 @@ mod tests {
         ]);
         
         // Setup: Create reconciler
-        let (reconciler, apis, _mock_event_recorder, _mock_secret_fetcher) = 
+        let (reconciler, apis, _mock_event_recorder) = 
             create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
         
         // Setup: Store test data
@@ -586,6 +589,7 @@ mod tests {
             description: None,
             comments: None,
             group: None,
+            tags: vec![],
             created: "2024-01-01T00:00:00Z".to_string(),
             last_updated: "2024-01-01T00:00:00Z".to_string(),
         };
@@ -656,7 +660,7 @@ mod tests {
         ]);
         
         // Setup: Create reconciler
-        let (reconciler, apis, _mock_event_recorder, _mock_secret_fetcher) = 
+        let (reconciler, apis, _mock_event_recorder) = 
             create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
         
         // Setup: Store test data (no tag CRD, tag doesn't exist in NetBox)
@@ -674,6 +678,7 @@ mod tests {
             description: None,
             comments: None,
             group: None,
+            tags: vec![],
             created: "2024-01-01T00:00:00Z".to_string(),
             last_updated: "2024-01-01T00:00:00Z".to_string(),
         };
@@ -744,7 +749,7 @@ mod tests {
         ]);
         
         // Setup: Create reconciler
-        let (reconciler, apis, _mock_event_recorder, _mock_secret_fetcher) = 
+        let (reconciler, apis, _mock_event_recorder) = 
             create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
         
         // Setup: Store test data
@@ -762,6 +767,7 @@ mod tests {
             description: None,
             comments: None,
             group: None,
+            tags: vec![],
             created: "2024-01-01T00:00:00Z".to_string(),
             last_updated: "2024-01-01T00:00:00Z".to_string(),
         };

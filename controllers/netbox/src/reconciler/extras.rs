@@ -71,6 +71,55 @@ impl Reconciler {
         
         let netbox_role = match netbox_role {
             Some(role) => {
+                // Always resolve tags (even if nothing else changed, tags might need updating)
+                let resolved_tags_json = self.resolve_tag_references(
+                    netbox_client.as_ref(),
+                    &role_crd.spec.tags,
+                    namespace,
+                    name,
+                ).await;
+                
+                // Convert resolved tags from Vec<serde_json::Value> to Vec<String>
+                let resolved_tags = crate::reconcile_helpers::convert_tags_to_strings(resolved_tags_json);
+                
+                // Update tags if they differ
+                use netbox_client::RoleId;
+                let role_id = role.id;
+                let role_clone = role.clone();
+                let role = match crate::reconcile_helpers::update_tags_if_differ(
+                    role,
+                    &role_crd.spec.tags,
+                    resolved_tags.clone(),
+                    |tags| async move {
+                        netbox_client.update_role(
+                            RoleId(role_id),
+                            Some(&role_crd.spec.name),
+                            role_crd.spec.slug.as_deref(),
+                            role_crd.spec.description.clone(),
+                            role_crd.spec.weight,
+                            role_crd.spec.comments.clone(),
+                            tags,
+                        ).await
+                    },
+                    &format!("NetBoxRole {}/{}", namespace, name),
+                ).await {
+                    Ok(Some(updated)) => {
+                        use crate::events::reasons;
+                        self.record_event_normal(
+                            reasons::UPDATED,
+                            &format!("Updated NetBoxRole {}/{} tags in NetBox", namespace, name),
+                            role_crd,
+                        ).await;
+                        updated
+                    }
+                    Ok(None) => role_clone, // Tags are up-to-date
+                    Err(e) => {
+                        warn!("Failed to update NetBoxRole {}/{} tags: {}", namespace, name, e);
+                        role_clone // Use existing if update fails
+                    }
+                };
+                
+                // Check if status needs updating
                 use crate::reconcile_helpers::status_needs_update;
                 let needs_status_update = status_needs_update(
                     role_crd.status.as_ref(),
@@ -119,8 +168,61 @@ impl Reconciler {
                 }
                 
                 if let Some(existing) = existing_role {
-                    existing
+                    // Resource exists but no status - check if tags need updating
+                    let resolved_tags_json = self.resolve_tag_references(
+                        netbox_client.as_ref(),
+                        &role_crd.spec.tags,
+                        namespace,
+                        name,
+                    ).await;
+                    let resolved_tags = crate::reconcile_helpers::convert_tags_to_strings(resolved_tags_json);
+                    
+                    // Update tags if they differ
+                    use netbox_client::RoleId;
+                    let existing_id = existing.id;
+                    let existing_clone = existing.clone();
+                    match crate::reconcile_helpers::update_tags_if_differ(
+                        existing,
+                        &role_crd.spec.tags,
+                        resolved_tags,
+                        |tags| async move {
+                            netbox_client.update_role(
+                                RoleId(existing_id),
+                                Some(&role_crd.spec.name),
+                                role_crd.spec.slug.as_deref(),
+                                role_crd.spec.description.clone(),
+                                role_crd.spec.weight,
+                                role_crd.spec.comments.clone(),
+                                tags,
+                            ).await
+                        },
+                        &format!("NetBoxRole {}/{} (idempotency path)", namespace, name),
+                    ).await {
+                        Ok(Some(updated)) => {
+                            use crate::events::reasons;
+                            self.record_event_normal(
+                                reasons::UPDATED,
+                                &format!("Updated NetBoxRole {}/{} tags in NetBox", namespace, name),
+                                role_crd,
+                            ).await;
+                            updated
+                        }
+                        Ok(None) => existing_clone, // Tags are up-to-date
+                        Err(e) => {
+                            warn!("Failed to update NetBoxRole {}/{} tags: {}", namespace, name, e);
+                            existing_clone // Use existing if update fails
+                        }
+                    }
                 } else {
+                    // Resolve tags before create
+                    let resolved_tags_json = self.resolve_tag_references(
+                        netbox_client.as_ref(),
+                        &role_crd.spec.tags,
+                        namespace,
+                        name,
+                    ).await;
+                    let resolved_tags = crate::reconcile_helpers::convert_tags_to_strings(resolved_tags_json);
+                    
                     debug!("Attempting to create role {} in NetBox", role_crd.spec.name);
                     match netbox_client.create_role(
                         &role_crd.spec.name,
@@ -128,7 +230,7 @@ impl Reconciler {
                         role_crd.spec.description.clone(),
                         role_crd.spec.weight,
                         role_crd.spec.comments.clone(),
-                        None, // tags - not yet implemented in reconciler
+                        resolved_tags,
                     ).await {
                         Ok(created) => {
                             info!("Created role {} in NetBox (ID: {})", created.name, created.id);

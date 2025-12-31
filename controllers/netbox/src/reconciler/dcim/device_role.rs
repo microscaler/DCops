@@ -70,6 +70,56 @@ impl Reconciler {
         
         let netbox_device_role = match netbox_device_role {
             Some(device_role) => {
+                // Always resolve tags (even if nothing else changed, tags might need updating)
+                let resolved_tags_json = self.resolve_tag_references(
+                    netbox_client.as_ref(),
+                    &device_role_crd.spec.tags,
+                    namespace,
+                    name,
+                ).await;
+                
+                // Convert resolved tags from Vec<serde_json::Value> to Vec<String>
+                let resolved_tags = crate::reconcile_helpers::convert_tags_to_strings(resolved_tags_json);
+                
+                // Update tags if they differ
+                use netbox_client::DeviceRoleId;
+                let device_role_id = device_role.id;
+                let device_role_clone = device_role.clone();
+                let device_role = match crate::reconcile_helpers::update_tags_if_differ(
+                    device_role,
+                    &device_role_crd.spec.tags,
+                    resolved_tags.clone(),
+                    |tags| async move {
+                        netbox_client.update_device_role(
+                            DeviceRoleId(device_role_id),
+                            Some(&device_role_crd.spec.name),
+                            device_role_crd.spec.slug.as_deref(),
+                            device_role_crd.spec.color.as_deref(),
+                            Some(device_role_crd.spec.vm_role),
+                            device_role_crd.spec.description.clone(),
+                            device_role_crd.spec.comments.clone(),
+                            tags,
+                        ).await
+                    },
+                    &format!("NetBoxDeviceRole {}/{}", namespace, name),
+                ).await {
+                    Ok(Some(updated)) => {
+                        use crate::events::reasons;
+                        self.record_event_normal(
+                            reasons::UPDATED,
+                            &format!("Updated NetBoxDeviceRole {}/{} tags in NetBox", namespace, name),
+                            device_role_crd,
+                        ).await;
+                        updated
+                    }
+                    Ok(None) => device_role_clone, // Tags are up-to-date
+                    Err(e) => {
+                        warn!("Failed to update NetBoxDeviceRole {}/{} tags: {}", namespace, name, e);
+                        device_role_clone // Use existing if update fails
+                    }
+                };
+                
+                // Check if status needs updating
                 use crate::reconcile_helpers::status_needs_update;
                 let needs_status_update = status_needs_update(
                     device_role_crd.status.as_ref(),
@@ -127,8 +177,62 @@ impl Reconciler {
                 };
                 
                 if let Some(existing) = existing_device_role {
-                    existing
+                    // Resource exists but no status - check if tags need updating
+                    let resolved_tags_json = self.resolve_tag_references(
+                        netbox_client.as_ref(),
+                        &device_role_crd.spec.tags,
+                        namespace,
+                        name,
+                    ).await;
+                    let resolved_tags = crate::reconcile_helpers::convert_tags_to_strings(resolved_tags_json);
+                    
+                    // Update tags if they differ
+                    use netbox_client::DeviceRoleId;
+                    let existing_id = existing.id;
+                    let existing_clone = existing.clone();
+                    match crate::reconcile_helpers::update_tags_if_differ(
+                        existing,
+                        &device_role_crd.spec.tags,
+                        resolved_tags,
+                        |tags| async move {
+                            netbox_client.update_device_role(
+                                DeviceRoleId(existing_id),
+                                Some(&device_role_crd.spec.name),
+                                device_role_crd.spec.slug.as_deref(),
+                                device_role_crd.spec.color.as_deref(),
+                                Some(device_role_crd.spec.vm_role),
+                                device_role_crd.spec.description.clone(),
+                                device_role_crd.spec.comments.clone(),
+                                tags,
+                            ).await
+                        },
+                        &format!("NetBoxDeviceRole {}/{} (idempotency path)", namespace, name),
+                    ).await {
+                        Ok(Some(updated)) => {
+                            use crate::events::reasons;
+                            self.record_event_normal(
+                                reasons::UPDATED,
+                                &format!("Updated NetBoxDeviceRole {}/{} tags in NetBox", namespace, name),
+                                device_role_crd,
+                            ).await;
+                            updated
+                        }
+                        Ok(None) => existing_clone, // Tags are up-to-date
+                        Err(e) => {
+                            warn!("Failed to update NetBoxDeviceRole {}/{} tags: {}", namespace, name, e);
+                            existing_clone // Use existing if update fails
+                        }
+                    }
                 } else {
+                    // Resolve tags before create
+                    let resolved_tags_json = self.resolve_tag_references(
+                        netbox_client.as_ref(),
+                        &device_role_crd.spec.tags,
+                        namespace,
+                        name,
+                    ).await;
+                    let resolved_tags = crate::reconcile_helpers::convert_tags_to_strings(resolved_tags_json);
+                    
                     debug!("Attempting to create device role {} in NetBox", device_role_crd.spec.name);
                     match netbox_client.create_device_role(
                         &device_role_crd.spec.name,
@@ -137,7 +241,7 @@ impl Reconciler {
                         Some(device_role_crd.spec.vm_role),
                         device_role_crd.spec.description.clone(),
                         device_role_crd.spec.comments.clone(),
-                        None, // tags - not yet implemented in reconciler
+                        resolved_tags,
                     ).await {
                         Ok(created) => {
                             info!("Created device role {} in NetBox (ID: {})", created.name, created.id);

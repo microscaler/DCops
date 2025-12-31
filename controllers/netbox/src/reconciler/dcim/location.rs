@@ -88,10 +88,11 @@ impl Reconciler {
                 // Convert resolved tags from Vec<serde_json::Value> to Vec<String>
                 let resolved_tags = crate::reconcile_helpers::convert_tags_to_strings(resolved_tags_json);
                 
-                // Check if tags need updating
+                // Update tags if they differ
+                // Note: Location requires resolving dependencies before update, so we check tags first
                 let tags_need_update = crate::reconcile_helpers::tags_differ(&location.tags, &location_crd.spec.tags);
                 
-                if tags_need_update {
+                let location = if tags_need_update {
                     info!("NetBoxLocation {}/{} tags differ, updating in NetBox", namespace, name);
                     
                     // Resolve optional parent location ID
@@ -121,19 +122,28 @@ impl Reconciler {
                         }
                     };
                     
-                    match netbox_client.update_location(
-                        LocationId(location.id),
-                        Some(&location_crd.spec.name),
-                        location_crd.spec.slug.as_deref(),
-                        parent_id.map(LocationId),
-                        Some(TenantId(tenant_id)),
-                        location_crd.spec.facility.as_deref(),
-                        location_crd.spec.description.clone(),
-                        None, // comments
-                        resolved_tags,
+                    let location_id = location.id;
+                    let location_clone = location.clone();
+                    match crate::reconcile_helpers::update_tags_if_differ(
+                        location,
+                        &location_crd.spec.tags,
+                        resolved_tags.clone(),
+                        |tags| async move {
+                            netbox_client.update_location(
+                                LocationId(location_id),
+                                Some(&location_crd.spec.name),
+                                location_crd.spec.slug.as_deref(),
+                                parent_id.map(LocationId),
+                                Some(TenantId(tenant_id)),
+                                location_crd.spec.facility.as_deref(),
+                                location_crd.spec.description.clone(),
+                                None, // comments
+                                tags,
+                            ).await
+                        },
+                        &format!("NetBoxLocation {}/{}", namespace, name),
                     ).await {
-                        Ok(updated) => {
-                            info!("Updated NetBoxLocation {}/{} tags in NetBox (ID: {})", namespace, name, updated.id);
+                        Ok(Some(updated)) => {
                             use crate::events::reasons;
                             self.record_event_normal(
                                 reasons::UPDATED,
@@ -142,44 +152,47 @@ impl Reconciler {
                             ).await;
                             updated
                         }
+                        Ok(None) => location_clone, // Tags are up-to-date
                         Err(e) => {
                             warn!("Failed to update NetBoxLocation {}/{} tags: {}", namespace, name, e);
-                            location // Use existing location if update fails
+                            location_clone // Use existing if update fails
                         }
                     }
                 } else {
-                    // Tags are up-to-date - check if status needs updating
-                    use crate::reconcile_helpers::status_needs_update;
-                    let needs_status_update = status_needs_update(
-                        location_crd.status.as_ref(),
+                    location // Tags are up-to-date
+                };
+                
+                // Check if status needs updating
+                use crate::reconcile_helpers::status_needs_update;
+                let needs_status_update = status_needs_update(
+                    location_crd.status.as_ref(),
+                    location.id,
+                    &location.url,
+                    "Created",
+                    None,
+                );
+                
+                if needs_status_update {
+                    use crate::reconcile_helpers::update_resource_status;
+                    let status_patch = Self::create_resource_status_patch(
                         location.id,
-                        &location.url,
-                        "Created",
+                        location.url.clone(),
+                        ResourceState::Created,
                         None,
                     );
-                    
-                    if needs_status_update {
-                        use crate::reconcile_helpers::update_resource_status;
-                        let status_patch = Self::create_resource_status_patch(
-                            location.id,
-                            location.url.clone(),
-                            ResourceState::Created,
-                            None,
-                        );
-                        update_resource_status(
-                            &*self.netbox_location_api,
-                            name,
-                            namespace,
-                            &status_patch,
-                            "NetBoxLocation",
-                            location.id,
-                        ).await?;
-                        debug!("Updated NetBoxLocation {}/{} status: NetBox ID {}", namespace, name, location.id);
-                    } else {
-                        debug!("NetBoxLocation {}/{} already has correct status (ID: {}), skipping update", namespace, name, location.id);
-                    }
-                    location // Return existing location
+                    update_resource_status(
+                        &*self.netbox_location_api,
+                        name,
+                        namespace,
+                        &status_patch,
+                        "NetBoxLocation",
+                        location.id,
+                    ).await?;
+                    debug!("Updated NetBoxLocation {}/{} status: NetBox ID {}", namespace, name, location.id);
+                } else {
+                    debug!("NetBoxLocation {}/{} already has correct status (ID: {}), skipping update", namespace, name, location.id);
                 }
+                location // Return existing location
             }
             None => {
                 // Need to create location - resolve dependencies first using helpers
@@ -250,7 +263,72 @@ impl Reconciler {
                 
                 let netbox_location = if let Some(existing) = existing_location {
                     info!("Location {} already exists in NetBox (ID: {})", location_crd.spec.name, existing.id);
-                    existing
+                    
+                    // Resource exists but no status - check if tags need updating
+                    let resolved_tags_json = self.resolve_tag_references(
+                        netbox_client.as_ref(),
+                        &location_crd.spec.tags,
+                        namespace,
+                        name,
+                    ).await;
+                    let resolved_tags = crate::reconcile_helpers::convert_tags_to_strings(resolved_tags_json);
+                    
+                    // Update tags if they differ (location requires dependency resolution)
+                    let tags_need_update = crate::reconcile_helpers::tags_differ(&existing.tags, &location_crd.spec.tags);
+                    
+                    if tags_need_update {
+                        info!("NetBoxLocation {}/{} tags differ (idempotency path), updating in NetBox", namespace, name);
+                        
+                        // Resolve optional parent location ID
+                        use crate::reconcile_helpers::resolve_optional_dependency_id;
+                        let parent_id: Option<u64> = resolve_optional_dependency_id(
+                            &*self.netbox_location_api,
+                            location_crd.spec.parent.as_ref(),
+                            "NetBoxLocation",
+                            "parent",
+                            name,
+                            |crd| crd.status.as_ref(),
+                        ).await;
+                        
+                        let existing_id = existing.id;
+                        let existing_clone = existing.clone();
+                        match crate::reconcile_helpers::update_tags_if_differ(
+                            existing,
+                            &location_crd.spec.tags,
+                            resolved_tags,
+                            |tags| async move {
+                                netbox_client.update_location(
+                                    LocationId(existing_id),
+                                    Some(&location_crd.spec.name),
+                                    location_crd.spec.slug.as_deref(),
+                                    parent_id.map(LocationId),
+                                    Some(TenantId(tenant_id)),
+                                    location_crd.spec.facility.as_deref(),
+                                    location_crd.spec.description.clone(),
+                                    None, // comments
+                                    tags,
+                                ).await
+                            },
+                            &format!("NetBoxLocation {}/{} (idempotency path)", namespace, name),
+                        ).await {
+                            Ok(Some(updated)) => {
+                                use crate::events::reasons;
+                                self.record_event_normal(
+                                    reasons::UPDATED,
+                                    &format!("Updated NetBoxLocation {}/{} tags in NetBox", namespace, name),
+                                    location_crd,
+                                ).await;
+                                updated
+                            }
+                            Ok(None) => existing_clone, // Tags are up-to-date
+                            Err(e) => {
+                                warn!("Failed to update NetBoxLocation {}/{} tags: {}", namespace, name, e);
+                                existing_clone // Use existing if update fails
+                            }
+                        }
+                    } else {
+                        existing // Tags are up-to-date
+                    }
                 } else {
                     // Resolve tags before creation
                     info!("Resolving tags for location {}/{}: {:?}", namespace, name, location_crd.spec.tags);

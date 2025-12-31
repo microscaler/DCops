@@ -185,6 +185,7 @@ mod tests {
             slug: "arin".to_string(),
             description: None,
             is_private: false,
+            tags: vec![],
             created: "2024-01-01T00:00:00Z".to_string(),
             last_updated: "2024-01-01T00:00:00Z".to_string(),
         };

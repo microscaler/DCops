@@ -86,6 +86,7 @@ mod tests {
             description: None,
             comments: None,
             group: None,
+            tags: vec![],
             created: "2024-01-01T00:00:00Z".to_string(),
             last_updated: "2024-01-01T00:00:00Z".to_string(),
         };
@@ -174,6 +175,7 @@ mod tests {
             description: None,
             comments: None,
             group: None,
+            tags: vec![],
             created: "2024-01-01T00:00:00Z".to_string(),
             last_updated: "2024-01-01T00:00:00Z".to_string(),
         };

@@ -379,6 +379,68 @@ impl NetBoxClientTrait for MockNetBoxClientWrapper {
     async fn create_tag(&self, name: &str, slug: Option<&str>, color: Option<&str>, description: Option<String>, comments: Option<String>) -> Result<netbox_client::Tag, netbox_client::NetBoxError> {
         self.client.create_tag(name, slug, color, description, comments).await
     }
+
+    // IP Range operations
+    async fn get_ip_range(&self, id: netbox_client::IPRangeId) -> Result<netbox_client::IPRange, netbox_client::NetBoxError> {
+        self.client.get_ip_range(id).await
+    }
+
+    async fn query_ip_ranges(&self, filters: &[(&str, &str)], fetch_all: bool) -> Result<Vec<netbox_client::IPRange>, netbox_client::NetBoxError> {
+        self.client.query_ip_ranges(filters, fetch_all).await
+    }
+
+    async fn create_ip_range(&self, start_address: &ipnet::IpNet, end_address: &ipnet::IpNet, vrf_id: Option<u64>, tenant_id: Option<netbox_client::TenantId>, role_id: Option<netbox_client::RoleId>, status: Option<netbox_client::IPRangeStatus>, description: Option<String>, mark_utilized: Option<bool>, mark_populated: Option<bool>, tags: Option<Vec<String>>) -> Result<netbox_client::IPRange, netbox_client::NetBoxError> {
+        self.client.create_ip_range(start_address, end_address, vrf_id, tenant_id, role_id, status, description, mark_utilized, mark_populated, tags).await
+    }
+
+    async fn update_ip_range(&self, id: netbox_client::IPRangeId, start_address: Option<&ipnet::IpNet>, end_address: Option<&ipnet::IpNet>, vrf_id: Option<u64>, tenant_id: Option<netbox_client::TenantId>, role_id: Option<netbox_client::RoleId>, status: Option<netbox_client::IPRangeStatus>, description: Option<String>, mark_utilized: Option<bool>, mark_populated: Option<bool>, tags: Option<Vec<String>>) -> Result<netbox_client::IPRange, netbox_client::NetBoxError> {
+        self.client.update_ip_range(id, start_address, end_address, vrf_id, tenant_id, role_id, status, description, mark_utilized, mark_populated, tags).await
+    }
+
+    async fn delete_ip_range(&self, id: netbox_client::IPRangeId) -> Result<(), netbox_client::NetBoxError> {
+        self.client.delete_ip_range(id).await
+    }
+
+    // Update operations for resources with tags
+    async fn update_rir(&self, id: netbox_client::RirId, name: Option<&str>, slug: Option<&str>, description: Option<String>, is_private: Option<bool>, tags: Option<Vec<String>>) -> Result<netbox_client::Rir, netbox_client::NetBoxError> {
+        self.client.update_rir(id, name, slug, description, is_private, tags).await
+    }
+
+    async fn update_region(&self, id: netbox_client::RegionId, name: Option<&str>, slug: Option<&str>, parent_id: Option<netbox_client::RegionId>, description: Option<String>, comments: Option<String>, tags: Option<Vec<String>>) -> Result<netbox_client::Region, netbox_client::NetBoxError> {
+        self.client.update_region(id, name, slug, parent_id, description, comments, tags).await
+    }
+
+    async fn update_site_group(&self, id: netbox_client::SiteGroupId, name: Option<&str>, slug: Option<&str>, parent_id: Option<netbox_client::SiteGroupId>, description: Option<String>, comments: Option<String>, tags: Option<Vec<String>>) -> Result<netbox_client::SiteGroup, netbox_client::NetBoxError> {
+        self.client.update_site_group(id, name, slug, parent_id, description, comments, tags).await
+    }
+
+    async fn update_location(&self, id: netbox_client::LocationId, name: Option<&str>, slug: Option<&str>, parent_id: Option<netbox_client::LocationId>, tenant_id: Option<netbox_client::TenantId>, facility: Option<&str>, description: Option<String>, comments: Option<String>, tags: Option<Vec<String>>) -> Result<netbox_client::Location, netbox_client::NetBoxError> {
+        self.client.update_location(id, name, slug, parent_id, tenant_id, facility, description, comments, tags).await
+    }
+
+    async fn update_device_role(&self, id: netbox_client::DeviceRoleId, name: Option<&str>, slug: Option<&str>, color: Option<&str>, vm_role: Option<bool>, description: Option<String>, comments: Option<String>, tags: Option<Vec<String>>) -> Result<netbox_client::DeviceRole, netbox_client::NetBoxError> {
+        self.client.update_device_role(id, name, slug, color, vm_role, description, comments, tags).await
+    }
+
+    async fn update_manufacturer(&self, id: netbox_client::ManufacturerId, name: Option<&str>, slug: Option<&str>, description: Option<String>, tags: Option<Vec<String>>) -> Result<netbox_client::Manufacturer, netbox_client::NetBoxError> {
+        self.client.update_manufacturer(id, name, slug, description, tags).await
+    }
+
+    async fn update_platform(&self, id: netbox_client::PlatformId, name: Option<&str>, slug: Option<&str>, manufacturer_id: Option<netbox_client::ManufacturerId>, napalm_driver: Option<&str>, napalm_args: Option<&str>, description: Option<String>, comments: Option<String>, tags: Option<Vec<String>>) -> Result<netbox_client::Platform, netbox_client::NetBoxError> {
+        self.client.update_platform(id, name, slug, manufacturer_id, napalm_driver, napalm_args, description, comments, tags).await
+    }
+
+    async fn update_device_type(&self, id: netbox_client::DeviceTypeId, manufacturer_id: Option<netbox_client::ManufacturerId>, model: Option<&str>, slug: Option<&str>, part_number: Option<&str>, u_height: Option<f64>, is_full_depth: Option<bool>, description: Option<String>, comments: Option<String>, tags: Option<Vec<String>>) -> Result<netbox_client::DeviceType, netbox_client::NetBoxError> {
+        self.client.update_device_type(id, manufacturer_id, model, slug, part_number, u_height, is_full_depth, description, comments, tags).await
+    }
+
+    async fn update_tenant_group(&self, id: netbox_client::TenantGroupId, name: Option<&str>, slug: Option<&str>, description: Option<String>, comments: Option<String>, parent_id: Option<netbox_client::TenantGroupId>, tags: Option<Vec<String>>) -> Result<netbox_client::TenantGroup, netbox_client::NetBoxError> {
+        self.client.update_tenant_group(id, name, slug, description, comments, parent_id, tags).await
+    }
+
+    async fn update_role(&self, id: netbox_client::RoleId, name: Option<&str>, slug: Option<&str>, description: Option<String>, weight: Option<u16>, comments: Option<String>, tags: Option<Vec<String>>) -> Result<netbox_client::Role, netbox_client::NetBoxError> {
+        self.client.update_role(id, name, slug, description, weight, comments, tags).await
+    }
 }
 
 /// Mock kube::Client for Secret API calls

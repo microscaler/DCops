@@ -91,70 +91,75 @@ impl Reconciler {
                 // Convert resolved tags from Vec<serde_json::Value> to Vec<String>
                 let resolved_tags = crate::reconcile_helpers::convert_tags_to_strings(resolved_tags_json);
                 
-                // Check if tags need updating
-                let tags_need_update = crate::reconcile_helpers::tags_differ(&platform.tags, &platform_crd.spec.tags);
-                
-                if tags_need_update {
-                    info!("NetBoxPlatform {}/{} tags differ, updating in NetBox", namespace, name);
-                    match netbox_client.update_platform(
-                        netbox_client::PlatformId(platform.id),
-                        Some(&platform_crd.spec.name),
-                        platform_crd.spec.slug.as_deref(),
-                        manufacturer_id.map(ManufacturerId),
-                        platform_crd.spec.napalm_driver.as_deref(),
-                        platform_crd.spec.napalm_args.as_deref(),
-                        platform_crd.spec.description.clone(),
-                        platform_crd.spec.comments.clone(),
-                        resolved_tags,
-                    ).await {
-                        Ok(updated) => {
-                            info!("Updated NetBoxPlatform {}/{} tags in NetBox (ID: {})", namespace, name, updated.id);
-                            use crate::events::reasons;
-                            self.record_event_normal(
-                                reasons::UPDATED,
-                                &format!("Updated NetBoxPlatform {}/{} tags in NetBox", namespace, name),
-                                platform_crd,
-                            ).await;
-                            updated
-                        }
-                        Err(e) => {
-                            warn!("Failed to update NetBoxPlatform {}/{} tags: {}", namespace, name, e);
-                            platform // Use existing platform if update fails
-                        }
+                // Update tags if they differ
+                let platform_id = platform.id;
+                let platform_clone = platform.clone();
+                let platform = match crate::reconcile_helpers::update_tags_if_differ(
+                    platform,
+                    &platform_crd.spec.tags,
+                    resolved_tags.clone(),
+                    |tags| async move {
+                        netbox_client.update_platform(
+                            netbox_client::PlatformId(platform_id),
+                            Some(&platform_crd.spec.name),
+                            platform_crd.spec.slug.as_deref(),
+                            manufacturer_id.map(ManufacturerId),
+                            platform_crd.spec.napalm_driver.as_deref(),
+                            platform_crd.spec.napalm_args.as_deref(),
+                            platform_crd.spec.description.clone(),
+                            platform_crd.spec.comments.clone(),
+                            tags,
+                        ).await
+                    },
+                    &format!("NetBoxPlatform {}/{}", namespace, name),
+                ).await {
+                    Ok(Some(updated)) => {
+                        use crate::events::reasons;
+                        self.record_event_normal(
+                            reasons::UPDATED,
+                            &format!("Updated NetBoxPlatform {}/{} tags in NetBox", namespace, name),
+                            platform_crd,
+                        ).await;
+                        updated
                     }
-                } else {
-                    // Tags are up-to-date - check if status needs updating
-                    use crate::reconcile_helpers::status_needs_update;
-                    let needs_status_update = status_needs_update(
-                        platform_crd.status.as_ref(),
+                    Ok(None) => platform_clone, // Tags are up-to-date
+                    Err(e) => {
+                        warn!("Failed to update NetBoxPlatform {}/{} tags: {}", namespace, name, e);
+                        platform_clone // Use existing if update fails
+                    }
+                };
+                
+                // Check if status needs updating
+                use crate::reconcile_helpers::status_needs_update;
+                let needs_status_update = status_needs_update(
+                    platform_crd.status.as_ref(),
+                    platform.id,
+                    &platform.url,
+                    "Created",
+                    None,
+                );
+                
+                if needs_status_update {
+                    use crate::reconcile_helpers::update_resource_status;
+                    let status_patch = Self::create_typed_platform_status_patch(
                         platform.id,
-                        &platform.url,
-                        "Created",
+                        platform.url.clone(),
+                        ResourceState::Created,
                         None,
                     );
-                    
-                    if needs_status_update {
-                        use crate::reconcile_helpers::update_resource_status;
-                        let status_patch = Self::create_typed_platform_status_patch(
-                            platform.id,
-                            platform.url.clone(),
-                            ResourceState::Created,
-                            None,
-                        );
-                        update_resource_status(
-                            &*self.netbox_platform_api,
-                            name,
-                            namespace,
-                            &status_patch,
-                            "NetBoxPlatform",
-                            platform.id,
-                        ).await?;
-                        debug!("Updated NetBoxPlatform {}/{} status: NetBox ID {}", namespace, name, platform.id);
-                    } else {
-                        debug!("NetBoxPlatform {}/{} already has correct status (ID: {}), skipping update", namespace, name, platform.id);
-                    }
-                    platform // Return existing platform
+                    update_resource_status(
+                        &*self.netbox_platform_api,
+                        name,
+                        namespace,
+                        &status_patch,
+                        "NetBoxPlatform",
+                        platform.id,
+                    ).await?;
+                    debug!("Updated NetBoxPlatform {}/{} status: NetBox ID {}", namespace, name, platform.id);
+                } else {
+                    debug!("NetBoxPlatform {}/{} already has correct status (ID: {}), skipping update", namespace, name, platform.id);
                 }
+                platform // Return existing platform
             }
             None => {
                 let existing_platform = match netbox_client.get_platform_by_name(&platform_crd.spec.name).await {
@@ -170,7 +175,52 @@ impl Reconciler {
                 };
                 
                 if let Some(existing) = existing_platform {
-                    existing
+                    // Resource exists but no status - check if tags need updating
+                    let resolved_tags_json = self.resolve_tag_references(
+                        netbox_client.as_ref(),
+                        &platform_crd.spec.tags,
+                        namespace,
+                        name,
+                    ).await;
+                    let resolved_tags = crate::reconcile_helpers::convert_tags_to_strings(resolved_tags_json);
+                    
+                    // Update tags if they differ
+                    let existing_id = existing.id;
+                    let existing_clone = existing.clone();
+                    match crate::reconcile_helpers::update_tags_if_differ(
+                        existing,
+                        &platform_crd.spec.tags,
+                        resolved_tags,
+                        |tags| async move {
+                            netbox_client.update_platform(
+                                netbox_client::PlatformId(existing_id),
+                                Some(&platform_crd.spec.name),
+                                platform_crd.spec.slug.as_deref(),
+                                manufacturer_id.map(ManufacturerId),
+                                platform_crd.spec.napalm_driver.as_deref(),
+                                platform_crd.spec.napalm_args.as_deref(),
+                                platform_crd.spec.description.clone(),
+                                platform_crd.spec.comments.clone(),
+                                tags,
+                            ).await
+                        },
+                        &format!("NetBoxPlatform {}/{} (idempotency path)", namespace, name),
+                    ).await {
+                        Ok(Some(updated)) => {
+                            use crate::events::reasons;
+                            self.record_event_normal(
+                                reasons::UPDATED,
+                                &format!("Updated NetBoxPlatform {}/{} tags in NetBox", namespace, name),
+                                platform_crd,
+                            ).await;
+                            updated
+                        }
+                        Ok(None) => existing_clone, // Tags are up-to-date
+                        Err(e) => {
+                            warn!("Failed to update NetBoxPlatform {}/{} tags: {}", namespace, name, e);
+                            existing_clone // Use existing if update fails
+                        }
+                    }
                 } else {
                     debug!("Attempting to create platform {} in NetBox", platform_crd.spec.name);
                     match netbox_client.create_platform(

@@ -70,6 +70,54 @@ impl Reconciler {
         
         let netbox_rir = match netbox_rir {
             Some(rir) => {
+                // Always resolve tags (even if nothing else changed, tags might need updating)
+                let resolved_tags_json = self.resolve_tag_references(
+                    netbox_client.as_ref(),
+                    &rir_crd.spec.tags,
+                    namespace,
+                    name,
+                ).await;
+                
+                // Convert resolved tags from Vec<serde_json::Value> to Vec<String>
+                let resolved_tags = crate::reconcile_helpers::convert_tags_to_strings(resolved_tags_json);
+                
+                // Update tags if they differ
+                use netbox_client::RirId;
+                let rir_id = rir.id;
+                let rir_clone = rir.clone();
+                let rir = match crate::reconcile_helpers::update_tags_if_differ(
+                    rir,
+                    &rir_crd.spec.tags,
+                    resolved_tags.clone(),
+                    |tags| async move {
+                        netbox_client.update_rir(
+                            RirId(rir_id),
+                            Some(&rir_crd.spec.name),
+                            rir_crd.spec.slug.as_deref(),
+                            rir_crd.spec.description.clone(),
+                            rir_crd.spec.is_private,
+                            tags,
+                        ).await
+                    },
+                    &format!("NetBoxRIR {}/{}", namespace, name),
+                ).await {
+                    Ok(Some(updated)) => {
+                        use crate::events::reasons;
+                        self.record_event_normal(
+                            reasons::UPDATED,
+                            &format!("Updated NetBoxRIR {}/{} tags in NetBox", namespace, name),
+                            rir_crd,
+                        ).await;
+                        updated
+                    }
+                    Ok(None) => rir_clone, // Tags are up-to-date
+                    Err(e) => {
+                        warn!("Failed to update NetBoxRIR {}/{} tags: {}", namespace, name, e);
+                        rir_clone // Use existing if update fails
+                    }
+                };
+                
+                // Check if status needs updating
                 let needs_status_update = status_needs_update(
                     rir_crd.status.as_ref(),
                     rir.id,
@@ -116,15 +164,67 @@ impl Reconciler {
                 }
                 
                 if let Some(existing) = existing_rir {
-                    existing
+                    // Resource exists but no status - check if tags need updating
+                    let resolved_tags_json = self.resolve_tag_references(
+                        netbox_client.as_ref(),
+                        &rir_crd.spec.tags,
+                        namespace,
+                        name,
+                    ).await;
+                    let resolved_tags = crate::reconcile_helpers::convert_tags_to_strings(resolved_tags_json);
+                    
+                    // Update tags if they differ
+                    use netbox_client::RirId;
+                    let existing_id = existing.id;
+                    let existing_clone = existing.clone();
+                    match crate::reconcile_helpers::update_tags_if_differ(
+                        existing,
+                        &rir_crd.spec.tags,
+                        resolved_tags,
+                        |tags| async move {
+                            netbox_client.update_rir(
+                                RirId(existing_id),
+                                Some(&rir_crd.spec.name),
+                                rir_crd.spec.slug.as_deref(),
+                                rir_crd.spec.description.clone(),
+                                rir_crd.spec.is_private,
+                                tags,
+                            ).await
+                        },
+                        &format!("NetBoxRIR {}/{} (idempotency path)", namespace, name),
+                    ).await {
+                        Ok(Some(updated)) => {
+                            use crate::events::reasons;
+                            self.record_event_normal(
+                                reasons::UPDATED,
+                                &format!("Updated NetBoxRIR {}/{} tags in NetBox", namespace, name),
+                                rir_crd,
+                            ).await;
+                            updated
+                        }
+                        Ok(None) => existing_clone, // Tags are up-to-date
+                        Err(e) => {
+                            warn!("Failed to update NetBoxRIR {}/{} tags: {}", namespace, name, e);
+                            existing_clone // Use existing if update fails
+                        }
+                    }
                 } else {
+                    // Resolve tags before create
+                    let resolved_tags_json = self.resolve_tag_references(
+                        netbox_client.as_ref(),
+                        &rir_crd.spec.tags,
+                        namespace,
+                        name,
+                    ).await;
+                    let resolved_tags = crate::reconcile_helpers::convert_tags_to_strings(resolved_tags_json);
+                    
                     debug!("Attempting to create RIR {} in NetBox", rir_crd.spec.name);
                     match netbox_client.create_rir(
                         &rir_crd.spec.name,
                         rir_crd.spec.slug.as_deref(),
                         rir_crd.spec.description.clone(),
                         rir_crd.spec.is_private,
-                        None, // tags - not yet implemented in reconciler
+                        resolved_tags,
                     ).await {
                         Ok(created) => {
                             info!("Created RIR {} in NetBox (ID: {})", created.name, created.id);

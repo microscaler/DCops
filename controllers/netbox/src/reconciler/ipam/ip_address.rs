@@ -470,7 +470,7 @@ impl Reconciler {
             ).await?
         };
         
-        let netbox_ip_address = match drift_result {
+        let netbox_ip_address: Option<netbox_client::IPAddress> = match drift_result {
             DriftCheckResult::UseExisting(existing_ip) => {
                 // Resource exists - first, check for and remediate any duplicates
                 // This ensures we always clean up duplicates, even for existing resources
@@ -606,7 +606,22 @@ impl Reconciler {
                                 &format!("Updated IP address {} in NetBox (ID: {})", updated_ip.address, updated_ip.id),
                                 ip_address_crd,
                             ).await;
-                            Some(updated_ip)
+                            // Update status with the updated IP
+                            let status_patch = Self::create_resource_status_patch(
+                                updated_ip.id,
+                                updated_ip.url.clone(),
+                                ResourceState::Created,
+                                None,
+                            );
+                            update_resource_status(
+                                &*self.netbox_ip_address_api,
+                                name,
+                                namespace,
+                                &status_patch,
+                                "NetBoxIPAddress",
+                                updated_ip.id,
+                            ).await?;
+                            return Ok(());
                         }
                         Err(e) => {
                             error!("Failed to update NetBoxIPAddress {}/{} in NetBox: {}", namespace, name, e);
@@ -799,224 +814,187 @@ impl Reconciler {
             }
         };
         
-        // Handle existing IP address (from helper) or create new
-        let netbox_ip_address = match netbox_ip_address {
-            Some(ip) => {
-                // Resource exists and is up-to-date - only update status if it changed
-                use crate::reconcile_helpers::status_needs_update;
-                let needs_status_update = status_needs_update(
-                    ip_address_crd.status.as_ref(),
-                    ip.id,
-                    &ip.url,
-                    "Created",
-                    None,
-                );
-                
-                if needs_status_update {
-                    let status_patch = Self::create_resource_status_patch(
-                        ip.id,
-                        ip.url.clone(),
-                        ResourceState::Created,
-                        None,
-                    );
-                    update_resource_status(
-                        &*self.netbox_ip_address_api,
-                        name,
-                        namespace,
-                        &status_patch,
-                        "NetBoxIPAddress",
-                        ip.id,
-                    ).await?;
-                    debug!("Updated NetBoxIPAddress {}/{} status: NetBox ID {}", namespace, name, ip.id);
-                    return Ok(());
-                } else {
-                    debug!("NetBoxIPAddress {}/{} already has correct status (ID: {}), skipping update", namespace, name, ip.id);
-                    return Ok(());
+        // If we reach here, we need to create the IP address
+        // (all existing IP cases should have returned early above)
+        
+        // Need to create IP address - resolve dependencies first
+        validate_reference_kind(&ip_address_crd.spec.tenant, "NetBoxTenant", "tenant", name)?;
+    let tenant_id = match resolve_required_dependency_id(
+        &*self.netbox_tenant_api,
+        &ip_address_crd.spec.tenant.name,
+        "NetBoxTenant",
+        name,
+        |crd| crd.status.as_ref(),
+    ).await {
+        Ok(id) => id,
+        Err(e) => {
+            use crate::events::reasons;
+            self.record_event_warning(
+                reasons::DEPENDENCY_NOT_FOUND,
+                &format!("Tenant '{}' not found or not ready: {}", ip_address_crd.spec.tenant.name, e),
+                ip_address_crd,
+            ).await;
+            return Err(e);
+        }
+    };
+    
+    // Resolve optional vlan ID (for future use in AllocateIPRequest)
+    let _vlan_id: Option<u32> = if let Some(vlan_ref) = &ip_address_crd.spec.vlan {
+        validate_reference_kind(vlan_ref, "NetBoxVLAN", "vlan", name)?;
+        resolve_optional_dependency_id(
+            &*self.netbox_vlan_api,
+            Some(vlan_ref),
+            "NetBoxVLAN",
+            "vlan",
+            name,
+            |crd| crd.status.as_ref(),
+        ).await.map(|id| id as u32)
+    } else {
+        None
+    };
+    
+    // Convert status enum to NetBox status
+    let netbox_status = match ip_address_crd.spec.status {
+        crds::IPAddressStatus::Active => netbox_client::IPAddressStatus::Active,
+        crds::IPAddressStatus::Reserved => netbox_client::IPAddressStatus::Reserved,
+        crds::IPAddressStatus::Deprecated => netbox_client::IPAddressStatus::Deprecated,
+        crds::IPAddressStatus::Dhcp => netbox_client::IPAddressStatus::Dhcp,
+        crds::IPAddressStatus::Slaac => netbox_client::IPAddressStatus::Slaac,
+    };
+    
+    // CRITICAL: Before creating, query ALL IPs by address to ensure it doesn't exist
+    // This prevents duplicate creation due to race conditions or query failures
+    let address_str = ip_address_crd.spec.address.as_ref()
+        .ok_or_else(|| ControllerError::InvalidInput("Address is required for IP address reconciliation".to_string()))?;
+    
+    // Query ALL IPs (no filters) and filter client-side for exact match
+    // This is more reliable than using NetBox API filters which might be inaccurate
+    info!("Pre-creation check: Querying ALL IP addresses to find exact match for {}", address_str);
+    let all_ips = match netbox_client.query_ip_addresses(&[], true).await {
+        Ok(ips) => {
+            // Filter client-side for exact address match
+            ips.into_iter()
+                .filter(|ip| ip.address.to_string() == address_str.as_str())
+                .collect::<Vec<_>>()
+        }
+        Err(e) => {
+            warn!("Failed to query all IP addresses for pre-creation check: {}, will use filtered query", e);
+            // Fallback to filtered query
+            match netbox_client.query_ip_addresses(&[("address", address_str.as_str())], true).await {
+                Ok(ips) => {
+                    ips.into_iter()
+                        .filter(|ip| ip.address.to_string() == address_str.as_str())
+                        .collect::<Vec<_>>()
+                }
+                Err(e2) => {
+                    error!("Failed to query IP addresses (both global and filtered): {}, proceeding with creation (may create duplicate)", e2);
+                    Vec::new()
                 }
             }
-            None => {
-                // Need to create IP address - resolve dependencies first
-                validate_reference_kind(&ip_address_crd.spec.tenant, "NetBoxTenant", "tenant", name)?;
-                let tenant_id = match resolve_required_dependency_id(
-                    &*self.netbox_tenant_api,
-                    &ip_address_crd.spec.tenant.name,
-                    "NetBoxTenant",
-                    name,
-                    |crd| crd.status.as_ref(),
-                ).await {
-                    Ok(id) => id,
-                    Err(e) => {
-                        use crate::events::reasons;
-                        self.record_event_warning(
-                            reasons::DEPENDENCY_NOT_FOUND,
-                            &format!("Tenant '{}' not found or not ready: {}", ip_address_crd.spec.tenant.name, e),
-                            ip_address_crd,
-                        ).await;
-                        return Err(e);
-                    }
-                };
-                
-                // Resolve optional vlan ID (for future use in AllocateIPRequest)
-                let _vlan_id: Option<u32> = if let Some(vlan_ref) = &ip_address_crd.spec.vlan {
-                    validate_reference_kind(vlan_ref, "NetBoxVLAN", "vlan", name)?;
-                    resolve_optional_dependency_id(
-                        &*self.netbox_vlan_api,
-                        Some(vlan_ref),
-                        "NetBoxVLAN",
-                        "vlan",
-                        name,
-                        |crd| crd.status.as_ref(),
-                    ).await.map(|id| id as u32)
-                } else {
-                    None
-                };
-                
-                // Convert status enum to NetBox status
-                let netbox_status = match ip_address_crd.spec.status {
-                    crds::IPAddressStatus::Active => netbox_client::IPAddressStatus::Active,
-                    crds::IPAddressStatus::Reserved => netbox_client::IPAddressStatus::Reserved,
-                    crds::IPAddressStatus::Deprecated => netbox_client::IPAddressStatus::Deprecated,
-                    crds::IPAddressStatus::Dhcp => netbox_client::IPAddressStatus::Dhcp,
-                    crds::IPAddressStatus::Slaac => netbox_client::IPAddressStatus::Slaac,
-                };
-                
-                // CRITICAL: Before creating, query ALL IPs by address to ensure it doesn't exist
-                // This prevents duplicate creation due to race conditions or query failures
-                let address_str = ip_address_crd.spec.address.as_ref()
-                    .ok_or_else(|| ControllerError::InvalidInput("Address is required for IP address reconciliation".to_string()))?;
-                
-                // Query ALL IPs (no filters) and filter client-side for exact match
-                // This is more reliable than using NetBox API filters which might be inaccurate
-                info!("Pre-creation check: Querying ALL IP addresses to find exact match for {}", address_str);
-                let all_ips = match netbox_client.query_ip_addresses(&[], true).await {
-                    Ok(ips) => {
-                        // Filter client-side for exact address match
-                        ips.into_iter()
-                            .filter(|ip| ip.address.to_string() == address_str.as_str())
-                            .collect::<Vec<_>>()
-                    }
-                    Err(e) => {
-                        warn!("Failed to query all IP addresses for pre-creation check: {}, will use filtered query", e);
-                        // Fallback to filtered query
-                        match netbox_client.query_ip_addresses(&[("address", address_str.as_str())], true).await {
-                            Ok(ips) => {
-                                ips.into_iter()
-                                    .filter(|ip| ip.address.to_string() == address_str.as_str())
-                                    .collect::<Vec<_>>()
-                            }
-                            Err(e2) => {
-                                error!("Failed to query IP addresses (both global and filtered): {}, proceeding with creation (may create duplicate)", e2);
-                                Vec::new()
-                            }
-                        }
-                    }
-                };
-                
-                let netbox_ip_address = if !all_ips.is_empty() {
-                    // Found existing IP(s) - use duplicate detection to select best one
-                    warn!("Pre-creation check found {} existing IP(s) for {}, using duplicate detection", all_ips.len(), address_str);
+        }
+    };
+    
+    let netbox_ip_address = if !all_ips.is_empty() {
+        // Found existing IP(s) - use duplicate detection to select best one
+        warn!("Pre-creation check found {} existing IP(s) for {}, using duplicate detection", all_ips.len(), address_str);
+        match self.detect_and_remediate_duplicate_ips(
+            netbox_client.as_ref(),
+            ip_address_crd,
+            address_str.as_str(),
+        ).await {
+            Ok(existing) => {
+                info!("IP address {} already exists in NetBox (ID: {}), using it (pre-creation check prevented duplicate)", address_str, existing.id);
+                existing
+            }
+            Err(e) => {
+                // Should not happen since we found IPs, but handle gracefully
+                error!("Pre-creation check found IPs but duplicate detection failed: {}, proceeding with creation (may create duplicate)", e);
+                // Fall through to creation - this is a bug but we don't want to block reconciliation
+                return Err(ControllerError::NetBox(netbox_client::NetBoxError::Api(
+                    format!("Pre-creation check found existing IPs but duplicate detection failed: {}", e)
+                )));
+            }
+        }
+    } else {
+        // No IP found - safe to create
+        info!("Pre-creation check: No existing IP found for {}, creating new one", address_str);
+        
+        // Resolve tags from NetBoxResourceReference to NetBox tag IDs
+        let resolved_tags = self.resolve_tag_references(
+            netbox_client.as_ref(),
+            &ip_address_crd.spec.tags,
+            namespace,
+            name,
+        ).await;
+        
+        debug!("Creating IP address {} with tenant_id: {}, tags: {:?}", address_str, tenant_id, resolved_tags);
+        
+        // Create IP address
+        use netbox_client::AllocateIPRequest;
+        let create_request = AllocateIPRequest {
+            address: Some(ip_net), // Specify the exact IP address
+            description: ip_address_crd.spec.description.clone(),
+            status: Some(netbox_status),
+            role: ip_address_crd.spec.role.clone(),
+            dns_name: ip_address_crd.spec.dns_name.clone(),
+            tenant: Some(tenant_id),
+            tags: resolved_tags,
+        };
+        
+        match netbox_client.create_ip_address(&ip_net, Some(create_request)).await {
+            Ok(created_ip) => {
+                info!("Created IP address {} in NetBox (ID: {})", created_ip.address, created_ip.id);
+                use crate::events::reasons;
+                self.record_event_normal(
+                    reasons::CREATED,
+                    &format!("Created IP address {} in NetBox (ID: {})", created_ip.address, created_ip.id),
+                    ip_address_crd,
+                ).await;
+                created_ip
+            }
+            Err(e) => {
+                if is_conflict_error(&e) {
+                    warn!("IP address {} creation conflicted, attempting duplicate detection and remediation", address_str);
+                    
+                    // Use duplicate detection to find and remediate
                     match self.detect_and_remediate_duplicate_ips(
                         netbox_client.as_ref(),
                         ip_address_crd,
                         address_str.as_str(),
                     ).await {
-                        Ok(existing) => {
-                            info!("IP address {} already exists in NetBox (ID: {}), using it (pre-creation check prevented duplicate)", address_str, existing.id);
-                            existing
+                        Ok(found) => {
+                            info!("Found existing IP address {} in NetBox (ID: {}) after conflict, duplicates remediated", found.address, found.id);
+                            found
+                        }
+                        Err(ControllerError::NetBox(netbox_client::NetBoxError::NotFound(_))) => {
+                            // Still not found after remediation - this shouldn't happen after conflict
+                            let error_msg = format!("IP address {} creation conflicted but could not find it after remediation: {}", address_str, e);
+                            error!("{}", error_msg);
+                            update_status_error(&*self.netbox_ip_address_api, name, namespace, error_msg.clone(), ip_address_crd.status.as_ref()).await;
+                            return Err(ControllerError::NetBox(netbox_client::NetBoxError::Api(error_msg)));
                         }
                         Err(e) => {
-                            // Should not happen since we found IPs, but handle gracefully
-                            error!("Pre-creation check found IPs but duplicate detection failed: {}, proceeding with creation (may create duplicate)", e);
-                            // Fall through to creation - this is a bug but we don't want to block reconciliation
-                            return Err(ControllerError::NetBox(netbox_client::NetBoxError::Api(
-                                format!("Pre-creation check found existing IPs but duplicate detection failed: {}", e)
-                            )));
+                            let error_msg = format!("IP address {} creation conflicted and duplicate remediation failed: {}", address_str, e);
+                            error!("{}", error_msg);
+                            update_status_error(&*self.netbox_ip_address_api, name, namespace, error_msg.clone(), ip_address_crd.status.as_ref()).await;
+                            return Err(e);
                         }
                     }
                 } else {
-                    // No IP found - safe to create
-                    info!("Pre-creation check: No existing IP found for {}, creating new one", address_str);
-                    
-                    // Resolve tags from NetBoxResourceReference to NetBox tag IDs
-                    let resolved_tags = self.resolve_tag_references(
-                        netbox_client.as_ref(),
-                        &ip_address_crd.spec.tags,
-                        namespace,
-                        name,
+                    let error_msg = format!("Failed to create IP address in NetBox: {}", e);
+                    error!("{}", error_msg);
+                    use crate::events::reasons;
+                    self.record_event_warning(
+                        reasons::RECONCILIATION_FAILED,
+                        &error_msg,
+                        ip_address_crd,
                     ).await;
-                    
-                    debug!("Creating IP address {} with tenant_id: {}, tags: {:?}", address_str, tenant_id, resolved_tags);
-                    
-                    // Create IP address
-                    use netbox_client::AllocateIPRequest;
-                    let create_request = AllocateIPRequest {
-                        address: Some(ip_net), // Specify the exact IP address
-                        description: ip_address_crd.spec.description.clone(),
-                        status: Some(netbox_status),
-                        role: ip_address_crd.spec.role.clone(),
-                        dns_name: ip_address_crd.spec.dns_name.clone(),
-                        tenant: Some(tenant_id),
-                        tags: resolved_tags,
-                    };
-                    
-                    match netbox_client.create_ip_address(&ip_net, Some(create_request)).await {
-                        Ok(created_ip) => {
-                            info!("Created IP address {} in NetBox (ID: {})", created_ip.address, created_ip.id);
-                            use crate::events::reasons;
-                            self.record_event_normal(
-                                reasons::CREATED,
-                                &format!("Created IP address {} in NetBox (ID: {})", created_ip.address, created_ip.id),
-                                ip_address_crd,
-                            ).await;
-                            created_ip
-                        }
-                        Err(e) => {
-                            if is_conflict_error(&e) {
-                                warn!("IP address {} creation conflicted, attempting duplicate detection and remediation", address_str);
-                                
-                                // Use duplicate detection to find and remediate
-                                match self.detect_and_remediate_duplicate_ips(
-                                    netbox_client.as_ref(),
-                                    ip_address_crd,
-                                    address_str.as_str(),
-                                ).await {
-                                    Ok(found) => {
-                                        info!("Found existing IP address {} in NetBox (ID: {}) after conflict, duplicates remediated", found.address, found.id);
-                                        found
-                                    }
-                                    Err(ControllerError::NetBox(netbox_client::NetBoxError::NotFound(_))) => {
-                                        // Still not found after remediation - this shouldn't happen after conflict
-                                        let error_msg = format!("IP address {} creation conflicted but could not find it after remediation: {}", address_str, e);
-                                        error!("{}", error_msg);
-                                        update_status_error(&*self.netbox_ip_address_api, name, namespace, error_msg.clone(), ip_address_crd.status.as_ref()).await;
-                                        return Err(ControllerError::NetBox(netbox_client::NetBoxError::Api(error_msg)));
-                                    }
-                                    Err(e) => {
-                                        let error_msg = format!("IP address {} creation conflicted and duplicate remediation failed: {}", address_str, e);
-                                        error!("{}", error_msg);
-                                        update_status_error(&*self.netbox_ip_address_api, name, namespace, error_msg.clone(), ip_address_crd.status.as_ref()).await;
-                                        return Err(e);
-                                    }
-                                }
-                            } else {
-                                let error_msg = format!("Failed to create IP address in NetBox: {}", e);
-                                error!("{}", error_msg);
-                                use crate::events::reasons;
-                                self.record_event_warning(
-                                    reasons::RECONCILIATION_FAILED,
-                                    &error_msg,
-                                    ip_address_crd,
-                                ).await;
-                                update_status_error(&*self.netbox_ip_address_api, name, namespace, error_msg.clone(), ip_address_crd.status.as_ref()).await;
-                                return Err(ControllerError::NetBox(e));
-                            }
-                        }
+                    update_status_error(&*self.netbox_ip_address_api, name, namespace, error_msg.clone(), ip_address_crd.status.as_ref()).await;
+                    return Err(ControllerError::NetBox(e));
+                }
+            }
                     }
                 };
-                
-                netbox_ip_address
-            }
-        };
         
         // Update status
         let status_patch = Self::create_resource_status_patch(

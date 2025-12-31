@@ -1,0 +1,85 @@
+{
+	"name": "DCops Development",
+	"build": {
+		"dockerfile": "Dockerfile",
+		"context": ".."
+	},
+	"features": {
+		"ghcr.io/devcontainers/features/docker-in-docker:2": {
+			"version": "latest",
+			"dockerDashComposeVersion": "v2"
+		},
+		"ghcr.io/devcontainers/features/git:1": {
+			"version": "latest"
+		},
+		"ghcr.io/devcontainers/features/github-cli:1": {
+			"version": "latest"
+		}
+	},
+	"customizations": {
+		"vscode": {
+			"extensions": [
+				"rust-lang.rust-analyzer",
+				"vadimcn.vscode-lldb",
+				"tamasfe.even-better-toml",
+				"ms-kubernetes-tools.vscode-kubernetes-tools",
+				"ms-python.python",
+				"ms-python.vscode-pylance",
+				"ms-azuretools.vscode-docker",
+				"redhat.vscode-yaml",
+				"eamodio.gitlens"
+			],
+			"settings": {
+				"rust-analyzer.checkOnSave.command": "clippy",
+				"rust-analyzer.cargo.features": "all",
+				"rust-analyzer.procMacro.enable": true,
+				"editor.formatOnSave": true,
+				"[rust]": {
+					"editor.defaultFormatter": "rust-lang.rust-analyzer",
+					"editor.formatOnSave": true
+				},
+				"[python]": {
+					"editor.formatOnSave": true,
+					"editor.defaultFormatter": "ms-python.black-formatter"
+				},
+				"[yaml]": {
+					"editor.formatOnSave": true
+				}
+			}
+		}
+	},
+	"remoteUser": "vscode",
+	"remoteEnv": {
+		"CARGO_NET_GIT_FETCH_WITH_CLI": "true",
+		"RUST_BACKTRACE": "1",
+		"DOCKER_BUILDKIT": "1"
+	},
+	"mounts": [
+		"source=${localWorkspaceFolder}/.cargo,target=/home/vscode/.cargo,type=bind,consistency=cached",
+		"source=dind-var-lib-docker,target=/var/lib/docker,type=volume"
+	],
+	"postCreateCommand": "bash .devcontainer/post-create.sh",
+	"postStartCommand": "bash .devcontainer/post-start.sh",
+	"forwardPorts": [
+		8001,
+		10350,
+		5000,
+		5432,
+		6379
+	],
+	"portsAttributes": {
+		"8001": {
+			"label": "NetBox UI",
+			"onAutoForward": "notify"
+		},
+		"10350": {
+			"label": "Tilt UI",
+			"onAutoForward": "notify"
+		},
+		"5000": {
+			"label": "Docker Registry",
+			"onAutoForward": "notify"
+		}
+	}
+}
+

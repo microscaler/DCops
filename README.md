@@ -142,6 +142,32 @@ DCops is built on proven, production-ready technologies:
 
 DCops integrates with your existing Kubernetes cluster and NetBox instance. No special hardware required—just a management Kubernetes cluster and NetBox.
 
+### Development Environment
+
+**🚀 Quick Start with Dev Container**
+
+The easiest way to get started with DCops development is using our pre-configured Dev Container. This provides a complete development environment with all dependencies, tools, and Docker-in-Docker support.
+
+**Supported IDEs:**
+- **VS Code** - Full Dev Container support
+- **JetBrains IDEs** (IntelliJ IDEA, RustRover) - Remote Development support
+
+**What's Included:**
+- ✅ Full Rust toolchain (stable, rustfmt, clippy, musl target)
+- ✅ Docker-in-Docker for building images and running Kind clusters
+- ✅ Kubernetes tools (kubectl, kind, Tilt)
+- ✅ Python 3 for project scripts
+- ✅ Development tools (Just, cargo-nextest, cargo-llvm-cov, cargo-audit)
+
+📖 **See [`.devcontainer/README.md`](.devcontainer/README.md) for detailed setup instructions and usage guide.**
+
+**Alternative Setup:**
+If you prefer a local development environment, ensure you have:
+- Rust toolchain (see `rust-toolchain.toml`)
+- Docker Desktop
+- kubectl, kind, and Tilt installed
+- Python 3 for running project scripts
+
 ## Learn More
 
 - **Contributing**: [CONTRIBUTING.md](CONTRIBUTING.md)

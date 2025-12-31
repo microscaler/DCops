@@ -43,6 +43,10 @@
 //! - **Retry Logic**: Automatic retry with exponential backoff
 //! - **Pagination**: Support for fetching all pages of large result sets
 
+// Macros must be declared before modules that use them
+#[macro_use]
+pub mod macros;
+
 pub mod client;
 pub mod common;
 pub mod core;

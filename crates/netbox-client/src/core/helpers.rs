@@ -98,6 +98,28 @@ pub fn add_optional_enum_field<T: serde::Serialize>(body: &mut serde_json::Value
     Ok(())
 }
 
+/// Add optional tags field to request body.
+/// 
+/// Tags can be provided as:
+/// - Vec<String> - tag IDs as strings (e.g., ["1", "2"])
+/// - Vec<serde_json::Value> - tag IDs as numbers or dictionaries (e.g., [1, 2] or [{"name": "tag1"}])
+/// 
+/// If `tags` is `None`, the field is not added (PATCH semantics).
+pub fn add_optional_tags_field<T>(body: &mut serde_json::Value, tags: Option<T>) -> Result<(), NetBoxError>
+where
+    T: serde::Serialize,
+{
+    if let Some(tags_vec) = tags {
+        let tags_value = serde_json::to_value(tags_vec)
+            .map_err(|e| NetBoxError::Serialization(e))?;
+        body["tags"] = tags_value.clone();
+        debug!("Adding tags field to request body: {:?}", tags_value);
+    } else {
+        debug!("No tags provided, skipping tags field");
+    }
+    Ok(())
+}
+
 /// Add full tenant object to request body for CREATE operations.
 /// 
 /// NetBox 4.0 requires the full tenant object (id, name, slug) for CREATE operations,

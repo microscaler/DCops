@@ -50,13 +50,13 @@ spec:
   markPopulated: true
 
   # Tag references (optional)
-  # tags:
-  #   - apiGroup: dcops.microscaler.io
-  #     kind: NetBoxTag
-  #     name: dhcp-managed
-  #     namespace: default
-  #   - apiGroup: dcops.microscaler.io
-  #     kind: NetBoxTag
-  #     name: client-network
-  #     namespace: default
+  tags:
+    - apiGroup: dcops.microscaler.io
+      kind: NetBoxTag
+      name: dhcp-managed
+      namespace: default
+    - apiGroup: dcops.microscaler.io
+      kind: NetBoxTag
+      name: client-network
+      namespace: default
 

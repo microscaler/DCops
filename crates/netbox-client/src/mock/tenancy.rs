@@ -20,7 +20,7 @@ pub async fn get_tenant(client: &MockNetBoxClient, id: u64) -> Result<Tenant, Ne
             .ok_or_else(|| NetBoxError::NotFound(format!("Tenant {} not found", id)))
 }
 
-pub async fn create_tenant(client: &MockNetBoxClient, name: &str, slug: Option<&str>, description: Option<String>, comments: Option<String>, group: Option<u64>) -> Result<Tenant, NetBoxError> {
+pub async fn create_tenant(client: &MockNetBoxClient, name: &str, slug: Option<&str>, description: Option<String>, comments: Option<String>, group: Option<u64>, tags: Option<Vec<String>>) -> Result<Tenant, NetBoxError> {
         let id = client.next_id();
         let slug_value = slug.map(|s| s.to_string()).unwrap_or_else(|| name.to_lowercase().replace(' ', "-"));
         let tenant = Tenant {
@@ -38,6 +38,13 @@ pub async fn create_tenant(client: &MockNetBoxClient, name: &str, slug: Option<&
                 name: format!("Tenant Group {}", id),
                 slug: format!("tenant-group-{}", id),
             }),
+            tags: tags.unwrap_or_default().into_iter().map(|t| NestedTag {
+                id: 0,
+                url: String::new(),
+                display: t.clone(),
+                name: t,
+                slug: String::new(),
+            }).collect(),
             created: chrono::Utc::now().to_rfc3339(),
             last_updated: chrono::Utc::now().to_rfc3339(),
         };
@@ -46,7 +53,7 @@ pub async fn create_tenant(client: &MockNetBoxClient, name: &str, slug: Option<&
         Ok(tenant)
     }
 
-pub async fn update_tenant(client: &MockNetBoxClient, id: u64, name: Option<&str>, slug: Option<&str>, description: Option<String>, comments: Option<String>, group: Option<u64>) -> Result<Tenant, NetBoxError> {
+pub async fn update_tenant(client: &MockNetBoxClient, id: u64, name: Option<&str>, slug: Option<&str>, description: Option<String>, comments: Option<String>, group: Option<u64>, tags: Option<Vec<String>>) -> Result<Tenant, NetBoxError> {
         let mut tenants = client.tenants.lock().unwrap();
         let tenant = tenants.get_mut(&id)
             .ok_or_else(|| NetBoxError::NotFound(format!("Tenant {} not found", id)))?;
@@ -78,6 +85,16 @@ pub async fn update_tenant(client: &MockNetBoxClient, id: u64, name: Option<&str
             });
         }
         
+        if let Some(tags_vec) = tags {
+            tenant.tags = tags_vec.into_iter().map(|t| NestedTag {
+                id: 0,
+                url: String::new(),
+                display: t.clone(),
+                name: t,
+                slug: String::new(),
+            }).collect();
+        }
+        
         tenant.last_updated = chrono::Utc::now().to_rfc3339();
         Ok(tenant.clone())
     }
@@ -91,7 +108,7 @@ pub async fn get_tenant_group_by_name(client: &MockNetBoxClient, name: &str) -> 
         Ok(client.tenant_groups.lock().unwrap().get(name).cloned())
 }
 
-pub async fn create_tenant_group(client: &MockNetBoxClient, name: &str, slug: Option<&str>, description: Option<String>, comments: Option<String>, parent_id: Option<u64>) -> Result<TenantGroup, NetBoxError> {
+pub async fn create_tenant_group(client: &MockNetBoxClient, name: &str, slug: Option<&str>, description: Option<String>, comments: Option<String>, parent_id: Option<u64>, tags: Option<Vec<String>>) -> Result<TenantGroup, NetBoxError> {
         let id = client.next_id();
         let slug_value = slug.map(|s| s.to_string()).unwrap_or_else(|| name.to_lowercase().replace(' ', "-"));
         let tenant_group = TenantGroup {
@@ -105,6 +122,13 @@ pub async fn create_tenant_group(client: &MockNetBoxClient, name: &str, slug: Op
             parent: parent_id.map(|id| client.helpers().create_nested_tenant_group(id, None)),
             tenant_count: 0,
             _depth: None,
+            tags: tags.unwrap_or_default().into_iter().map(|t| NestedTag {
+                id: 0,
+                url: String::new(),
+                display: t.clone(),
+                name: t,
+                slug: String::new(),
+            }).collect(),
             created: chrono::Utc::now().to_rfc3339(),
             last_updated: chrono::Utc::now().to_rfc3339(),
         };
@@ -113,4 +137,45 @@ pub async fn create_tenant_group(client: &MockNetBoxClient, name: &str, slug: Op
         Ok(tenant_group)
     }
 
-    // Extras Operations
+pub async fn update_tenant_group(client: &MockNetBoxClient, id: u64, name: Option<&str>, slug: Option<&str>, description: Option<String>, comments: Option<String>, parent_id: Option<u64>, tags: Option<Vec<String>>) -> Result<TenantGroup, NetBoxError> {
+        let tenant_groups = client.tenant_groups.lock().unwrap();
+        let tenant_group = tenant_groups.values().find(|tg| tg.id == id)
+            .ok_or_else(|| NetBoxError::NotFound(format!("Tenant group {} not found", id)))?;
+        let mut updated = tenant_group.clone();
+        
+        if let Some(name_val) = name {
+            updated.name = name_val.to_string();
+            updated.display = name_val.to_string();
+        }
+        
+        if let Some(slug_val) = slug {
+            updated.slug = slug_val.to_string();
+        }
+        
+        if description.is_some() {
+            updated.description = description;
+        }
+        
+        if comments.is_some() {
+            updated.comments = comments;
+        }
+        
+        if let Some(parent) = parent_id {
+            updated.parent = Some(client.helpers().create_nested_tenant_group(parent, None));
+        }
+        
+        if let Some(tags_vec) = tags {
+            updated.tags = tags_vec.into_iter().map(|t| NestedTag {
+                id: 0,
+                url: String::new(),
+                display: t.clone(),
+                name: t,
+                slug: String::new(),
+            }).collect();
+        }
+        
+        updated.last_updated = chrono::Utc::now().to_rfc3339();
+        drop(tenant_groups);
+        client.tenant_groups.lock().unwrap().insert(updated.name.clone(), updated.clone());
+        Ok(updated)
+}

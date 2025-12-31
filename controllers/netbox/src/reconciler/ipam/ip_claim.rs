@@ -188,6 +188,8 @@ impl Reconciler {
         };
         
         // Allocate IP from NetBox
+        // Note: IPClaim doesn't have a tenant field, so we use None for tenant
+        // The tenant is determined by the prefix's tenant
         let allocation_request = AllocateIPRequest {
             address: claim.spec.preferred_ip.as_ref().map(|s| {
                 use std::str::FromStr;
@@ -198,6 +200,7 @@ impl Reconciler {
             status: Some(IPAddressStatus::Active),
             role: None,
             dns_name: None,
+            tenant: None, // IPClaim doesn't specify tenant directly - it's inherited from the prefix
             tags: tag_refs,
         };
         

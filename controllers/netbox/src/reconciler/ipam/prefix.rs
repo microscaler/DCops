@@ -47,6 +47,11 @@ impl Reconciler {
             return true;
         }
         
+        // Compare tags using helper function
+        if crate::reconcile_helpers::tags_differ(&existing.tags, &spec.tags) {
+            return true;
+        }
+        
         // Compare description - Prefix model has description as String, not Option<String>
         let spec_desc = spec.description.as_deref().unwrap_or("");
         if spec_desc != existing.description {
@@ -194,6 +199,39 @@ impl Reconciler {
             
             if status.state == PrefixState::Created && status.netbox_id.is_some() {
                 if let Some(netbox_id) = status.netbox_id {
+                    // Always resolve tags (even if nothing else changed, tags might need updating)
+                    info!("Resolving tags for prefix {}/{}: {:?}", namespace, name, prefix_crd.spec.tags);
+                    let resolved_tags_json = self.resolve_tag_references(
+                        netbox_client.as_ref(),
+                        &prefix_crd.spec.tags,
+                        namespace,
+                        name,
+                    ).await;
+                    
+                    info!("Resolved tags JSON for prefix {}/{}: {:?}", namespace, name, resolved_tags_json);
+                    
+                    // Convert resolved tags from Vec<serde_json::Value> to Vec<String>
+                    // Prefix client expects Vec<String> (tag IDs as strings)
+                    let resolved_tags: Option<Vec<String>> = resolved_tags_json.map(|tags| {
+                        tags.into_iter()
+                            .filter_map(|tag_value| {
+                                // Extract numeric ID from serde_json::Value
+                                if let Some(id) = tag_value.as_u64() {
+                                    Some(id.to_string())
+                                } else if let Some(dict) = tag_value.as_object() {
+                                    // If it's a dictionary, extract the slug
+                                    dict.get("slug")
+                                        .and_then(|v| v.as_str())
+                                        .map(|s| s.to_string())
+                                } else {
+                                    None
+                                }
+                            })
+                            .collect()
+                    });
+                    
+                    info!("Resolved tags for prefix {}/{} (converted to strings): {:?}", namespace, name, resolved_tags);
+                    
                     // Use helper function for drift detection, diffing, and updating
                     match check_and_update_existing(
                         netbox_client.as_ref(),
@@ -218,7 +256,7 @@ impl Reconciler {
                             Some(TenantId(tenant_id)), // tenant is now required
                             site_id.map(SiteId), // Include site if resolved
                             vlan_id.map(VlanId), // Include vlan if resolved
-                            None, // tags - omit for now
+                            resolved_tags, // tags - resolved from CRD references
                         ),
                     ).await {
                         Ok(Some(resource)) => {
@@ -407,23 +445,62 @@ impl Reconciler {
                     }
                 };
                 
+                // Always resolve tags before create/update
+                let resolved_tags_json = self.resolve_tag_references(
+                    netbox_client.as_ref(),
+                    &prefix_crd.spec.tags,
+                    namespace,
+                    name,
+                ).await;
+                
+                // Convert resolved tags from Vec<serde_json::Value> to Vec<String>
+                // Prefix client expects Vec<String> (tag IDs as strings)
+                let resolved_tags: Option<Vec<String>> = resolved_tags_json.map(|tags| {
+                    tags.into_iter()
+                        .filter_map(|tag_value| {
+                            // Extract numeric ID from serde_json::Value
+                            if let Some(id) = tag_value.as_u64() {
+                                Some(id.to_string())
+                            } else if let Some(dict) = tag_value.as_object() {
+                                // If it's a dictionary, extract the slug
+                                dict.get("slug")
+                                    .and_then(|v| v.as_str())
+                                    .map(|s| s.to_string())
+                            } else {
+                                None
+                            }
+                        })
+                        .collect()
+                });
+                
                 let netbox_prefix = if let Some(existing) = existing_prefix {
                     // Prefix exists in NetBox - this is the idempotent case
                     info!("Prefix {} already exists in NetBox (ID: {}), acknowledging existence (idempotency)", prefix_net, existing.id);
                     
-                    // Update prefix if needed (tenant, site, vlan, description, status)
-                    // Note: Omitting role and tags for now (requires numeric IDs or string slugs)
-                    match netbox_client.update_prefix(
-                        PrefixId(existing.id),
-                        None, // prefix - don't update prefix CIDR
-                        prefix_crd.spec.description.clone(),
-                        Some(status_str),
-                        None, // role - role_id not easily convertible to role name, omit for now
-                        Some(TenantId(tenant_id)), // tenant is now required
-                        site_id.map(SiteId), // Include site if resolved
-                        vlan_id.map(VlanId), // Include vlan if resolved
-                        None, // tags - omit for now (requires numeric IDs or tag slugs)
-                    ).await {
+                    // Check if update is needed
+                    let needs_update = Self::prefix_needs_update(
+                        &prefix_crd.spec,
+                        &existing,
+                        tenant_id,
+                        site_id,
+                        vlan_id,
+                        role_id,
+                        &status_str,
+                    );
+                    
+                    if needs_update {
+                        // Update prefix if needed (tenant, site, vlan, description, status, tags)
+                        match netbox_client.update_prefix(
+                            PrefixId(existing.id),
+                            None, // prefix - don't update prefix CIDR
+                            prefix_crd.spec.description.clone(),
+                            Some(status_str),
+                            None, // role - role_id not easily convertible to role name, omit for now
+                            Some(TenantId(tenant_id)), // tenant is now required
+                            site_id.map(SiteId), // Include site if resolved
+                            vlan_id.map(VlanId), // Include vlan if resolved
+                            resolved_tags.clone(), // tags - resolved from CRD references
+                        ).await {
                         Ok(updated) => {
                             info!("Updated prefix {} in NetBox (ID: {})", updated.prefix.to_string(), updated.id);
                             
@@ -443,13 +520,16 @@ impl Reconciler {
                             existing
                         }
                     }
+                    } else {
+                        // No changes needed
+                        existing
+                    }
                 } else {
                     // Prefix doesn't exist, create it
                     debug!("Attempting to create prefix {} in NetBox", prefix_net);
                     
                     // NetBox API requires site and role to be numeric IDs
-                    // Tags must be numeric IDs or tag slugs
-                    // TODO: Add support for resolving tag names to tag slugs
+                    // Tags are resolved from CRD references to tag IDs or slugs
                     match netbox_client.create_prefix(
                         &prefix_net,
                         prefix_crd.spec.description.clone(),
@@ -458,7 +538,7 @@ impl Reconciler {
                         Some(status_str),
                         role_id.map(RoleId),
                         Some(TenantId(tenant_id)), // tenant is now required
-                        None, // tags - omit for now (requires numeric IDs or tag slugs)
+                        resolved_tags, // tags - resolved from CRD references
                     ).await {
                         Ok(created) => {
                             info!("Created prefix {} in NetBox (ID: {})", created.prefix.to_string(), created.id);

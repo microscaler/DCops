@@ -86,6 +86,7 @@ pub async fn create_region(
     parent_id: Option<RegionId>,
     description: Option<String>,
     comments: Option<String>,
+    tags: Option<Vec<String>>,
 ) -> Result<Region, NetBoxError> {
     let url = format!("{}/api/dcim/regions/", core.base_url);
     debug!("Creating region {} in NetBox", name);
@@ -99,6 +100,8 @@ pub async fn create_region(
     helpers::add_nested_reference(&mut body, "parent", parent_id.map(|id| id.into()));
     helpers::add_optional_string_field_owned(&mut body, "description", description);
     helpers::add_optional_string_field_owned(&mut body, "comments", comments);
+    
+    helpers::add_optional_tags_field(&mut body, tags)?;
     
     let response = core.client
         .post(&url)
@@ -124,5 +127,51 @@ pub async fn create_region(
     serde_json::from_str(&response_text).map_err(|e| {
         NetBoxError::Api(format!("error decoding response body: {} - Response: {}", e, response_text))
     })
+}
+
+/// Update an existing region
+pub async fn update_region(
+    core: &NetBoxClientCore,
+    id: RegionId,
+    name: Option<&str>,
+    slug: Option<&str>,
+    parent_id: Option<RegionId>,
+    description: Option<String>,
+    comments: Option<String>,
+    tags: Option<Vec<String>>,
+) -> Result<Region, NetBoxError> {
+    let id_value: u64 = id.into();
+    let url = format!("{}/api/dcim/regions/{}/", core.base_url, id_value);
+    debug!("Updating region {} in NetBox", id_value);
+    
+    let mut body = serde_json::json!({});
+    
+    helpers::add_optional_string_field(&mut body, "name", name);
+    helpers::add_optional_string_field(&mut body, "slug", slug);
+    helpers::add_nested_reference(&mut body, "parent", parent_id.map(|id| id.into()));
+    helpers::add_optional_string_field_owned(&mut body, "description", description);
+    helpers::add_optional_string_field_owned(&mut body, "comments", comments);
+    helpers::add_optional_tags_field(&mut body, tags)?;
+    
+    let response = core.client
+        .patch(&url)
+        .header("Authorization", format!("Token {}", core.token))
+        .header("Accept", "application/json")
+        .header("Content-Type", "application/json")
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| NetBoxError::Http(e))?;
+    
+    if !response.status().is_success() {
+        let status = response.status();
+        let body_text = response.text().await.unwrap_or_default();
+        return Err(NetBoxError::Api(format!(
+            "Failed to update region {}: {} - {}",
+            id_value, status, body_text
+        )));
+    }
+    
+    response.json().await.map_err(|e| NetBoxError::Http(e))
 }
 

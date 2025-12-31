@@ -25,7 +25,8 @@ mod tests {
                 ..Default::default()
             },
             spec: crds::NetBoxIPAddressSpec {
-                address: "192.168.1.10/24".to_string(),
+                address: Some("192.168.1.10/24".to_string()),
+                ip_range: None,
                 tenant: crds::NetBoxResourceReference {
                     api_group: "dcops.microscaler.io".to_string(),
                     kind: "NetBoxTenant".to_string(),
@@ -343,7 +344,8 @@ mod tests {
                 ..Default::default()
             },
             spec: crds::NetBoxIPAddressSpec {
-                address: "invalid-ip-address".to_string(), // Invalid format
+                address: Some("invalid-ip-address".to_string()), // Invalid format
+                ip_range: None,
                 tenant: crds::NetBoxResourceReference {
                     api_group: "dcops.microscaler.io".to_string(),
                     kind: "NetBoxTenant".to_string(),
@@ -372,6 +374,437 @@ mod tests {
             assert!(format!("{}", e).contains("Invalid IP address format") || format!("{}", e).contains("Invalid input"), 
                 "Error should mention invalid IP address format: {}", e);
         }
+    }
+    
+    // ========== Tag Tests ==========
+    
+    #[tokio::test]
+    async fn test_reconcile_ip_address_with_tags_create() {
+        use crate::test_utils::mock_token_resolver::{MockTokenResolver, create_test_reconciler_with_mock_token_resolver};
+        use crate::test_utils::{create_test_netbox_tag, create_test_nested_tag};
+        use crate::kube_api_trait::KubeApiTrait;
+        use std::sync::Arc;
+        
+        // Setup: Create mock TokenResolver with MockNetBoxClient
+        let netbox_url = "http://test-netbox".to_string();
+        let mock_token_resolver = Arc::new(MockTokenResolver::new(netbox_url.clone()));
+        mock_token_resolver.add_secret("default", "netbox-token-datacenter-tenant", "test-token".to_string());
+        let mock_client = mock_token_resolver.mock_client();
+        
+        // Setup: Create test data
+        let (mut ip_address, tenant) = setup_ip_address_test_data();
+        ip_address.status = None;
+        ip_address.spec.tags = Some(vec![
+            crds::NetBoxResourceReference {
+                api_group: "dcops.microscaler.io".to_string(),
+                kind: "NetBoxTag".to_string(),
+                name: "production".to_string(),
+                namespace: Some("default".to_string()),
+            },
+            crds::NetBoxResourceReference {
+                api_group: "dcops.microscaler.io".to_string(),
+                kind: "NetBoxTag".to_string(),
+                name: "web-tier".to_string(),
+                namespace: Some("default".to_string()),
+            },
+        ]);
+        
+        // Setup: Create reconciler
+        let (reconciler, apis, _mock_event_recorder, _mock_secret_fetcher) = 
+            create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
+        
+        // Setup: Store test data
+        apis.tenant_api.store("datacenter-tenant".to_string(), tenant);
+        apis.ip_address_api.store("test-ip-address".to_string(), ip_address.clone());
+        
+        // Setup: Create tag CRDs with status
+        let tag1 = create_test_netbox_tag("production", "default", Some(10));
+        let tag2 = create_test_netbox_tag("web-tier", "default", Some(11));
+        apis.tag_api.store("production".to_string(), tag1);
+        apis.tag_api.store("web-tier".to_string(), tag2);
+        
+        // Setup: Add tags to mock NetBox
+        mock_client.add_tag(netbox_client::Tag {
+            id: 10,
+            url: format!("{}/api/extras/tags/10/", netbox_url),
+            display: "production".to_string(),
+            name: "production".to_string(),
+            slug: "production".to_string(),
+            color: "ff0000".to_string(),
+            description: None,
+            comments: None,
+            created: "2024-01-01T00:00:00Z".to_string(),
+            last_updated: "2024-01-01T00:00:00Z".to_string(),
+        });
+        mock_client.add_tag(netbox_client::Tag {
+            id: 11,
+            url: format!("{}/api/extras/tags/11/", netbox_url),
+            display: "web-tier".to_string(),
+            name: "web-tier".to_string(),
+            slug: "web-tier".to_string(),
+            color: "00ff00".to_string(),
+            description: None,
+            comments: None,
+            created: "2024-01-01T00:00:00Z".to_string(),
+            last_updated: "2024-01-01T00:00:00Z".to_string(),
+        });
+        
+        // Setup: Add tenant to mock NetBox
+        use netbox_client::Tenant;
+        let netbox_tenant = Tenant {
+            id: 1,
+            url: format!("{}/api/tenancy/tenants/1/", netbox_url),
+            display: "Data Center Operations".to_string(),
+            name: "Data Center Operations".to_string(),
+            slug: "datacenter-ops".to_string(),
+            description: None,
+            comments: None,
+            group: None,
+            created: "2024-01-01T00:00:00Z".to_string(),
+            last_updated: "2024-01-01T00:00:00Z".to_string(),
+        };
+        mock_client.add_tenant(netbox_tenant);
+        
+        // Setup: Mock IP address creation with tags
+        let ip_net = IpNet::from_str("192.168.1.10/24").unwrap();
+        let created_ip = netbox_client::IPAddress {
+            id: 42,
+            url: format!("{}/api/ipam/ip-addresses/42/", netbox_url),
+            display: "192.168.1.10/24".to_string(),
+            family: 4,
+            address: ip_net,
+            vrf: None,
+            tenant: Some(netbox_client::NestedTenant {
+                id: 1,
+                url: format!("{}/api/tenancy/tenants/1/", netbox_url),
+                display: "Data Center Operations".to_string(),
+                name: "Data Center Operations".to_string(),
+                slug: "datacenter-ops".to_string(),
+            }),
+            status: netbox_client::IPAddressStatus::Active,
+            role: None,
+            assigned_object_type: None,
+            assigned_object_id: None,
+            assigned_object: None,
+            nat_inside: None,
+            nat_outside: vec![],
+            dns_name: None,
+            description: "Test IP address".to_string(),
+            comments: String::new(),
+            tags: vec![
+                create_test_nested_tag(10, "production", &netbox_url),
+                create_test_nested_tag(11, "web-tier", &netbox_url),
+            ],
+            custom_fields: serde_json::json!({}),
+            created: "2024-01-01T00:00:00Z".to_string(),
+            last_updated: "2024-01-01T00:00:00Z".to_string(),
+        };
+        mock_client.add_ip_address(created_ip);
+        
+        // Execute: Reconcile
+        let result = reconciler.reconcile_netbox_ip_address(&ip_address).await;
+        
+        // Assert: Should succeed
+        assert!(result.is_ok(), "Reconciliation should succeed: {:?}", result.err());
+        
+        // Assert: Status should be updated with NetBox ID
+        let updated_crd = apis.ip_address_api.as_ref().get("test-ip-address").await.unwrap();
+        assert!(updated_crd.status.is_some(), "Status should be set");
+        let status = updated_crd.status.unwrap();
+        assert_eq!(status.netbox_id, Some(42), "NetBox ID should be 42");
+        assert_eq!(status.state, ResourceState::Created, "State should be Created");
+        
+        // Assert: Tags should be included in the create request
+        // (We can't directly verify this, but if reconciliation succeeds, tags were resolved)
+    }
+    
+    #[tokio::test]
+    async fn test_reconcile_ip_address_with_tags_update() {
+        use crate::test_utils::mock_token_resolver::{MockTokenResolver, create_test_reconciler_with_mock_token_resolver};
+        use crate::test_utils::{create_test_netbox_tag, create_test_nested_tag};
+        use crate::kube_api_trait::KubeApiTrait;
+        use std::sync::Arc;
+        
+        // Setup: Create mock TokenResolver
+        let netbox_url = "http://test-netbox".to_string();
+        let mock_token_resolver = Arc::new(MockTokenResolver::new(netbox_url.clone()));
+        mock_token_resolver.add_secret("default", "netbox-token-datacenter-tenant", "test-token".to_string());
+        let mock_client = mock_token_resolver.mock_client();
+        
+        // Setup: Create IP address with existing status and different tags
+        let (mut ip_address, tenant) = setup_ip_address_test_data();
+        ip_address.status = Some(crds::NetBoxIPAddressStatus {
+            netbox_id: Some(42),
+            netbox_url: Some(format!("{}/api/ipam/ip-addresses/42/", netbox_url)),
+            state: ResourceState::Created,
+            error: None,
+            last_reconciled: None,
+        });
+        ip_address.spec.tags = Some(vec![
+            crds::NetBoxResourceReference {
+                api_group: "dcops.microscaler.io".to_string(),
+                kind: "NetBoxTag".to_string(),
+                name: "production".to_string(),
+                namespace: Some("default".to_string()),
+            },
+        ]);
+        
+        // Setup: Create reconciler
+        let (reconciler, apis, _mock_event_recorder, _mock_secret_fetcher) = 
+            create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
+        
+        // Setup: Store test data
+        apis.tenant_api.store("datacenter-tenant".to_string(), tenant);
+        apis.ip_address_api.store("test-ip-address".to_string(), ip_address.clone());
+        
+        // Setup: Create tag CRD
+        let tag = create_test_netbox_tag("production", "default", Some(10));
+        apis.tag_api.store("production".to_string(), tag);
+        
+        // Setup: Add tag to mock NetBox
+        mock_client.add_tag(netbox_client::Tag {
+            id: 10,
+            url: format!("{}/api/extras/tags/10/", netbox_url),
+            display: "production".to_string(),
+            name: "production".to_string(),
+            slug: "production".to_string(),
+            color: "ff0000".to_string(),
+            description: None,
+            comments: None,
+            created: "2024-01-01T00:00:00Z".to_string(),
+            last_updated: "2024-01-01T00:00:00Z".to_string(),
+        });
+        
+        // Setup: Add tenant to mock NetBox
+        use netbox_client::Tenant;
+        let netbox_tenant = Tenant {
+            id: 1,
+            url: format!("{}/api/tenancy/tenants/1/", netbox_url),
+            display: "Data Center Operations".to_string(),
+            name: "Data Center Operations".to_string(),
+            slug: "datacenter-ops".to_string(),
+            description: None,
+            comments: None,
+            group: None,
+            created: "2024-01-01T00:00:00Z".to_string(),
+            last_updated: "2024-01-01T00:00:00Z".to_string(),
+        };
+        mock_client.add_tenant(netbox_tenant);
+        
+        // Setup: Mock existing IP address with different tags
+        let ip_net = IpNet::from_str("192.168.1.10/24").unwrap();
+        let existing_ip = netbox_client::IPAddress {
+            id: 42,
+            url: format!("{}/api/ipam/ip-addresses/42/", netbox_url),
+            display: "192.168.1.10/24".to_string(),
+            family: 4,
+            address: ip_net,
+            vrf: None,
+            tenant: Some(netbox_client::NestedTenant {
+                id: 1,
+                url: format!("{}/api/tenancy/tenants/1/", netbox_url),
+                display: "Data Center Operations".to_string(),
+                name: "Data Center Operations".to_string(),
+                slug: "datacenter-ops".to_string(),
+            }),
+            status: netbox_client::IPAddressStatus::Active,
+            role: None,
+            assigned_object_type: None,
+            assigned_object_id: None,
+            assigned_object: None,
+            nat_inside: None,
+            nat_outside: vec![],
+            dns_name: None,
+            description: "Test IP address".to_string(),
+            comments: String::new(),
+            tags: vec![create_test_nested_tag(20, "old-tag", &netbox_url)], // Different tag
+            custom_fields: serde_json::json!({}),
+            created: "2024-01-01T00:00:00Z".to_string(),
+            last_updated: "2024-01-01T00:00:00Z".to_string(),
+        };
+        mock_client.add_ip_address(existing_ip);
+        
+        // Execute: Reconcile
+        let result = reconciler.reconcile_netbox_ip_address(&ip_address).await;
+        
+        // Assert: Should succeed (tags differ, so update should be triggered)
+        assert!(result.is_ok(), "Reconciliation should succeed: {:?}", result.err());
+    }
+    
+    #[tokio::test]
+    async fn test_reconcile_ip_address_with_missing_tags() {
+        use crate::test_utils::mock_token_resolver::{MockTokenResolver, create_test_reconciler_with_mock_token_resolver};
+        use crate::kube_api_trait::KubeApiTrait;
+        use std::sync::Arc;
+        
+        // Setup: Create mock TokenResolver
+        let netbox_url = "http://test-netbox".to_string();
+        let mock_token_resolver = Arc::new(MockTokenResolver::new(netbox_url.clone()));
+        mock_token_resolver.add_secret("default", "netbox-token-datacenter-tenant", "test-token".to_string());
+        let mock_client = mock_token_resolver.mock_client();
+        
+        // Setup: Create IP address with tags that don't exist
+        let (mut ip_address, tenant) = setup_ip_address_test_data();
+        ip_address.status = None;
+        ip_address.spec.tags = Some(vec![
+            crds::NetBoxResourceReference {
+                api_group: "dcops.microscaler.io".to_string(),
+                kind: "NetBoxTag".to_string(),
+                name: "non-existent-tag".to_string(),
+                namespace: Some("default".to_string()),
+            },
+        ]);
+        
+        // Setup: Create reconciler
+        let (reconciler, apis, _mock_event_recorder, _mock_secret_fetcher) = 
+            create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
+        
+        // Setup: Store test data (no tag CRD, tag doesn't exist in NetBox)
+        apis.tenant_api.store("datacenter-tenant".to_string(), tenant);
+        apis.ip_address_api.store("test-ip-address".to_string(), ip_address.clone());
+        
+        // Setup: Add tenant to mock NetBox
+        use netbox_client::Tenant;
+        let netbox_tenant = Tenant {
+            id: 1,
+            url: format!("{}/api/tenancy/tenants/1/", netbox_url),
+            display: "Data Center Operations".to_string(),
+            name: "Data Center Operations".to_string(),
+            slug: "datacenter-ops".to_string(),
+            description: None,
+            comments: None,
+            group: None,
+            created: "2024-01-01T00:00:00Z".to_string(),
+            last_updated: "2024-01-01T00:00:00Z".to_string(),
+        };
+        mock_client.add_tenant(netbox_tenant);
+        
+        // Setup: Mock IP address creation (tags will be skipped since they don't exist)
+        let ip_net = IpNet::from_str("192.168.1.10/24").unwrap();
+        let created_ip = netbox_client::IPAddress {
+            id: 42,
+            url: format!("{}/api/ipam/ip-addresses/42/", netbox_url),
+            display: "192.168.1.10/24".to_string(),
+            family: 4,
+            address: ip_net,
+            vrf: None,
+            tenant: Some(netbox_client::NestedTenant {
+                id: 1,
+                url: format!("{}/api/tenancy/tenants/1/", netbox_url),
+                display: "Data Center Operations".to_string(),
+                name: "Data Center Operations".to_string(),
+                slug: "datacenter-ops".to_string(),
+            }),
+            status: netbox_client::IPAddressStatus::Active,
+            role: None,
+            assigned_object_type: None,
+            assigned_object_id: None,
+            assigned_object: None,
+            nat_inside: None,
+            nat_outside: vec![],
+            dns_name: None,
+            description: "Test IP address".to_string(),
+            comments: String::new(),
+            tags: vec![], // No tags since tag doesn't exist
+            custom_fields: serde_json::json!({}),
+            created: "2024-01-01T00:00:00Z".to_string(),
+            last_updated: "2024-01-01T00:00:00Z".to_string(),
+        };
+        mock_client.add_ip_address(created_ip);
+        
+        // Execute: Reconcile
+        let result = reconciler.reconcile_netbox_ip_address(&ip_address).await;
+        
+        // Assert: Should succeed (missing tags are skipped, not an error)
+        assert!(result.is_ok(), "Reconciliation should succeed even with missing tags: {:?}", result.err());
+    }
+    
+    #[tokio::test]
+    async fn test_reconcile_ip_address_with_invalid_tag_kind() {
+        use crate::test_utils::mock_token_resolver::{MockTokenResolver, create_test_reconciler_with_mock_token_resolver};
+        use crate::kube_api_trait::KubeApiTrait;
+        use std::sync::Arc;
+        
+        // Setup: Create mock TokenResolver
+        let netbox_url = "http://test-netbox".to_string();
+        let mock_token_resolver = Arc::new(MockTokenResolver::new(netbox_url.clone()));
+        mock_token_resolver.add_secret("default", "netbox-token-datacenter-tenant", "test-token".to_string());
+        let mock_client = mock_token_resolver.mock_client();
+        
+        // Setup: Create IP address with invalid tag kind
+        let (mut ip_address, tenant) = setup_ip_address_test_data();
+        ip_address.status = None;
+        ip_address.spec.tags = Some(vec![
+            crds::NetBoxResourceReference {
+                api_group: "dcops.microscaler.io".to_string(),
+                kind: "InvalidKind".to_string(), // Wrong kind
+                name: "some-tag".to_string(),
+                namespace: Some("default".to_string()),
+            },
+        ]);
+        
+        // Setup: Create reconciler
+        let (reconciler, apis, _mock_event_recorder, _mock_secret_fetcher) = 
+            create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
+        
+        // Setup: Store test data
+        apis.tenant_api.store("datacenter-tenant".to_string(), tenant);
+        apis.ip_address_api.store("test-ip-address".to_string(), ip_address.clone());
+        
+        // Setup: Add tenant to mock NetBox
+        use netbox_client::Tenant;
+        let netbox_tenant = Tenant {
+            id: 1,
+            url: format!("{}/api/tenancy/tenants/1/", netbox_url),
+            display: "Data Center Operations".to_string(),
+            name: "Data Center Operations".to_string(),
+            slug: "datacenter-ops".to_string(),
+            description: None,
+            comments: None,
+            group: None,
+            created: "2024-01-01T00:00:00Z".to_string(),
+            last_updated: "2024-01-01T00:00:00Z".to_string(),
+        };
+        mock_client.add_tenant(netbox_tenant);
+        
+        // Setup: Mock IP address creation
+        let ip_net = IpNet::from_str("192.168.1.10/24").unwrap();
+        let created_ip = netbox_client::IPAddress {
+            id: 42,
+            url: format!("{}/api/ipam/ip-addresses/42/", netbox_url),
+            display: "192.168.1.10/24".to_string(),
+            family: 4,
+            address: ip_net,
+            vrf: None,
+            tenant: Some(netbox_client::NestedTenant {
+                id: 1,
+                url: format!("{}/api/tenancy/tenants/1/", netbox_url),
+                display: "Data Center Operations".to_string(),
+                name: "Data Center Operations".to_string(),
+                slug: "datacenter-ops".to_string(),
+            }),
+            status: netbox_client::IPAddressStatus::Active,
+            role: None,
+            assigned_object_type: None,
+            assigned_object_id: None,
+            assigned_object: None,
+            nat_inside: None,
+            nat_outside: vec![],
+            dns_name: None,
+            description: "Test IP address".to_string(),
+            comments: String::new(),
+            tags: vec![], // Invalid tag kind should be skipped
+            custom_fields: serde_json::json!({}),
+            created: "2024-01-01T00:00:00Z".to_string(),
+            last_updated: "2024-01-01T00:00:00Z".to_string(),
+        };
+        mock_client.add_ip_address(created_ip);
+        
+        // Execute: Reconcile
+        let result = reconciler.reconcile_netbox_ip_address(&ip_address).await;
+        
+        // Assert: Should succeed (invalid tag kind is skipped, not an error)
+        assert!(result.is_ok(), "Reconciliation should succeed even with invalid tag kind: {:?}", result.err());
     }
 }
 

@@ -98,6 +98,7 @@ pub async fn create_tenant(
     description: Option<String>,
     comments: Option<String>,
     group: Option<u64>, // Tenant group ID
+    tags: Option<Vec<String>>,
 ) -> Result<Tenant, NetBoxError> {
     let url = format!("{}/api/tenancy/tenants/", core.base_url);
     debug!("Creating tenant {} in NetBox", name);
@@ -115,6 +116,8 @@ pub async fn create_tenant(
     } else {
         body["group"] = serde_json::Value::Null;
     }
+    
+    helpers::add_optional_tags_field(&mut body, tags)?;
     
     let response = core.client
         .post(&url)
@@ -147,6 +150,7 @@ pub async fn update_tenant(
     description: Option<String>,
     comments: Option<String>,
     group: Option<u64>, // Tenant group ID
+    tags: Option<Vec<String>>,
 ) -> Result<Tenant, NetBoxError> {
     let url = format!("{}/api/tenancy/tenants/{}/", core.base_url, id);
     debug!("Updating tenant {} in NetBox", id);
@@ -164,6 +168,8 @@ pub async fn update_tenant(
     helpers::add_optional_string_field_owned(&mut body, "description", description);
     helpers::add_optional_string_field_owned(&mut body, "comments", comments);
     helpers::add_nested_reference(&mut body, "group", group.map(|id| id.into()));
+    
+    helpers::add_optional_tags_field(&mut body, tags)?;
     
     let response = core.client
         .patch(&url)

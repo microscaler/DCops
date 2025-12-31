@@ -5,6 +5,7 @@
 use kube::CustomResource;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
+use crate::references::NetBoxResourceReference;
 
 /// NetBoxTagSpec defines the desired state of a NetBox tag
 #[derive(CustomResource, Debug, Clone, Serialize, Deserialize, JsonSchema)]
@@ -35,6 +36,17 @@ pub struct NetBoxTagSpec {
     /// Comments
     #[serde(skip_serializing_if = "Option::is_none")]
     pub comments: Option<String>,
+    
+    /// Tenant reference (optional)
+    /// 
+    /// If specified, the tag will be managed using this tenant's NetBox API token.
+    /// If not specified, the controller will attempt to find a tenant from resources
+    /// that reference this tag, or fall back to the system tenant.
+    /// 
+    /// Note: Tags in NetBox are global resources and don't have a tenant field.
+    /// This field only determines which API token to use for tag operations.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tenant: Option<NetBoxResourceReference>,
 }
 
 /// NetBoxTagStatus defines the observed state of a NetBox tag

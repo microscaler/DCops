@@ -72,6 +72,7 @@ pub async fn create_device_type(
     is_full_depth: Option<bool>,
     description: Option<String>,
     comments: Option<String>,
+    tags: Option<Vec<String>>,
 ) -> Result<DeviceType, NetBoxError> {
     let manufacturer_id_value: u64 = manufacturer_id.into();
     let url = format!("{}/api/dcim/device-types/", core.base_url);
@@ -95,6 +96,8 @@ pub async fn create_device_type(
     helpers::add_optional_string_field_owned(&mut body, "description", description);
     helpers::add_optional_string_field_owned(&mut body, "comments", comments);
     
+    helpers::add_optional_tags_field(&mut body, tags)?;
+    
     let response = core.client
         .post(&url)
         .header("Authorization", format!("Token {}", core.token))
@@ -111,6 +114,60 @@ pub async fn create_device_type(
         return Err(NetBoxError::Api(format!(
             "Failed to create device type: {} - {}",
             status, body
+        )));
+    }
+    
+    response.json().await.map_err(|e| NetBoxError::Http(e))
+}
+
+/// Update an existing device type
+pub async fn update_device_type(
+    core: &NetBoxClientCore,
+    id: DeviceTypeId,
+    manufacturer_id: Option<ManufacturerId>,
+    model: Option<&str>,
+    slug: Option<&str>,
+    part_number: Option<&str>,
+    u_height: Option<f64>,
+    is_full_depth: Option<bool>,
+    description: Option<String>,
+    comments: Option<String>,
+    tags: Option<Vec<String>>,
+) -> Result<DeviceType, NetBoxError> {
+    let id_value: u64 = id.into();
+    let url = format!("{}/api/dcim/device-types/{}/", core.base_url, id_value);
+    debug!("Updating device type {} in NetBox", id_value);
+    
+    let mut body = serde_json::json!({});
+    
+    helpers::add_nested_reference(&mut body, "manufacturer", manufacturer_id.map(|id| id.into()));
+    helpers::add_optional_string_field(&mut body, "model", model);
+    helpers::add_optional_string_field(&mut body, "slug", slug);
+    helpers::add_optional_string_field(&mut body, "part_number", part_number);
+    if let Some(height) = u_height {
+        body["u_height"] = serde_json::Value::Number(serde_json::Number::from_f64(height).unwrap_or_else(|| serde_json::Number::from(0)));
+    }
+    helpers::add_optional_bool_field(&mut body, "is_full_depth", is_full_depth);
+    helpers::add_optional_string_field_owned(&mut body, "description", description);
+    helpers::add_optional_string_field_owned(&mut body, "comments", comments);
+    helpers::add_optional_tags_field(&mut body, tags)?;
+    
+    let response = core.client
+        .patch(&url)
+        .header("Authorization", format!("Token {}", core.token))
+        .header("Accept", "application/json")
+        .header("Content-Type", "application/json")
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| NetBoxError::Http(e))?;
+    
+    if !response.status().is_success() {
+        let status = response.status();
+        let body_text = response.text().await.unwrap_or_default();
+        return Err(NetBoxError::Api(format!(
+            "Failed to update device type {}: {} - {}",
+            id_value, status, body_text
         )));
     }
     

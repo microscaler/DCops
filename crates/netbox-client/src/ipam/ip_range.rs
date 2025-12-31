@@ -133,10 +133,7 @@ pub async fn create_ip_range(
     if let Some(populated) = mark_populated {
         body["mark_populated"] = serde_json::Value::Bool(populated);
     }
-    if let Some(tags) = tags {
-        body["tags"] = serde_json::to_value(tags)
-            .map_err(|e| NetBoxError::Serialization(e))?;
-    }
+    helpers::add_optional_tags_field(&mut body, tags)?;
     
     let url = format!("{}/api/ipam/ip-ranges/", core.base_url);
     debug!("Creating IP range: {} - {}", start_str, end_str);
@@ -206,10 +203,7 @@ pub async fn update_ip_range(
     if let Some(populated) = mark_populated {
         body["mark_populated"] = serde_json::Value::Bool(populated);
     }
-    if let Some(tags) = tags {
-        body["tags"] = serde_json::to_value(tags)
-            .map_err(|e| NetBoxError::Serialization(e))?;
-    }
+    helpers::add_optional_tags_field(&mut body, tags)?;
     
     let id_value: u64 = id.into();
     let url = format!("{}/api/ipam/ip-ranges/{}/", core.base_url, id_value);

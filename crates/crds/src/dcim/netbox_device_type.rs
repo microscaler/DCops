@@ -47,6 +47,10 @@ pub struct NetBoxDeviceTypeSpec {
     /// Comments
     #[serde(skip_serializing_if = "Option::is_none")]
     pub comments: Option<String>,
+    
+    /// Tag references (references NetBoxTag CRDs)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tags: Option<Vec<NetBoxResourceReference>>,
 }
 
 fn default_u_height() -> f64 {

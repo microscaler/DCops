@@ -86,37 +86,77 @@ impl Reconciler {
         // Handle existing site group (from helper) or create new
         let netbox_site_group = match netbox_site_group {
             Some(site_group) => {
-                // Resource exists and is up-to-date - only update status if it changed
-                use crate::reconcile_helpers::status_needs_update;
-                let needs_status_update = status_needs_update(
-                    site_group_crd.status.as_ref(),
-                    site_group.id,
-                    &site_group.url,
-                    "Created",
-                    None,
-                );
+                // Always resolve tags (even if nothing else changed, tags might need updating)
+                let resolved_tags_json = self.resolve_tag_references(
+                    netbox_client.as_ref(),
+                    &site_group_crd.spec.tags,
+                    namespace,
+                    name,
+                ).await;
                 
-                if needs_status_update {
-                    use crate::reconcile_helpers::update_resource_status;
-                    let status_patch = Self::create_typed_site_group_status_patch(
+                let resolved_tags = crate::reconcile_helpers::convert_tags_to_strings(resolved_tags_json);
+                
+                // Check if tags need updating
+                let tags_need_update = crate::reconcile_helpers::tags_differ(&site_group.tags, &site_group_crd.spec.tags);
+                
+                if tags_need_update {
+                    info!("NetBoxSiteGroup {}/{} tags differ, updating in NetBox", namespace, name);
+                    match netbox_client.update_site_group(
+                        SiteGroupId(site_group.id),
+                        Some(&site_group_crd.spec.name),
+                        site_group_crd.spec.slug.as_deref(),
+                        parent_id.map(SiteGroupId),
+                        site_group_crd.spec.description.clone(),
+                        None, // comments
+                        resolved_tags,
+                    ).await {
+                        Ok(updated) => {
+                            info!("Updated NetBoxSiteGroup {}/{} tags in NetBox (ID: {})", namespace, name, updated.id);
+                            use crate::events::reasons;
+                            self.record_event_normal(
+                                reasons::UPDATED,
+                                &format!("Updated NetBoxSiteGroup {}/{} tags in NetBox", namespace, name),
+                                site_group_crd,
+                            ).await;
+                            updated
+                        }
+                        Err(e) => {
+                            warn!("Failed to update NetBoxSiteGroup {}/{} tags: {}", namespace, name, e);
+                            site_group // Use existing site group if update fails
+                        }
+                    }
+                } else {
+                    // Tags are up-to-date - check if status needs updating
+                    use crate::reconcile_helpers::status_needs_update;
+                    let needs_status_update = status_needs_update(
+                        site_group_crd.status.as_ref(),
                         site_group.id,
-                        site_group.url.clone(),
-                        ResourceState::Created,
+                        &site_group.url,
+                        "Created",
                         None,
                     );
-                    update_resource_status(
-                        &*self.netbox_site_group_api,
-                        name,
-                        namespace,
-                        &status_patch,
-                        "NetBoxSiteGroup",
-                        site_group.id,
-                    ).await?;
-                    debug!("Updated NetBoxSiteGroup {}/{} status: NetBox ID {}", namespace, name, site_group.id);
-                    return Ok(());
-                } else {
-                    debug!("NetBoxSiteGroup {}/{} already has correct status (ID: {}), skipping update", namespace, name, site_group.id);
-                    return Ok(());
+                    
+                    if needs_status_update {
+                        use crate::reconcile_helpers::update_resource_status;
+                        let status_patch = Self::create_typed_site_group_status_patch(
+                            site_group.id,
+                            site_group.url.clone(),
+                            ResourceState::Created,
+                            None,
+                        );
+                        update_resource_status(
+                            &*self.netbox_site_group_api,
+                            name,
+                            namespace,
+                            &status_patch,
+                            "NetBoxSiteGroup",
+                            site_group.id,
+                        ).await?;
+                        debug!("Updated NetBoxSiteGroup {}/{} status: NetBox ID {}", namespace, name, site_group.id);
+                    } else {
+                        debug!("NetBoxSiteGroup {}/{} already has correct status (ID: {}), skipping update", namespace, name, site_group.id);
+                    }
+                    site_group // Return existing site group
                 }
             }
             None => {
@@ -136,6 +176,16 @@ impl Reconciler {
                 if let Some(existing) = existing_site_group {
                     existing
                 } else {
+                    // Resolve tags before creation
+                    let resolved_tags_json = self.resolve_tag_references(
+                        netbox_client.as_ref(),
+                        &site_group_crd.spec.tags,
+                        namespace,
+                        name,
+                    ).await;
+                    
+                    let resolved_tags = crate::reconcile_helpers::convert_tags_to_strings(resolved_tags_json);
+                    
                     // Create site group
                     debug!("Attempting to create site group {} in NetBox", site_group_crd.spec.name);
                     match netbox_client.create_site_group(
@@ -144,6 +194,7 @@ impl Reconciler {
                         parent_id.map(SiteGroupId),
                         site_group_crd.spec.description.clone(),
                         None, // comments - not in CRD spec yet
+                        resolved_tags,
                     ).await {
                         Ok(created) => {
                             info!("Created site group {} in NetBox (ID: {})", created.name, created.id);

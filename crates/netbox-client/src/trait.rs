@@ -52,7 +52,8 @@ pub trait NetBoxClientTrait: Send + Sync {
     
     async fn query_rirs(&self, filters: &[(&str, &str)], fetch_all: bool) -> Result<Vec<Rir>, NetBoxError>;
     async fn get_rir_by_name(&self, name: &str) -> Result<Option<Rir>, NetBoxError>;
-    async fn create_rir(&self, name: &str, slug: Option<&str>, description: Option<String>, is_private: Option<bool>) -> Result<Rir, NetBoxError>;
+    async fn create_rir(&self, name: &str, slug: Option<&str>, description: Option<String>, is_private: Option<bool>, tags: Option<Vec<String>>) -> Result<Rir, NetBoxError>;
+    async fn update_rir(&self, id: RirId, name: Option<&str>, slug: Option<&str>, description: Option<String>, is_private: Option<bool>, tags: Option<Vec<String>>) -> Result<Rir, NetBoxError>;
     
     async fn create_vlan(&self, vid: u16, name: &str, site_id: Option<SiteId>, group_id: Option<VlanGroupId>, tenant_id: Option<TenantId>, role_id: Option<RoleId>, status: Option<&str>, description: Option<String>, comments: Option<String>) -> Result<Vlan, NetBoxError>;
     async fn update_vlan(&self, id: VlanId, vid: Option<u16>, name: Option<&str>, site_id: Option<SiteId>, group_id: Option<VlanGroupId>, tenant_id: Option<TenantId>, role_id: Option<RoleId>, status: Option<&str>, description: Option<String>, comments: Option<String>) -> Result<Vlan, NetBoxError>;
@@ -85,48 +86,57 @@ pub trait NetBoxClientTrait: Send + Sync {
     async fn query_regions(&self, filters: &[(&str, &str)], fetch_all: bool) -> Result<Vec<Region>, NetBoxError>;
     async fn get_region(&self, id: RegionId) -> Result<Region, NetBoxError>;
     async fn get_region_by_name(&self, name: &str) -> Result<Option<Region>, NetBoxError>;
-    async fn create_region(&self, name: &str, slug: Option<&str>, parent_id: Option<RegionId>, description: Option<String>, comments: Option<String>) -> Result<Region, NetBoxError>;
+    async fn create_region(&self, name: &str, slug: Option<&str>, parent_id: Option<RegionId>, description: Option<String>, comments: Option<String>, tags: Option<Vec<String>>) -> Result<Region, NetBoxError>;
+    async fn update_region(&self, id: RegionId, name: Option<&str>, slug: Option<&str>, parent_id: Option<RegionId>, description: Option<String>, comments: Option<String>, tags: Option<Vec<String>>) -> Result<Region, NetBoxError>;
     
     async fn query_site_groups(&self, filters: &[(&str, &str)], fetch_all: bool) -> Result<Vec<SiteGroup>, NetBoxError>;
     async fn get_site_group(&self, id: SiteGroupId) -> Result<SiteGroup, NetBoxError>;
     async fn get_site_group_by_name(&self, name: &str) -> Result<Option<SiteGroup>, NetBoxError>;
-    async fn create_site_group(&self, name: &str, slug: Option<&str>, parent_id: Option<SiteGroupId>, description: Option<String>, comments: Option<String>) -> Result<SiteGroup, NetBoxError>;
+    async fn create_site_group(&self, name: &str, slug: Option<&str>, parent_id: Option<SiteGroupId>, description: Option<String>, comments: Option<String>, tags: Option<Vec<String>>) -> Result<SiteGroup, NetBoxError>;
+    async fn update_site_group(&self, id: SiteGroupId, name: Option<&str>, slug: Option<&str>, parent_id: Option<SiteGroupId>, description: Option<String>, comments: Option<String>, tags: Option<Vec<String>>) -> Result<SiteGroup, NetBoxError>;
     
     async fn query_locations(&self, filters: &[(&str, &str)], fetch_all: bool) -> Result<Vec<Location>, NetBoxError>;
     async fn get_location(&self, id: LocationId) -> Result<Location, NetBoxError>;
     async fn get_location_by_name(&self, site_id: SiteId, name: &str) -> Result<Option<Location>, NetBoxError>;
-    async fn create_location(&self, site_id: SiteId, name: &str, slug: Option<&str>, parent_id: Option<LocationId>, tenant_id: Option<TenantId>, facility: Option<&str>, description: Option<String>, comments: Option<String>) -> Result<Location, NetBoxError>;
+    async fn create_location(&self, site_id: SiteId, name: &str, slug: Option<&str>, parent_id: Option<LocationId>, tenant_id: Option<TenantId>, facility: Option<&str>, description: Option<String>, comments: Option<String>, tags: Option<Vec<String>>) -> Result<Location, NetBoxError>;
+    async fn update_location(&self, id: LocationId, name: Option<&str>, slug: Option<&str>, parent_id: Option<LocationId>, tenant_id: Option<TenantId>, facility: Option<&str>, description: Option<String>, comments: Option<String>, tags: Option<Vec<String>>) -> Result<Location, NetBoxError>;
     
     async fn query_device_roles(&self, filters: &[(&str, &str)], fetch_all: bool) -> Result<Vec<DeviceRole>, NetBoxError>;
     async fn get_device_role_by_name(&self, name: &str) -> Result<Option<DeviceRole>, NetBoxError>;
-    async fn create_device_role(&self, name: &str, slug: Option<&str>, color: Option<&str>, vm_role: Option<bool>, description: Option<String>, comments: Option<String>) -> Result<DeviceRole, NetBoxError>;
+    async fn create_device_role(&self, name: &str, slug: Option<&str>, color: Option<&str>, vm_role: Option<bool>, description: Option<String>, comments: Option<String>, tags: Option<Vec<String>>) -> Result<DeviceRole, NetBoxError>;
+    async fn update_device_role(&self, id: DeviceRoleId, name: Option<&str>, slug: Option<&str>, color: Option<&str>, vm_role: Option<bool>, description: Option<String>, comments: Option<String>, tags: Option<Vec<String>>) -> Result<DeviceRole, NetBoxError>;
     
     async fn query_manufacturers(&self, filters: &[(&str, &str)], fetch_all: bool) -> Result<Vec<Manufacturer>, NetBoxError>;
     async fn get_manufacturer_by_name(&self, name: &str) -> Result<Option<Manufacturer>, NetBoxError>;
-    async fn create_manufacturer(&self, name: &str, slug: Option<&str>, description: Option<String>) -> Result<Manufacturer, NetBoxError>;
+    async fn create_manufacturer(&self, name: &str, slug: Option<&str>, description: Option<String>, tags: Option<Vec<String>>) -> Result<Manufacturer, NetBoxError>;
+    async fn update_manufacturer(&self, id: ManufacturerId, name: Option<&str>, slug: Option<&str>, description: Option<String>, tags: Option<Vec<String>>) -> Result<Manufacturer, NetBoxError>;
     
     async fn query_platforms(&self, filters: &[(&str, &str)], fetch_all: bool) -> Result<Vec<Platform>, NetBoxError>;
     async fn get_platform_by_name(&self, name: &str) -> Result<Option<Platform>, NetBoxError>;
-    async fn create_platform(&self, name: &str, slug: Option<&str>, manufacturer_id: Option<ManufacturerId>, napalm_driver: Option<&str>, napalm_args: Option<&str>, description: Option<String>, comments: Option<String>) -> Result<Platform, NetBoxError>;
+    async fn create_platform(&self, name: &str, slug: Option<&str>, manufacturer_id: Option<ManufacturerId>, napalm_driver: Option<&str>, napalm_args: Option<&str>, description: Option<String>, comments: Option<String>, tags: Option<Vec<String>>) -> Result<Platform, NetBoxError>;
+    async fn update_platform(&self, id: PlatformId, name: Option<&str>, slug: Option<&str>, manufacturer_id: Option<ManufacturerId>, napalm_driver: Option<&str>, napalm_args: Option<&str>, description: Option<String>, comments: Option<String>, tags: Option<Vec<String>>) -> Result<Platform, NetBoxError>;
     
     async fn query_device_types(&self, filters: &[(&str, &str)], fetch_all: bool) -> Result<Vec<DeviceType>, NetBoxError>;
     async fn get_device_type_by_model(&self, manufacturer_id: ManufacturerId, model: &str) -> Result<Option<DeviceType>, NetBoxError>;
-    async fn create_device_type(&self, manufacturer_id: ManufacturerId, model: &str, slug: Option<&str>, part_number: Option<&str>, u_height: Option<f64>, is_full_depth: Option<bool>, description: Option<String>, comments: Option<String>) -> Result<DeviceType, NetBoxError>;
+    async fn create_device_type(&self, manufacturer_id: ManufacturerId, model: &str, slug: Option<&str>, part_number: Option<&str>, u_height: Option<f64>, is_full_depth: Option<bool>, description: Option<String>, comments: Option<String>, tags: Option<Vec<String>>) -> Result<DeviceType, NetBoxError>;
+    async fn update_device_type(&self, id: DeviceTypeId, manufacturer_id: Option<ManufacturerId>, model: Option<&str>, slug: Option<&str>, part_number: Option<&str>, u_height: Option<f64>, is_full_depth: Option<bool>, description: Option<String>, comments: Option<String>, tags: Option<Vec<String>>) -> Result<DeviceType, NetBoxError>;
 
     // Tenancy Operations
     async fn query_tenants(&self, filters: &[(&str, &str)], fetch_all: bool) -> Result<Vec<Tenant>, NetBoxError>;
     async fn get_tenant(&self, id: TenantId) -> Result<Tenant, NetBoxError>;
-    async fn create_tenant(&self, name: &str, slug: Option<&str>, description: Option<String>, comments: Option<String>, group: Option<TenantGroupId>) -> Result<Tenant, NetBoxError>;
-    async fn update_tenant(&self, id: TenantId, name: Option<&str>, slug: Option<&str>, description: Option<String>, comments: Option<String>, group: Option<TenantGroupId>) -> Result<Tenant, NetBoxError>;
+    async fn create_tenant(&self, name: &str, slug: Option<&str>, description: Option<String>, comments: Option<String>, group: Option<TenantGroupId>, tags: Option<Vec<String>>) -> Result<Tenant, NetBoxError>;
+    async fn update_tenant(&self, id: TenantId, name: Option<&str>, slug: Option<&str>, description: Option<String>, comments: Option<String>, group: Option<TenantGroupId>, tags: Option<Vec<String>>) -> Result<Tenant, NetBoxError>;
     
     async fn query_tenant_groups(&self, filters: &[(&str, &str)], fetch_all: bool) -> Result<Vec<TenantGroup>, NetBoxError>;
     async fn get_tenant_group_by_name(&self, name: &str) -> Result<Option<TenantGroup>, NetBoxError>;
-    async fn create_tenant_group(&self, name: &str, slug: Option<&str>, description: Option<String>, comments: Option<String>, parent_id: Option<TenantGroupId>) -> Result<TenantGroup, NetBoxError>;
+    async fn create_tenant_group(&self, name: &str, slug: Option<&str>, description: Option<String>, comments: Option<String>, parent_id: Option<TenantGroupId>, tags: Option<Vec<String>>) -> Result<TenantGroup, NetBoxError>;
+    async fn update_tenant_group(&self, id: TenantGroupId, name: Option<&str>, slug: Option<&str>, description: Option<String>, comments: Option<String>, parent_id: Option<TenantGroupId>, tags: Option<Vec<String>>) -> Result<TenantGroup, NetBoxError>;
 
     // Extras Operations
     async fn query_roles(&self, filters: &[(&str, &str)], fetch_all: bool) -> Result<Vec<Role>, NetBoxError>;
     async fn get_role(&self, id: RoleId) -> Result<Role, NetBoxError>;
-    async fn create_role(&self, name: &str, slug: Option<&str>, description: Option<String>, weight: Option<u16>, comments: Option<String>) -> Result<Role, NetBoxError>;
+    async fn create_role(&self, name: &str, slug: Option<&str>, description: Option<String>, weight: Option<u16>, comments: Option<String>, tags: Option<Vec<String>>) -> Result<Role, NetBoxError>;
+    async fn update_role(&self, id: RoleId, name: Option<&str>, slug: Option<&str>, description: Option<String>, weight: Option<u16>, comments: Option<String>, tags: Option<Vec<String>>) -> Result<Role, NetBoxError>;
     
     async fn query_tags(&self, filters: &[(&str, &str)], fetch_all: bool) -> Result<Vec<Tag>, NetBoxError>;
     async fn get_tag(&self, id: u64) -> Result<Tag, NetBoxError>;

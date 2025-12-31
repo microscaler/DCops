@@ -520,6 +520,41 @@ spec:
                 description: Tenant slug (optional, auto-generated from name if not provided)
                 nullable: true
                 type: string
+              tags:
+                description: Tag references (references NetBoxTag CRDs)
+                items:
+                  description: |-
+                    Kubernetes-compliant resource reference for NetBox CRDs
+
+                    This follows the Kubernetes `TypedLocalObjectReference` pattern, which includes:
+                    - `apiGroup`: The API group of the referenced resource (e.g., "dcops.microscaler.io")
+                    - `kind`: The kind of the referenced resource (e.g., "NetBoxSite")
+                    - `name`: The name of the referenced resource (required)
+                    - `namespace`: The namespace of the referenced resource (optional, defaults to same namespace)
+
+                    This enables Kubernetes to validate reference types and provides clear documentation
+                    of what resource type is expected.
+                  properties:
+                    apiGroup:
+                      description: API group of the referenced resource (e.g., "dcops.microscaler.io")
+                      type: string
+                    kind:
+                      description: Kind of the referenced resource (e.g., "NetBoxSite", "NetBoxTenant")
+                      type: string
+                    name:
+                      description: Name of the referenced NetBox CRD resource
+                      type: string
+                    namespace:
+                      description: Namespace of the referenced resource (defaults to same namespace as the referencing resource)
+                      nullable: true
+                      type: string
+                  required:
+                  - apiGroup
+                  - kind
+                  - name
+                  type: object
+                nullable: true
+                type: array
               tokenSecret:
                 description: |-
                   Secret reference containing the NetBox API token for this tenant
@@ -645,6 +680,41 @@ spec:
                 description: Region slug (optional, auto-generated from name if not provided)
                 nullable: true
                 type: string
+              tags:
+                description: Tag references (references NetBoxTag CRDs)
+                items:
+                  description: |-
+                    Kubernetes-compliant resource reference for NetBox CRDs
+
+                    This follows the Kubernetes `TypedLocalObjectReference` pattern, which includes:
+                    - `apiGroup`: The API group of the referenced resource (e.g., "dcops.microscaler.io")
+                    - `kind`: The kind of the referenced resource (e.g., "NetBoxSite")
+                    - `name`: The name of the referenced resource (required)
+                    - `namespace`: The namespace of the referenced resource (optional, defaults to same namespace)
+
+                    This enables Kubernetes to validate reference types and provides clear documentation
+                    of what resource type is expected.
+                  properties:
+                    apiGroup:
+                      description: API group of the referenced resource (e.g., "dcops.microscaler.io")
+                      type: string
+                    kind:
+                      description: Kind of the referenced resource (e.g., "NetBoxSite", "NetBoxTenant")
+                      type: string
+                    name:
+                      description: Name of the referenced NetBox CRD resource
+                      type: string
+                    namespace:
+                      description: Namespace of the referenced resource (defaults to same namespace as the referencing resource)
+                      nullable: true
+                      type: string
+                  required:
+                  - apiGroup
+                  - kind
+                  - name
+                  type: object
+                nullable: true
+                type: array
             required:
             - name
             type: object
@@ -747,6 +817,41 @@ spec:
                 description: Site group slug (optional, auto-generated from name if not provided)
                 nullable: true
                 type: string
+              tags:
+                description: Tag references (references NetBoxTag CRDs)
+                items:
+                  description: |-
+                    Kubernetes-compliant resource reference for NetBox CRDs
+
+                    This follows the Kubernetes `TypedLocalObjectReference` pattern, which includes:
+                    - `apiGroup`: The API group of the referenced resource (e.g., "dcops.microscaler.io")
+                    - `kind`: The kind of the referenced resource (e.g., "NetBoxSite")
+                    - `name`: The name of the referenced resource (required)
+                    - `namespace`: The namespace of the referenced resource (optional, defaults to same namespace)
+
+                    This enables Kubernetes to validate reference types and provides clear documentation
+                    of what resource type is expected.
+                  properties:
+                    apiGroup:
+                      description: API group of the referenced resource (e.g., "dcops.microscaler.io")
+                      type: string
+                    kind:
+                      description: Kind of the referenced resource (e.g., "NetBoxSite", "NetBoxTenant")
+                      type: string
+                    name:
+                      description: Name of the referenced NetBox CRD resource
+                      type: string
+                    namespace:
+                      description: Namespace of the referenced resource (defaults to same namespace as the referencing resource)
+                      nullable: true
+                      type: string
+                  required:
+                  - apiGroup
+                  - kind
+                  - name
+                  type: object
+                nullable: true
+                type: array
             required:
             - name
             type: object
@@ -876,6 +981,41 @@ spec:
                 description: Location slug (optional, auto-generated from name if not provided)
                 nullable: true
                 type: string
+              tags:
+                description: Tag references (references NetBoxTag CRDs)
+                items:
+                  description: |-
+                    Kubernetes-compliant resource reference for NetBox CRDs
+
+                    This follows the Kubernetes `TypedLocalObjectReference` pattern, which includes:
+                    - `apiGroup`: The API group of the referenced resource (e.g., "dcops.microscaler.io")
+                    - `kind`: The kind of the referenced resource (e.g., "NetBoxSite")
+                    - `name`: The name of the referenced resource (required)
+                    - `namespace`: The namespace of the referenced resource (optional, defaults to same namespace)
+
+                    This enables Kubernetes to validate reference types and provides clear documentation
+                    of what resource type is expected.
+                  properties:
+                    apiGroup:
+                      description: API group of the referenced resource (e.g., "dcops.microscaler.io")
+                      type: string
+                    kind:
+                      description: Kind of the referenced resource (e.g., "NetBoxSite", "NetBoxTenant")
+                      type: string
+                    name:
+                      description: Name of the referenced NetBox CRD resource
+                      type: string
+                    namespace:
+                      description: Namespace of the referenced resource (defaults to same namespace as the referencing resource)
+                      nullable: true
+                      type: string
+                  required:
+                  - apiGroup
+                  - kind
+                  - name
+                  type: object
+                nullable: true
+                type: array
               tenant:
                 description: |-
                   Tenant reference (references NetBoxTenant CRD, required)
@@ -1620,6 +1760,41 @@ spec:
                 description: Role slug (optional, auto-generated from name if not provided)
                 nullable: true
                 type: string
+              tags:
+                description: Tag references (references NetBoxTag CRDs)
+                items:
+                  description: |-
+                    Kubernetes-compliant resource reference for NetBox CRDs
+
+                    This follows the Kubernetes `TypedLocalObjectReference` pattern, which includes:
+                    - `apiGroup`: The API group of the referenced resource (e.g., "dcops.microscaler.io")
+                    - `kind`: The kind of the referenced resource (e.g., "NetBoxSite")
+                    - `name`: The name of the referenced resource (required)
+                    - `namespace`: The namespace of the referenced resource (optional, defaults to same namespace)
+
+                    This enables Kubernetes to validate reference types and provides clear documentation
+                    of what resource type is expected.
+                  properties:
+                    apiGroup:
+                      description: API group of the referenced resource (e.g., "dcops.microscaler.io")
+                      type: string
+                    kind:
+                      description: Kind of the referenced resource (e.g., "NetBoxSite", "NetBoxTenant")
+                      type: string
+                    name:
+                      description: Name of the referenced NetBox CRD resource
+                      type: string
+                    namespace:
+                      description: Namespace of the referenced resource (defaults to same namespace as the referencing resource)
+                      nullable: true
+                      type: string
+                  required:
+                  - apiGroup
+                  - kind
+                  - name
+                  type: object
+                nullable: true
+                type: array
               weight:
                 description: Weight (for ordering)
                 format: uint16
@@ -1715,6 +1890,36 @@ spec:
                 description: Tag slug (optional, auto-generated from name if not provided)
                 nullable: true
                 type: string
+              tenant:
+                description: |-
+                  Tenant reference (optional)
+
+                  If specified, the tag will be managed using this tenant's NetBox API token.
+                  If not specified, the controller will attempt to find a tenant from resources
+                  that reference this tag, or fall back to the system tenant.
+
+                  Note: Tags in NetBox are global resources and don't have a tenant field.
+                  This field only determines which API token to use for tag operations.
+                nullable: true
+                properties:
+                  apiGroup:
+                    description: API group of the referenced resource (e.g., "dcops.microscaler.io")
+                    type: string
+                  kind:
+                    description: Kind of the referenced resource (e.g., "NetBoxSite", "NetBoxTenant")
+                    type: string
+                  name:
+                    description: Name of the referenced NetBox CRD resource
+                    type: string
+                  namespace:
+                    description: Namespace of the referenced resource (defaults to same namespace as the referencing resource)
+                    nullable: true
+                    type: string
+                required:
+                - apiGroup
+                - kind
+                - name
+                type: object
             required:
             - name
             type: object
@@ -2075,6 +2280,41 @@ spec:
                 description: RIR slug (optional, auto-generated from name if not provided)
                 nullable: true
                 type: string
+              tags:
+                description: Tag references (references NetBoxTag CRDs)
+                items:
+                  description: |-
+                    Kubernetes-compliant resource reference for NetBox CRDs
+
+                    This follows the Kubernetes `TypedLocalObjectReference` pattern, which includes:
+                    - `apiGroup`: The API group of the referenced resource (e.g., "dcops.microscaler.io")
+                    - `kind`: The kind of the referenced resource (e.g., "NetBoxSite")
+                    - `name`: The name of the referenced resource (required)
+                    - `namespace`: The namespace of the referenced resource (optional, defaults to same namespace)
+
+                    This enables Kubernetes to validate reference types and provides clear documentation
+                    of what resource type is expected.
+                  properties:
+                    apiGroup:
+                      description: API group of the referenced resource (e.g., "dcops.microscaler.io")
+                      type: string
+                    kind:
+                      description: Kind of the referenced resource (e.g., "NetBoxSite", "NetBoxTenant")
+                      type: string
+                    name:
+                      description: Name of the referenced NetBox CRD resource
+                      type: string
+                    namespace:
+                      description: Namespace of the referenced resource (defaults to same namespace as the referencing resource)
+                      nullable: true
+                      type: string
+                  required:
+                  - apiGroup
+                  - kind
+                  - name
+                  type: object
+                nullable: true
+                type: array
             required:
             - name
             type: object
@@ -2319,6 +2559,41 @@ spec:
                 description: Device role slug (optional, auto-generated from name if not provided)
                 nullable: true
                 type: string
+              tags:
+                description: Tag references (references NetBoxTag CRDs)
+                items:
+                  description: |-
+                    Kubernetes-compliant resource reference for NetBox CRDs
+
+                    This follows the Kubernetes `TypedLocalObjectReference` pattern, which includes:
+                    - `apiGroup`: The API group of the referenced resource (e.g., "dcops.microscaler.io")
+                    - `kind`: The kind of the referenced resource (e.g., "NetBoxSite")
+                    - `name`: The name of the referenced resource (required)
+                    - `namespace`: The namespace of the referenced resource (optional, defaults to same namespace)
+
+                    This enables Kubernetes to validate reference types and provides clear documentation
+                    of what resource type is expected.
+                  properties:
+                    apiGroup:
+                      description: API group of the referenced resource (e.g., "dcops.microscaler.io")
+                      type: string
+                    kind:
+                      description: Kind of the referenced resource (e.g., "NetBoxSite", "NetBoxTenant")
+                      type: string
+                    name:
+                      description: Name of the referenced NetBox CRD resource
+                      type: string
+                    namespace:
+                      description: Namespace of the referenced resource (defaults to same namespace as the referencing resource)
+                      nullable: true
+                      type: string
+                  required:
+                  - apiGroup
+                  - kind
+                  - name
+                  type: object
+                nullable: true
+                type: array
               vmRole:
                 default: false
                 description: Virtual machine role (if true, can be assigned to VMs)
@@ -2403,6 +2678,41 @@ spec:
                 description: Manufacturer slug (optional, auto-generated from name if not provided)
                 nullable: true
                 type: string
+              tags:
+                description: Tag references (references NetBoxTag CRDs)
+                items:
+                  description: |-
+                    Kubernetes-compliant resource reference for NetBox CRDs
+
+                    This follows the Kubernetes `TypedLocalObjectReference` pattern, which includes:
+                    - `apiGroup`: The API group of the referenced resource (e.g., "dcops.microscaler.io")
+                    - `kind`: The kind of the referenced resource (e.g., "NetBoxSite")
+                    - `name`: The name of the referenced resource (required)
+                    - `namespace`: The namespace of the referenced resource (optional, defaults to same namespace)
+
+                    This enables Kubernetes to validate reference types and provides clear documentation
+                    of what resource type is expected.
+                  properties:
+                    apiGroup:
+                      description: API group of the referenced resource (e.g., "dcops.microscaler.io")
+                      type: string
+                    kind:
+                      description: Kind of the referenced resource (e.g., "NetBoxSite", "NetBoxTenant")
+                      type: string
+                    name:
+                      description: Name of the referenced NetBox CRD resource
+                      type: string
+                    namespace:
+                      description: Namespace of the referenced resource (defaults to same namespace as the referencing resource)
+                      nullable: true
+                      type: string
+                  required:
+                  - apiGroup
+                  - kind
+                  - name
+                  type: object
+                nullable: true
+                type: array
             required:
             - name
             type: object
@@ -2517,6 +2827,41 @@ spec:
                 description: Platform slug (optional, auto-generated from name if not provided)
                 nullable: true
                 type: string
+              tags:
+                description: Tag references (references NetBoxTag CRDs)
+                items:
+                  description: |-
+                    Kubernetes-compliant resource reference for NetBox CRDs
+
+                    This follows the Kubernetes `TypedLocalObjectReference` pattern, which includes:
+                    - `apiGroup`: The API group of the referenced resource (e.g., "dcops.microscaler.io")
+                    - `kind`: The kind of the referenced resource (e.g., "NetBoxSite")
+                    - `name`: The name of the referenced resource (required)
+                    - `namespace`: The namespace of the referenced resource (optional, defaults to same namespace)
+
+                    This enables Kubernetes to validate reference types and provides clear documentation
+                    of what resource type is expected.
+                  properties:
+                    apiGroup:
+                      description: API group of the referenced resource (e.g., "dcops.microscaler.io")
+                      type: string
+                    kind:
+                      description: Kind of the referenced resource (e.g., "NetBoxSite", "NetBoxTenant")
+                      type: string
+                    name:
+                      description: Name of the referenced NetBox CRD resource
+                      type: string
+                    namespace:
+                      description: Namespace of the referenced resource (defaults to same namespace as the referencing resource)
+                      nullable: true
+                      type: string
+                  required:
+                  - apiGroup
+                  - kind
+                  - name
+                  type: object
+                nullable: true
+                type: array
             required:
             - name
             type: object
@@ -2630,6 +2975,41 @@ spec:
                 description: Device type slug (optional, auto-generated from model if not provided)
                 nullable: true
                 type: string
+              tags:
+                description: Tag references (references NetBoxTag CRDs)
+                items:
+                  description: |-
+                    Kubernetes-compliant resource reference for NetBox CRDs
+
+                    This follows the Kubernetes `TypedLocalObjectReference` pattern, which includes:
+                    - `apiGroup`: The API group of the referenced resource (e.g., "dcops.microscaler.io")
+                    - `kind`: The kind of the referenced resource (e.g., "NetBoxSite")
+                    - `name`: The name of the referenced resource (required)
+                    - `namespace`: The namespace of the referenced resource (optional, defaults to same namespace)
+
+                    This enables Kubernetes to validate reference types and provides clear documentation
+                    of what resource type is expected.
+                  properties:
+                    apiGroup:
+                      description: API group of the referenced resource (e.g., "dcops.microscaler.io")
+                      type: string
+                    kind:
+                      description: Kind of the referenced resource (e.g., "NetBoxSite", "NetBoxTenant")
+                      type: string
+                    name:
+                      description: Name of the referenced NetBox CRD resource
+                      type: string
+                    namespace:
+                      description: Namespace of the referenced resource (defaults to same namespace as the referencing resource)
+                      nullable: true
+                      type: string
+                  required:
+                  - apiGroup
+                  - kind
+                  - name
+                  type: object
+                nullable: true
+                type: array
               uHeight:
                 default: 1.0
                 description: 'U height (rack units, default: 1.0)'

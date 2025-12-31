@@ -6,6 +6,7 @@ use crate::common::PaginatedResponse;
 use crate::core::{NetBoxClientCore, helpers};
 use crate::error::NetBoxError;
 use crate::models::Manufacturer;
+use crate::types::ManufacturerId;
 use tracing::debug;
 
 /// Query manufacturers by filters
@@ -69,6 +70,7 @@ pub async fn create_manufacturer(
     name: &str,
     slug: Option<&str>,
     description: Option<String>,
+    tags: Option<Vec<String>>,
 ) -> Result<Manufacturer, NetBoxError> {
     let url = format!("{}/api/dcim/manufacturers/", core.base_url);
     debug!("Creating manufacturer {} in NetBox", name);
@@ -80,6 +82,8 @@ pub async fn create_manufacturer(
     });
     
     helpers::add_optional_string_field_owned(&mut body, "description", description);
+    
+    helpers::add_optional_tags_field(&mut body, tags)?;
     
     let response = core.client
         .post(&url)
@@ -105,5 +109,47 @@ pub async fn create_manufacturer(
     serde_json::from_str(&response_text).map_err(|e| {
         NetBoxError::Api(format!("error decoding response body: {} - Response: {}", e, response_text))
     })
+}
+
+/// Update an existing manufacturer
+pub async fn update_manufacturer(
+    core: &NetBoxClientCore,
+    id: ManufacturerId,
+    name: Option<&str>,
+    slug: Option<&str>,
+    description: Option<String>,
+    tags: Option<Vec<String>>,
+) -> Result<Manufacturer, NetBoxError> {
+    let id_value: u64 = id.into();
+    let url = format!("{}/api/dcim/manufacturers/{}/", core.base_url, id_value);
+    debug!("Updating manufacturer {} in NetBox", id_value);
+    
+    let mut body = serde_json::json!({});
+    
+    helpers::add_optional_string_field(&mut body, "name", name);
+    helpers::add_optional_string_field(&mut body, "slug", slug);
+    helpers::add_optional_string_field_owned(&mut body, "description", description);
+    helpers::add_optional_tags_field(&mut body, tags)?;
+    
+    let response = core.client
+        .patch(&url)
+        .header("Authorization", format!("Token {}", core.token))
+        .header("Accept", "application/json")
+        .header("Content-Type", "application/json")
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| NetBoxError::Http(e))?;
+    
+    if !response.status().is_success() {
+        let status = response.status();
+        let body_text = response.text().await.unwrap_or_default();
+        return Err(NetBoxError::Api(format!(
+            "Failed to update manufacturer {}: {} - {}",
+            id_value, status, body_text
+        )));
+    }
+    
+    response.json().await.map_err(|e| NetBoxError::Http(e))
 }
 

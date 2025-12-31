@@ -118,11 +118,21 @@ impl Reconciler {
                 if let Some(existing) = existing_manufacturer {
                     existing
                 } else {
+                    // Resolve tags before create
+                    let resolved_tags_json = self.resolve_tag_references(
+                        netbox_client.as_ref(),
+                        &manufacturer_crd.spec.tags,
+                        namespace,
+                        name,
+                    ).await;
+                    let resolved_tags = crate::reconcile_helpers::convert_tags_to_strings(resolved_tags_json);
+                    
                     debug!("Attempting to create manufacturer {} in NetBox", manufacturer_crd.spec.name);
                     match netbox_client.create_manufacturer(
                         &manufacturer_crd.spec.name,
                         manufacturer_crd.spec.slug.as_deref(),
                         manufacturer_crd.spec.description.clone(),
+                        resolved_tags,
                     ).await {
                         Ok(created) => {
                             info!("Created manufacturer {} in NetBox (ID: {})", created.name, created.id);

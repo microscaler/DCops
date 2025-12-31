@@ -153,10 +153,7 @@ pub async fn create_prefix(
     // For CREATE operations, NetBox requires just the tenant ID reference
     helpers::add_nested_reference(&mut body, "tenant", tenant_id.map(|id| id.into()));
     
-    if let Some(tags_vec) = tags {
-        body["tags"] = serde_json::to_value(tags_vec)
-            .map_err(|e| NetBoxError::Serialization(e))?;
-    }
+    helpers::add_optional_tags_field(&mut body, tags)?;
     
     let response = core.client
         .post(&url)
@@ -221,10 +218,7 @@ pub async fn update_prefix(
     helpers::add_nested_reference(&mut body, "site", site_id.map(|id| id.into()));
     helpers::add_nested_reference(&mut body, "vlan", vlan_id.map(|id: VlanId| <VlanId as Into<u32>>::into(id) as u64));
     
-    if let Some(tags_vec) = tags {
-        body["tags"] = serde_json::to_value(tags_vec)
-            .map_err(|e| NetBoxError::Serialization(e))?;
-    }
+    helpers::add_optional_tags_field(&mut body, tags)?;
     
     let response = core.client
         .patch(&url)

@@ -307,10 +307,14 @@ impl NetBoxClientTrait for MockNetBoxClient {
         ipam::get_rir_by_name(self, name).await
     }
 
-    async fn create_rir(&self, name: &str, slug: Option<&str>, description: Option<String>, is_private: Option<bool>) -> Result<Rir, NetBoxError> {
-        ipam::create_rir(self, name, slug, description, is_private).await
+    async fn create_rir(&self, name: &str, slug: Option<&str>, description: Option<String>, is_private: Option<bool>, tags: Option<Vec<String>>) -> Result<Rir, NetBoxError> {
+        ipam::create_rir(self, name, slug, description, is_private, tags).await
     }
 
+    async fn update_rir(&self, id: RirId, name: Option<&str>, slug: Option<&str>, description: Option<String>, is_private: Option<bool>, tags: Option<Vec<String>>) -> Result<Rir, NetBoxError> {
+        ipam::update_rir(self, id.into(), name, slug, description, is_private, tags).await
+    }
+    
     async fn create_vlan(&self, vid: u16, name: &str, site_id: Option<SiteId>, group_id: Option<VlanGroupId>, tenant_id: Option<TenantId>, role_id: Option<RoleId>, status: Option<&str>, description: Option<String>, comments: Option<String>) -> Result<Vlan, NetBoxError> {
         ipam::create_vlan(self, vid, name, site_id, group_id, tenant_id, role_id, status, description, comments).await
     }
@@ -404,8 +408,12 @@ impl NetBoxClientTrait for MockNetBoxClient {
         dcim::get_region_by_name(self, name).await
     }
 
-    async fn create_region(&self, name: &str, slug: Option<&str>, parent_id: Option<RegionId>, description: Option<String>, comments: Option<String>) -> Result<Region, NetBoxError> {
-        dcim::create_region(self, name, slug, parent_id.map(|id| id.into()), description, comments).await
+    async fn create_region(&self, name: &str, slug: Option<&str>, parent_id: Option<RegionId>, description: Option<String>, comments: Option<String>, tags: Option<Vec<String>>) -> Result<Region, NetBoxError> {
+        dcim::create_region(self, name, slug, parent_id.map(|id| id.into()), description, comments, tags).await
+    }
+
+    async fn update_region(&self, id: RegionId, name: Option<&str>, slug: Option<&str>, parent_id: Option<RegionId>, description: Option<String>, comments: Option<String>, tags: Option<Vec<String>>) -> Result<Region, NetBoxError> {
+        dcim::update_region(self, id.into(), name, slug, parent_id.map(|id| id.into()), description, comments, tags).await
     }
 
     async fn query_site_groups(&self, filters: &[(&str, &str)], fetch_all: bool) -> Result<Vec<SiteGroup>, NetBoxError> {
@@ -420,8 +428,12 @@ impl NetBoxClientTrait for MockNetBoxClient {
         dcim::get_site_group_by_name(self, name).await
     }
 
-    async fn create_site_group(&self, name: &str, slug: Option<&str>, parent_id: Option<SiteGroupId>, description: Option<String>, comments: Option<String>) -> Result<SiteGroup, NetBoxError> {
-        dcim::create_site_group(self, name, slug, parent_id.map(|id| id.into()), description, comments).await
+    async fn create_site_group(&self, name: &str, slug: Option<&str>, parent_id: Option<SiteGroupId>, description: Option<String>, comments: Option<String>, tags: Option<Vec<String>>) -> Result<SiteGroup, NetBoxError> {
+        dcim::create_site_group(self, name, slug, parent_id.map(|id| id.into()), description, comments, tags).await
+    }
+
+    async fn update_site_group(&self, id: SiteGroupId, name: Option<&str>, slug: Option<&str>, parent_id: Option<SiteGroupId>, description: Option<String>, comments: Option<String>, tags: Option<Vec<String>>) -> Result<SiteGroup, NetBoxError> {
+        dcim::update_site_group(self, id.into(), name, slug, parent_id.map(|id| id.into()), description, comments, tags).await
     }
 
     async fn query_locations(&self, filters: &[(&str, &str)], fetch_all: bool) -> Result<Vec<Location>, NetBoxError> {
@@ -436,8 +448,12 @@ impl NetBoxClientTrait for MockNetBoxClient {
         dcim::get_location_by_name(self, site_id.into(), name).await
     }
 
-    async fn create_location(&self, site_id: SiteId, name: &str, slug: Option<&str>, parent_id: Option<LocationId>, tenant_id: Option<TenantId>, facility: Option<&str>, description: Option<String>, comments: Option<String>) -> Result<Location, NetBoxError> {
-        dcim::create_location(self, site_id.into(), name, slug, parent_id.map(|id| id.into()), tenant_id.map(|id| id.into()), facility, description, comments).await
+    async fn create_location(&self, site_id: SiteId, name: &str, slug: Option<&str>, parent_id: Option<LocationId>, tenant_id: Option<TenantId>, facility: Option<&str>, description: Option<String>, comments: Option<String>, tags: Option<Vec<String>>) -> Result<Location, NetBoxError> {
+        dcim::create_location(self, site_id.into(), name, slug, parent_id.map(|id| id.into()), tenant_id.map(|id| id.into()), facility, description, comments, tags).await
+    }
+
+    async fn update_location(&self, id: LocationId, name: Option<&str>, slug: Option<&str>, parent_id: Option<LocationId>, tenant_id: Option<TenantId>, facility: Option<&str>, description: Option<String>, comments: Option<String>, tags: Option<Vec<String>>) -> Result<Location, NetBoxError> {
+        dcim::update_location(self, id.into(), name, slug, parent_id.map(|id| id.into()), tenant_id.map(|id| id.into()), facility, description, comments, tags).await
     }
 
     async fn query_device_roles(&self, filters: &[(&str, &str)], fetch_all: bool) -> Result<Vec<DeviceRole>, NetBoxError> {
@@ -448,8 +464,12 @@ impl NetBoxClientTrait for MockNetBoxClient {
         dcim::get_device_role_by_name(self, name).await
     }
 
-    async fn create_device_role(&self, name: &str, slug: Option<&str>, color: Option<&str>, vm_role: Option<bool>, description: Option<String>, comments: Option<String>) -> Result<DeviceRole, NetBoxError> {
-        dcim::create_device_role(self, name, slug, color, vm_role, description, comments).await
+    async fn create_device_role(&self, name: &str, slug: Option<&str>, color: Option<&str>, vm_role: Option<bool>, description: Option<String>, comments: Option<String>, tags: Option<Vec<String>>) -> Result<DeviceRole, NetBoxError> {
+        dcim::create_device_role(self, name, slug, color, vm_role, description, comments, tags).await
+    }
+
+    async fn update_device_role(&self, id: DeviceRoleId, name: Option<&str>, slug: Option<&str>, color: Option<&str>, vm_role: Option<bool>, description: Option<String>, comments: Option<String>, tags: Option<Vec<String>>) -> Result<DeviceRole, NetBoxError> {
+        dcim::update_device_role(self, id.into(), name, slug, color, vm_role, description, comments, tags).await
     }
 
     async fn query_manufacturers(&self, filters: &[(&str, &str)], fetch_all: bool) -> Result<Vec<Manufacturer>, NetBoxError> {
@@ -460,8 +480,12 @@ impl NetBoxClientTrait for MockNetBoxClient {
         dcim::get_manufacturer_by_name(self, name).await
     }
 
-    async fn create_manufacturer(&self, name: &str, slug: Option<&str>, description: Option<String>) -> Result<Manufacturer, NetBoxError> {
-        dcim::create_manufacturer(self, name, slug, description).await
+    async fn create_manufacturer(&self, name: &str, slug: Option<&str>, description: Option<String>, tags: Option<Vec<String>>) -> Result<Manufacturer, NetBoxError> {
+        dcim::create_manufacturer(self, name, slug, description, tags).await
+    }
+
+    async fn update_manufacturer(&self, id: ManufacturerId, name: Option<&str>, slug: Option<&str>, description: Option<String>, tags: Option<Vec<String>>) -> Result<Manufacturer, NetBoxError> {
+        dcim::update_manufacturer(self, id.into(), name, slug, description, tags).await
     }
 
     async fn query_platforms(&self, filters: &[(&str, &str)], fetch_all: bool) -> Result<Vec<Platform>, NetBoxError> {
@@ -472,8 +496,12 @@ impl NetBoxClientTrait for MockNetBoxClient {
         dcim::get_platform_by_name(self, name).await
     }
 
-    async fn create_platform(&self, name: &str, slug: Option<&str>, manufacturer_id: Option<ManufacturerId>, napalm_driver: Option<&str>, napalm_args: Option<&str>, description: Option<String>, comments: Option<String>) -> Result<Platform, NetBoxError> {
-        dcim::create_platform(self, name, slug, manufacturer_id.map(|id| id.into()), napalm_driver, napalm_args, description, comments).await
+    async fn create_platform(&self, name: &str, slug: Option<&str>, manufacturer_id: Option<ManufacturerId>, napalm_driver: Option<&str>, napalm_args: Option<&str>, description: Option<String>, comments: Option<String>, tags: Option<Vec<String>>) -> Result<Platform, NetBoxError> {
+        dcim::create_platform(self, name, slug, manufacturer_id.map(|id| id.into()), napalm_driver, napalm_args, description, comments, tags).await
+    }
+
+    async fn update_platform(&self, id: PlatformId, name: Option<&str>, slug: Option<&str>, manufacturer_id: Option<ManufacturerId>, napalm_driver: Option<&str>, napalm_args: Option<&str>, description: Option<String>, comments: Option<String>, tags: Option<Vec<String>>) -> Result<Platform, NetBoxError> {
+        dcim::update_platform(self, id.into(), name, slug, manufacturer_id.map(|id| id.into()), napalm_driver, napalm_args, description, comments, tags).await
     }
 
     async fn query_device_types(&self, filters: &[(&str, &str)], fetch_all: bool) -> Result<Vec<DeviceType>, NetBoxError> {
@@ -484,8 +512,12 @@ impl NetBoxClientTrait for MockNetBoxClient {
         dcim::get_device_type_by_model(self, manufacturer_id.into(), model).await
     }
 
-    async fn create_device_type(&self, manufacturer_id: ManufacturerId, model: &str, slug: Option<&str>, part_number: Option<&str>, u_height: Option<f64>, is_full_depth: Option<bool>, description: Option<String>, comments: Option<String>) -> Result<DeviceType, NetBoxError> {
-        dcim::create_device_type(self, manufacturer_id.into(), model, slug, part_number, u_height, is_full_depth, description, comments).await
+    async fn create_device_type(&self, manufacturer_id: ManufacturerId, model: &str, slug: Option<&str>, part_number: Option<&str>, u_height: Option<f64>, is_full_depth: Option<bool>, description: Option<String>, comments: Option<String>, tags: Option<Vec<String>>) -> Result<DeviceType, NetBoxError> {
+        dcim::create_device_type(self, manufacturer_id.into(), model, slug, part_number, u_height, is_full_depth, description, comments, tags).await
+    }
+
+    async fn update_device_type(&self, id: DeviceTypeId, manufacturer_id: Option<ManufacturerId>, model: Option<&str>, slug: Option<&str>, part_number: Option<&str>, u_height: Option<f64>, is_full_depth: Option<bool>, description: Option<String>, comments: Option<String>, tags: Option<Vec<String>>) -> Result<DeviceType, NetBoxError> {
+        dcim::update_device_type(self, id.into(), manufacturer_id.map(|id| id.into()), model, slug, part_number, u_height, is_full_depth, description, comments, tags).await
     }
 
     // Tenancy Operations - delegated to tenancy module
@@ -497,12 +529,12 @@ impl NetBoxClientTrait for MockNetBoxClient {
         tenancy::get_tenant(self, id.into()).await
     }
 
-    async fn create_tenant(&self, name: &str, slug: Option<&str>, description: Option<String>, comments: Option<String>, group: Option<TenantGroupId>) -> Result<Tenant, NetBoxError> {
-        tenancy::create_tenant(self, name, slug, description, comments, group.map(|id| id.into())).await
+    async fn create_tenant(&self, name: &str, slug: Option<&str>, description: Option<String>, comments: Option<String>, group: Option<TenantGroupId>, tags: Option<Vec<String>>) -> Result<Tenant, NetBoxError> {
+        tenancy::create_tenant(self, name, slug, description, comments, group.map(|id| id.into()), tags).await
     }
 
-    async fn update_tenant(&self, id: TenantId, name: Option<&str>, slug: Option<&str>, description: Option<String>, comments: Option<String>, group: Option<TenantGroupId>) -> Result<Tenant, NetBoxError> {
-        tenancy::update_tenant(self, id.into(), name, slug, description, comments, group.map(|id| id.into())).await
+    async fn update_tenant(&self, id: TenantId, name: Option<&str>, slug: Option<&str>, description: Option<String>, comments: Option<String>, group: Option<TenantGroupId>, tags: Option<Vec<String>>) -> Result<Tenant, NetBoxError> {
+        tenancy::update_tenant(self, id.into(), name, slug, description, comments, group.map(|id| id.into()), tags).await
     }
 
     async fn query_tenant_groups(&self, filters: &[(&str, &str)], fetch_all: bool) -> Result<Vec<TenantGroup>, NetBoxError> {
@@ -513,8 +545,12 @@ impl NetBoxClientTrait for MockNetBoxClient {
         tenancy::get_tenant_group_by_name(self, name).await
     }
 
-    async fn create_tenant_group(&self, name: &str, slug: Option<&str>, description: Option<String>, comments: Option<String>, parent_id: Option<TenantGroupId>) -> Result<TenantGroup, NetBoxError> {
-        tenancy::create_tenant_group(self, name, slug, description, comments, parent_id.map(|id| id.into())).await
+    async fn create_tenant_group(&self, name: &str, slug: Option<&str>, description: Option<String>, comments: Option<String>, parent_id: Option<TenantGroupId>, tags: Option<Vec<String>>) -> Result<TenantGroup, NetBoxError> {
+        tenancy::create_tenant_group(self, name, slug, description, comments, parent_id.map(|id| id.into()), tags).await
+    }
+
+    async fn update_tenant_group(&self, id: TenantGroupId, name: Option<&str>, slug: Option<&str>, description: Option<String>, comments: Option<String>, parent_id: Option<TenantGroupId>, tags: Option<Vec<String>>) -> Result<TenantGroup, NetBoxError> {
+        tenancy::update_tenant_group(self, id.into(), name, slug, description, comments, parent_id.map(|id| id.into()), tags).await
     }
 
     // Extras Operations - delegated to extras module
@@ -526,8 +562,12 @@ impl NetBoxClientTrait for MockNetBoxClient {
         extras::get_role(self, id.into()).await
     }
 
-    async fn create_role(&self, name: &str, slug: Option<&str>, description: Option<String>, weight: Option<u16>, comments: Option<String>) -> Result<Role, NetBoxError> {
-        extras::create_role(self, name, slug, description, weight, comments).await
+    async fn create_role(&self, name: &str, slug: Option<&str>, description: Option<String>, weight: Option<u16>, comments: Option<String>, tags: Option<Vec<String>>) -> Result<Role, NetBoxError> {
+        extras::create_role(self, name, slug, description, weight, comments, tags).await
+    }
+
+    async fn update_role(&self, id: RoleId, name: Option<&str>, slug: Option<&str>, description: Option<String>, weight: Option<u16>, comments: Option<String>, tags: Option<Vec<String>>) -> Result<Role, NetBoxError> {
+        extras::update_role(self, id.into(), name, slug, description, weight, comments, tags).await
     }
 
     async fn query_tags(&self, filters: &[(&str, &str)], fetch_all: bool) -> Result<Vec<Tag>, NetBoxError> {

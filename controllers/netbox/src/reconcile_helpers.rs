@@ -3,6 +3,9 @@
 //! This module provides reusable functions to eliminate code duplication
 //! across all reconcilers.
 
+#[cfg(test)]
+mod tests;
+
 use crate::error::ControllerError;
 use tracing::{debug, info, warn, error};
 use crds;
@@ -1247,10 +1250,185 @@ where
 // GitOps Principle 3: "If something can't be created due to conflict, query for existing
 // resource and use it if found."
 
-/// Check if an error indicates a resource conflict (already exists, duplicate, etc.)
+/// Compare tags between existing NetBox resource and desired CRD spec
 /// 
-/// This helper detects common conflict error patterns from NetBox API responses.
-/// Used to implement GitOps-compliant conflict handling.
+/// This helper compares tags by name (not ID) because:
+/// - We don't have resolved tag IDs at comparison time
+/// - Tag resolution happens later when actually updating
+/// - Comparing by name is sufficient to detect changes
+/// 
+/// Returns `true` if tags differ, `false` if they match.
+pub fn tags_differ(
+    existing_tags: &[netbox_client::NestedTag],
+    desired_tag_refs: &Option<Vec<crds::NetBoxResourceReference>>,
+) -> bool {
+    use std::collections::HashSet;
+    
+    // Extract tag names from existing NetBox resource
+    let existing_tag_names: HashSet<String> = existing_tags.iter()
+        .map(|t| t.name.clone())
+        .collect();
+    
+    // Extract tag names from desired CRD spec
+    let desired_tag_names: HashSet<String> = desired_tag_refs.as_ref()
+        .map(|tags| tags.iter().map(|t| t.name.clone()).collect())
+        .unwrap_or_default();
+    
+    // Compare sets
+    if existing_tag_names != desired_tag_names {
+        debug!("Tags differ: existing {:?} vs desired {:?}", existing_tag_names, desired_tag_names);
+        return true;
+    }
+    
+    false
+}
+
+/// Convert resolved tag references from Vec<serde_json::Value> to Vec<String>
+/// 
+/// This helper converts tag IDs or dictionaries to string format expected by NetBox API.
+/// Tag IDs are converted to strings, and dictionaries with "slug" are extracted.
+pub fn convert_tags_to_strings(tags_json: Option<Vec<serde_json::Value>>) -> Option<Vec<String>> {
+    tags_json.map(|tags| {
+        tags.into_iter()
+            .filter_map(|tag_value| {
+                if let Some(id) = tag_value.as_u64() {
+                    Some(id.to_string())
+                } else if let Some(dict) = tag_value.as_object() {
+                    dict.get("slug")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string())
+                } else {
+                    None
+                }
+            })
+            .collect()
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::tags_differ;
+    use netbox_client::NestedTag;
+    
+    fn create_nested_tag(id: u64, name: &str) -> NestedTag {
+        NestedTag {
+            id,
+            url: format!("http://test/api/extras/tags/{}/", id),
+            display: name.to_string(),
+            name: name.to_string(),
+            slug: name.to_string(),
+        }
+    }
+    
+    fn create_tag_ref(name: &str) -> crds::NetBoxResourceReference {
+        crds::NetBoxResourceReference {
+            api_group: "dcops.microscaler.io".to_string(),
+            kind: "NetBoxTag".to_string(),
+            name: name.to_string(),
+            namespace: None,
+        }
+    }
+    
+    #[test]
+    fn test_tags_differ_empty_vs_empty() {
+        let existing: Vec<NestedTag> = vec![];
+        let desired: Option<Vec<crds::NetBoxResourceReference>> = None;
+        
+        assert!(!tags_differ(&existing, &desired), 
+            "Empty tags should not differ");
+    }
+    
+    #[test]
+    fn test_tags_differ_empty_vs_some() {
+        let existing: Vec<NestedTag> = vec![];
+        let desired = Some(vec![create_tag_ref("tag1")]);
+        
+        assert!(tags_differ(&existing, &desired), 
+            "Empty existing vs some desired should differ");
+    }
+    
+    #[test]
+    fn test_tags_differ_some_vs_empty() {
+        let existing = vec![create_nested_tag(1, "tag1")];
+        let desired: Option<Vec<crds::NetBoxResourceReference>> = None;
+        
+        assert!(tags_differ(&existing, &desired), 
+            "Some existing vs empty desired should differ");
+    }
+    
+    #[test]
+    fn test_tags_differ_same_tags() {
+        let existing = vec![
+            create_nested_tag(1, "tag1"),
+            create_nested_tag(2, "tag2"),
+        ];
+        let desired = Some(vec![
+            create_tag_ref("tag1"),
+            create_tag_ref("tag2"),
+        ]);
+        
+        assert!(!tags_differ(&existing, &desired), 
+            "Same tags should not differ");
+    }
+    
+    #[test]
+    fn test_tags_differ_different_tags() {
+        let existing = vec![create_nested_tag(1, "tag1")];
+        let desired = Some(vec![create_tag_ref("tag2")]);
+        
+        assert!(tags_differ(&existing, &desired), 
+            "Different tags should differ");
+    }
+    
+    #[test]
+    fn test_tags_differ_different_order() {
+        let existing = vec![
+            create_nested_tag(1, "tag1"),
+            create_nested_tag(2, "tag2"),
+        ];
+        let desired = Some(vec![
+            create_tag_ref("tag2"),
+            create_tag_ref("tag1"),
+        ]);
+        
+        assert!(!tags_differ(&existing, &desired), 
+            "Tags in different order should not differ (order doesn't matter)");
+    }
+    
+    #[test]
+    fn test_tags_differ_extra_existing() {
+        let existing = vec![
+            create_nested_tag(1, "tag1"),
+            create_nested_tag(2, "tag2"),
+        ];
+        let desired = Some(vec![create_tag_ref("tag1")]);
+        
+        assert!(tags_differ(&existing, &desired), 
+            "Extra existing tags should differ");
+    }
+    
+    #[test]
+    fn test_tags_differ_extra_desired() {
+        let existing = vec![create_nested_tag(1, "tag1")];
+        let desired = Some(vec![
+            create_tag_ref("tag1"),
+            create_tag_ref("tag2"),
+        ]);
+        
+        assert!(tags_differ(&existing, &desired), 
+            "Extra desired tags should differ");
+    }
+    
+    #[test]
+    fn test_tags_differ_case_sensitive() {
+        let existing = vec![create_nested_tag(1, "Tag1")];
+        let desired = Some(vec![create_tag_ref("tag1")]);
+        
+        assert!(tags_differ(&existing, &desired), 
+            "Tags should be case-sensitive");
+    }
+}
+
 pub fn is_conflict_error(error: &netbox_client::NetBoxError) -> bool {
     let error_str = format!("{}", error);
     error_str.contains("already exists") ||

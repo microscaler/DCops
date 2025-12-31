@@ -587,9 +587,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 4. ✅ **Database verification** - For NetBox resources, verify they exist in the database
 5. ✅ **End-to-end verification** - Use `scripts/verify_netbox_crs.py` to verify reconciliation
 
-**⚠️ Important:** Always use the full build command (`python3 scripts/host_aware_build.py --release -p netbox-controller`) to check for compilation errors. `cargo check` and `cargo build` may be incomplete and miss some errors that only appear during a full release build.
+**⚠️ CRITICAL - Compilation Verification:**
+- **MUST** use `python3 scripts/host_aware_build.py --release -p netbox-controller` to check for compilation errors
+- **DO NOT** use `cargo check` - it may not catch all compilation errors
+- **DO NOT** use `cargo build` - it may not catch all compilation errors
+- **ONLY** the build script provides comprehensive error checking
 
-**Never claim code is working just because it compiles.**
+**Never claim code is working just because it compiles with `cargo check`.**
 
 ---
 
@@ -823,7 +827,7 @@ When adding a new NetBox CRD reconciler, follow this complete checklist:
 
 ### 10. Verification
 
-- [ ] Compilation: `python3 scripts/host_aware_build.py --release -p netbox-controller`
+- [ ] Compilation: `python3 scripts/host_aware_build.py --release -p netbox-controller` (DO NOT use `cargo check`)
 - [ ] CRD Generation: `cargo run -p crds --bin crdgen` generates valid YAML
 - [ ] Tests pass: `cargo test --package netbox-controller`
 - [ ] Coverage meets minimum: `cargo llvm-cov --package netbox-controller --bin netbox-controller`
@@ -1120,9 +1124,15 @@ just build-rust
 # Build Rust binary (release)
 just build-release
 
-# Comprehensive error checking (use this, not just cargo check)
+# Comprehensive error checking - THIS IS THE ONLY ACCEPTABLE WAY TO CHECK COMPILATION
+# DO NOT use cargo check or cargo build - they may miss errors
 python3 scripts/host_aware_build.py --release -p netbox-controller
 ```
+
+**⚠️ IMPORTANT:** 
+- **DO NOT** use `cargo check` - it may not catch all compilation errors
+- **DO NOT** use `cargo build` - it may not catch all compilation errors  
+- **ONLY** use `python3 scripts/host_aware_build.py --release -p netbox-controller` to verify compilation
 
 ### Verifying Functionality
 

@@ -128,6 +128,7 @@ impl Reconciler {
                         role_crd.spec.description.clone(),
                         role_crd.spec.weight,
                         role_crd.spec.comments.clone(),
+                        None, // tags - not yet implemented in reconciler
                     ).await {
                         Ok(created) => {
                             info!("Created role {} in NetBox (ID: {})", created.name, created.id);
@@ -234,11 +235,20 @@ impl Reconciler {
         
         info!("Reconciling NetBoxTag {}/{}", namespace, name);
         
-        // Get client for shared resource (finds tenant from referencing resources or uses system tenant)
-        let netbox_client = self.token_resolver
-            .create_client_for_shared_resource(namespace, "NetBoxTag", name)
-            .await
-            .map_err(|e| ControllerError::TokenResolution(e))?;
+        // Get client - use tenant from CRD if specified, otherwise fall back to shared resource logic
+        let netbox_client = if let Some(tenant_ref) = &tag_crd.spec.tenant {
+            // Tag has explicit tenant reference - use that tenant's token
+            self.token_resolver
+                .create_client_for_tenant(namespace, tenant_ref)
+                .await
+                .map_err(|e| ControllerError::TokenResolution(e))?
+        } else {
+            // No tenant specified - use shared resource logic (finds tenant from referencing resources or uses system tenant)
+            self.token_resolver
+                .create_client_for_shared_resource(namespace, "NetBoxTag", name)
+                .await
+                .map_err(|e| ControllerError::TokenResolution(e))?
+        };
         
         // Check if already created - use shared helper for drift detection and status validation
         use crate::reconcile_helpers::{validate_status_and_drift, DriftCheckResult};

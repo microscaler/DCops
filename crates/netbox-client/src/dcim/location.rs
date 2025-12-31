@@ -113,6 +113,7 @@ pub async fn create_location(
     facility: Option<&str>,
     description: Option<String>,
     comments: Option<String>,
+    tags: Option<Vec<String>>,
 ) -> Result<Location, NetBoxError> {
     let site_id_value: u64 = site_id.into();
     let url = format!("{}/api/dcim/locations/", core.base_url);
@@ -139,6 +140,8 @@ pub async fn create_location(
     helpers::add_optional_string_field_owned(&mut body, "description", description);
     helpers::add_optional_string_field_owned(&mut body, "comments", comments);
     
+    helpers::add_optional_tags_field(&mut body, tags)?;
+    
     let response = core.client
         .post(&url)
         .header("Authorization", format!("Token {}", core.token))
@@ -155,6 +158,56 @@ pub async fn create_location(
         return Err(NetBoxError::Api(format!(
             "Failed to create location: {} - {}",
             status, body
+        )));
+    }
+    
+    response.json().await.map_err(|e| NetBoxError::Http(e))
+}
+
+/// Update an existing location
+pub async fn update_location(
+    core: &NetBoxClientCore,
+    id: LocationId,
+    name: Option<&str>,
+    slug: Option<&str>,
+    parent_id: Option<LocationId>,
+    tenant_id: Option<TenantId>,
+    facility: Option<&str>,
+    description: Option<String>,
+    comments: Option<String>,
+    tags: Option<Vec<String>>,
+) -> Result<Location, NetBoxError> {
+    let id_value: u64 = id.into();
+    let url = format!("{}/api/dcim/locations/{}/", core.base_url, id_value);
+    debug!("Updating location {} in NetBox", id_value);
+    
+    let mut body = serde_json::json!({});
+    
+    helpers::add_optional_string_field(&mut body, "name", name);
+    helpers::add_optional_string_field(&mut body, "slug", slug);
+    helpers::add_nested_reference(&mut body, "parent", parent_id.map(|id| id.into()));
+    helpers::add_nested_reference(&mut body, "tenant", tenant_id.map(|id| id.into()));
+    helpers::add_optional_string_field(&mut body, "facility", facility);
+    helpers::add_optional_string_field_owned(&mut body, "description", description);
+    helpers::add_optional_string_field_owned(&mut body, "comments", comments);
+    helpers::add_optional_tags_field(&mut body, tags)?;
+    
+    let response = core.client
+        .patch(&url)
+        .header("Authorization", format!("Token {}", core.token))
+        .header("Accept", "application/json")
+        .header("Content-Type", "application/json")
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| NetBoxError::Http(e))?;
+    
+    if !response.status().is_success() {
+        let status = response.status();
+        let body_text = response.text().await.unwrap_or_default();
+        return Err(NetBoxError::Api(format!(
+            "Failed to update location {}: {} - {}",
+            id_value, status, body_text
         )));
     }
     

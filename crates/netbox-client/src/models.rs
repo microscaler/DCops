@@ -127,13 +127,16 @@ pub struct IPAddress {
     pub id: u64,
     pub url: String,
     pub display: String,
-    pub family: u8, // 4 or 6
+    #[serde(deserialize_with = "deserialize_family")]
+    pub family: u8, // 4 or 6 (extracted from ChoiceField)
     #[serde(serialize_with = "serialize_ipnet", deserialize_with = "deserialize_ipnet")]
     pub address: IpNet, // e.g., "192.168.1.1/24"
     pub vrf: Option<NestedVrf>,
     pub tenant: Option<NestedTenant>,
+    #[serde(deserialize_with = "deserialize_ip_address_status")]
     pub status: IPAddressStatus,
-    pub role: Option<String>, // IPAddressRoleChoices
+    #[serde(deserialize_with = "deserialize_option_string_choice_field")]
+    pub role: Option<String>, // IPAddressRoleChoices (extracted from ChoiceField)
     pub assigned_object_type: Option<String>,
     pub assigned_object_id: Option<u64>,
     pub assigned_object: Option<serde_json::Value>,
@@ -166,13 +169,15 @@ pub struct IPRange {
     pub id: u64,
     pub url: String,
     pub display: String,
-    pub family: u8, // 4 or 6
+    #[serde(deserialize_with = "deserialize_family")]
+    pub family: u8, // 4 or 6 (extracted from ChoiceField)
     #[serde(serialize_with = "serialize_ipnet", deserialize_with = "deserialize_ipnet")]
     pub start_address: IpNet, // e.g., "192.168.1.100/24"
     #[serde(serialize_with = "serialize_ipnet", deserialize_with = "deserialize_ipnet")]
     pub end_address: IpNet, // e.g., "192.168.1.200/24"
     pub vrf: Option<NestedVrf>,
     pub tenant: Option<NestedTenant>,
+    #[serde(deserialize_with = "deserialize_ip_range_status")]
     pub status: IPRangeStatus,
     pub role: Option<NestedRole>,
     pub description: String,
@@ -193,6 +198,45 @@ pub enum IPRangeStatus {
     Deprecated,
 }
 
+fn deserialize_ip_range_status<'de, D>(deserializer: D) -> Result<IPRangeStatus, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    use serde::Deserialize;
+    let choice: ChoiceField<String> = ChoiceField::deserialize(deserializer)?;
+    match choice.value.as_str() {
+        "active" => Ok(IPRangeStatus::Active),
+        "reserved" => Ok(IPRangeStatus::Reserved),
+        "deprecated" => Ok(IPRangeStatus::Deprecated),
+        _ => Err(serde::de::Error::custom(format!("Unknown IP range status: {}", choice.value))),
+    }
+}
+
+fn deserialize_ip_address_status<'de, D>(deserializer: D) -> Result<IPAddressStatus, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    use serde::Deserialize;
+    let choice: ChoiceField<String> = ChoiceField::deserialize(deserializer)?;
+    match choice.value.as_str() {
+        "active" => Ok(IPAddressStatus::Active),
+        "reserved" => Ok(IPAddressStatus::Reserved),
+        "deprecated" => Ok(IPAddressStatus::Deprecated),
+        "dhcp" => Ok(IPAddressStatus::Dhcp),
+        "slaac" => Ok(IPAddressStatus::Slaac),
+        _ => Err(serde::de::Error::custom(format!("Unknown IP address status: {}", choice.value))),
+    }
+}
+
+fn deserialize_option_string_choice_field<'de, D>(deserializer: D) -> Result<Option<String>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    use serde::Deserialize;
+    let opt: Option<ChoiceField<String>> = Option::deserialize(deserializer)?;
+    Ok(opt.map(|choice| choice.value))
+}
+
 /// Request body for allocating an IP address
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -203,6 +247,7 @@ pub struct AllocateIPRequest {
     pub status: Option<IPAddressStatus>,
     pub role: Option<String>,
     pub dns_name: Option<String>,
+    pub tenant: Option<u64>, // Tenant ID (optional)
     pub tags: Option<Vec<serde_json::Value>>, // Tag references: numeric IDs or dictionaries with "name"/"slug"
 }
 
@@ -522,6 +567,7 @@ pub struct Tenant {
     pub description: Option<String>,
     pub comments: Option<String>,
     pub group: Option<NestedTenantGroup>,
+    pub tags: Vec<NestedTag>,
     pub created: String,
     pub last_updated: String,
 }
@@ -601,6 +647,7 @@ pub struct Role {
     pub description: Option<String>,
     pub weight: Option<u16>,
     pub comments: Option<String>,
+    pub tags: Vec<NestedTag>,
     pub created: String,
     pub last_updated: String,
 }
@@ -661,6 +708,7 @@ pub struct Rir {
     pub slug: String,
     pub description: Option<String>,
     pub is_private: bool,
+    pub tags: Vec<NestedTag>,
     pub created: String,
     pub last_updated: String,
 }
@@ -680,6 +728,7 @@ pub struct TenantGroup {
     pub tenant_count: u64,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub _depth: Option<u32>, // MPTT depth field, optional
+    pub tags: Vec<NestedTag>,
     pub created: String,
     pub last_updated: String,
 }
@@ -688,7 +737,6 @@ pub struct TenantGroup {
 // DCIM Models
 // ============================================================================
 
-/// Device Role model (from DCIM API)
 /// Device Role model (from DCIM API)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -704,6 +752,7 @@ pub struct DeviceRole {
     pub comments: Option<String>,
     pub device_count: u64,
     pub virtualmachine_count: u64,
+    pub tags: Vec<NestedTag>,
     pub created: String,
     pub last_updated: String,
 }
@@ -721,6 +770,7 @@ pub struct Manufacturer {
     pub devicetype_count: u64,
     pub inventoryitem_count: u64,
     pub platform_count: u64,
+    pub tags: Vec<NestedTag>,
     pub created: String,
     pub last_updated: String,
 }
@@ -741,6 +791,7 @@ pub struct Platform {
     pub comments: Option<String>,
     pub device_count: u64,
     pub virtualmachine_count: u64,
+    pub tags: Vec<NestedTag>,
     pub created: String,
     pub last_updated: String,
 }
@@ -761,6 +812,7 @@ pub struct DeviceType {
     pub description: Option<String>,
     pub comments: Option<String>,
     pub device_count: u64,
+    pub tags: Vec<NestedTag>,
     pub created: String,
     pub last_updated: String,
 }
@@ -812,6 +864,7 @@ pub struct Region {
     pub prefix_count: u64,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub _depth: Option<u32>,
+    pub tags: Vec<NestedTag>,
     pub created: String,
     pub last_updated: String,
 }
@@ -844,6 +897,7 @@ pub struct SiteGroup {
     pub prefix_count: u64,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub _depth: Option<u32>,
+    pub tags: Vec<NestedTag>,
     pub created: String,
     pub last_updated: String,
 }
@@ -876,6 +930,7 @@ pub struct Location {
     pub rack_count: u64,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub _depth: Option<u32>,
+    pub tags: Vec<NestedTag>,
     pub created: String,
     pub last_updated: String,
 }

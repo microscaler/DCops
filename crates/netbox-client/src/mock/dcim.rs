@@ -411,7 +411,7 @@ pub async fn get_region_by_name(client: &MockNetBoxClient, name: &str) -> Result
         Ok(regions.values().find(|r| r.name == name).cloned())
 }
 
-pub async fn create_region(client: &MockNetBoxClient, name: &str, slug: Option<&str>, parent_id: Option<u64>, description: Option<String>, comments: Option<String>) -> Result<Region, NetBoxError> {
+pub async fn create_region(client: &MockNetBoxClient, name: &str, slug: Option<&str>, parent_id: Option<u64>, description: Option<String>, comments: Option<String>, tags: Option<Vec<String>>) -> Result<Region, NetBoxError> {
         let id = client.next_id();
         let slug_value = slug.map(|s| s.to_string()).unwrap_or_else(|| name.to_lowercase().replace(' ', "-"));
         let region = Region {
@@ -426,12 +426,59 @@ pub async fn create_region(client: &MockNetBoxClient, name: &str, slug: Option<&
             site_count: 0,
             prefix_count: 0,
             _depth: None,
+            tags: tags.unwrap_or_default().into_iter().map(|t| NestedTag {
+                id: 0,
+                url: String::new(),
+                display: t.clone(),
+                name: t,
+                slug: String::new(),
+            }).collect(),
             created: chrono::Utc::now().to_rfc3339(),
             last_updated: chrono::Utc::now().to_rfc3339(),
         };
 
         client.regions.lock().unwrap().insert(id, region.clone());
         Ok(region)
+    }
+
+pub async fn update_region(client: &MockNetBoxClient, id: u64, name: Option<&str>, slug: Option<&str>, parent_id: Option<u64>, description: Option<String>, comments: Option<String>, tags: Option<Vec<String>>) -> Result<Region, NetBoxError> {
+        let mut regions = client.regions.lock().unwrap();
+        let region = regions.get_mut(&id)
+            .ok_or_else(|| NetBoxError::NotFound(format!("Region {} not found", id)))?;
+        
+        if let Some(name_val) = name {
+            region.name = name_val.to_string();
+            region.display = name_val.to_string();
+        }
+        
+        if let Some(slug_val) = slug {
+            region.slug = slug_val.to_string();
+        }
+        
+        if description.is_some() {
+            region.description = description;
+        }
+        
+        if comments.is_some() {
+            region.comments = comments;
+        }
+        
+        if let Some(parent) = parent_id {
+            region.parent = Some(client.helpers().create_nested_region(parent, None));
+        }
+        
+        if let Some(tags_vec) = tags {
+            region.tags = tags_vec.into_iter().map(|t| NestedTag {
+                id: 0,
+                url: String::new(),
+                display: t.clone(),
+                name: t,
+                slug: String::new(),
+            }).collect();
+        }
+        
+        region.last_updated = chrono::Utc::now().to_rfc3339();
+        Ok(region.clone())
     }
 
 pub async fn query_site_groups(client: &MockNetBoxClient, filters: &[(&str, &str)], _fetch_all: bool) -> Result<Vec<SiteGroup>, NetBoxError> {
@@ -468,7 +515,7 @@ pub async fn get_site_group_by_name(client: &MockNetBoxClient, name: &str) -> Re
         Ok(site_groups.values().find(|sg| sg.name == name).cloned())
 }
 
-pub async fn create_site_group(client: &MockNetBoxClient, name: &str, slug: Option<&str>, parent_id: Option<u64>, description: Option<String>, comments: Option<String>) -> Result<SiteGroup, NetBoxError> {
+pub async fn create_site_group(client: &MockNetBoxClient, name: &str, slug: Option<&str>, parent_id: Option<u64>, description: Option<String>, comments: Option<String>, tags: Option<Vec<String>>) -> Result<SiteGroup, NetBoxError> {
         let id = client.next_id();
         let slug_value = slug.map(|s| s.to_string()).unwrap_or_else(|| name.to_lowercase().replace(' ', "-"));
         let site_group = SiteGroup {
@@ -483,12 +530,59 @@ pub async fn create_site_group(client: &MockNetBoxClient, name: &str, slug: Opti
             site_count: 0,
             prefix_count: 0,
             _depth: None,
+            tags: tags.unwrap_or_default().into_iter().map(|t| NestedTag {
+                id: 0,
+                url: String::new(),
+                display: t.clone(),
+                name: t,
+                slug: String::new(),
+            }).collect(),
             created: chrono::Utc::now().to_rfc3339(),
             last_updated: chrono::Utc::now().to_rfc3339(),
         };
 
         client.site_groups.lock().unwrap().insert(id, site_group.clone());
         Ok(site_group)
+    }
+
+pub async fn update_site_group(client: &MockNetBoxClient, id: u64, name: Option<&str>, slug: Option<&str>, parent_id: Option<u64>, description: Option<String>, comments: Option<String>, tags: Option<Vec<String>>) -> Result<SiteGroup, NetBoxError> {
+        let mut site_groups = client.site_groups.lock().unwrap();
+        let site_group = site_groups.get_mut(&id)
+            .ok_or_else(|| NetBoxError::NotFound(format!("Site group {} not found", id)))?;
+        
+        if let Some(name_val) = name {
+            site_group.name = name_val.to_string();
+            site_group.display = name_val.to_string();
+        }
+        
+        if let Some(slug_val) = slug {
+            site_group.slug = slug_val.to_string();
+        }
+        
+        if description.is_some() {
+            site_group.description = description;
+        }
+        
+        if comments.is_some() {
+            site_group.comments = comments;
+        }
+        
+        if let Some(parent) = parent_id {
+            site_group.parent = Some(client.helpers().create_nested_site_group(parent, None));
+        }
+        
+        if let Some(tags_vec) = tags {
+            site_group.tags = tags_vec.into_iter().map(|t| NestedTag {
+                id: 0,
+                url: String::new(),
+                display: t.clone(),
+                name: t,
+                slug: String::new(),
+            }).collect();
+        }
+        
+        site_group.last_updated = chrono::Utc::now().to_rfc3339();
+        Ok(site_group.clone())
     }
 
 pub async fn query_locations(client: &MockNetBoxClient, filters: &[(&str, &str)], _fetch_all: bool) -> Result<Vec<Location>, NetBoxError> {
@@ -529,7 +623,7 @@ pub async fn get_location_by_name(client: &MockNetBoxClient, site_id: u64, name:
         Ok(locations.values().find(|l| l.site.id == site_id && l.name == name).cloned())
 }
 
-pub async fn create_location(client: &MockNetBoxClient, site_id: u64, name: &str, slug: Option<&str>, parent_id: Option<u64>, _tenant_id: Option<u64>, _facility: Option<&str>, description: Option<String>, comments: Option<String>) -> Result<Location, NetBoxError> {
+pub async fn create_location(client: &MockNetBoxClient, site_id: u64, name: &str, slug: Option<&str>, parent_id: Option<u64>, _tenant_id: Option<u64>, _facility: Option<&str>, description: Option<String>, comments: Option<String>, tags: Option<Vec<String>>) -> Result<Location, NetBoxError> {
         let id = client.next_id();
         let slug_value = slug.map(|s| s.to_string()).unwrap_or_else(|| name.to_lowercase().replace(' ', "-"));
         let location = Location {
@@ -545,6 +639,13 @@ pub async fn create_location(client: &MockNetBoxClient, site_id: u64, name: &str
             device_count: 0,
             rack_count: 0,
             _depth: None,
+            tags: tags.unwrap_or_default().into_iter().map(|t| NestedTag {
+                id: 0,
+                url: String::new(),
+                display: t.clone(),
+                name: t,
+                slug: String::new(),
+            }).collect(),
             created: chrono::Utc::now().to_rfc3339(),
             last_updated: chrono::Utc::now().to_rfc3339(),
         };
@@ -552,6 +653,50 @@ pub async fn create_location(client: &MockNetBoxClient, site_id: u64, name: &str
         client.locations.lock().unwrap().insert(id, location.clone());
         Ok(location)
 }
+
+pub async fn update_location(client: &MockNetBoxClient, id: u64, name: Option<&str>, slug: Option<&str>, parent_id: Option<u64>, tenant_id: Option<u64>, facility: Option<&str>, description: Option<String>, comments: Option<String>, tags: Option<Vec<String>>) -> Result<Location, NetBoxError> {
+        let mut locations = client.locations.lock().unwrap();
+        let location = locations.get_mut(&id)
+            .ok_or_else(|| NetBoxError::NotFound(format!("Location {} not found", id)))?;
+        
+        if let Some(name_val) = name {
+            location.name = name_val.to_string();
+            location.display = name_val.to_string();
+        }
+        
+        if let Some(slug_val) = slug {
+            location.slug = slug_val.to_string();
+        }
+        
+        if let Some(parent) = parent_id {
+            location.parent = Some(client.helpers().create_nested_location(parent, None));
+        }
+        
+        if tenant_id.is_some() {
+            // Tenant update would require NestedTenant, skipping for now
+        }
+        
+        if description.is_some() {
+            location.description = description;
+        }
+        
+        if comments.is_some() {
+            location.comments = comments;
+        }
+        
+        if let Some(tags_vec) = tags {
+            location.tags = tags_vec.into_iter().map(|t| NestedTag {
+                id: 0,
+                url: String::new(),
+                display: t.clone(),
+                name: t,
+                slug: String::new(),
+            }).collect();
+        }
+        
+        location.last_updated = chrono::Utc::now().to_rfc3339();
+        Ok(location.clone())
+    }
 
 pub async fn query_device_roles(client: &MockNetBoxClient, _filters: &[(&str, &str)], _fetch_all: bool) -> Result<Vec<DeviceRole>, NetBoxError> {
         let device_roles = client.device_roles.lock().unwrap();
@@ -562,7 +707,7 @@ pub async fn get_device_role_by_name(client: &MockNetBoxClient, name: &str) -> R
         Ok(client.device_roles.lock().unwrap().get(name).cloned())
 }
 
-pub async fn create_device_role(client: &MockNetBoxClient, name: &str, slug: Option<&str>, color: Option<&str>, vm_role: Option<bool>, description: Option<String>, comments: Option<String>) -> Result<DeviceRole, NetBoxError> {
+pub async fn create_device_role(client: &MockNetBoxClient, name: &str, slug: Option<&str>, color: Option<&str>, vm_role: Option<bool>, description: Option<String>, comments: Option<String>, tags: Option<Vec<String>>) -> Result<DeviceRole, NetBoxError> {
         let id = client.next_id();
         let slug_value = slug.map(|s| s.to_string()).unwrap_or_else(|| name.to_lowercase().replace(' ', "-"));
         let device_role = DeviceRole {
@@ -577,12 +722,66 @@ pub async fn create_device_role(client: &MockNetBoxClient, name: &str, slug: Opt
             comments,
             device_count: 0,
             virtualmachine_count: 0,
+            tags: tags.unwrap_or_default().into_iter().map(|t| NestedTag {
+                id: 0,
+                url: String::new(),
+                display: t.clone(),
+                name: t,
+                slug: String::new(),
+            }).collect(),
             created: chrono::Utc::now().to_rfc3339(),
             last_updated: chrono::Utc::now().to_rfc3339(),
         };
 
         client.device_roles.lock().unwrap().insert(name.to_string(), device_role.clone());
         Ok(device_role)
+    }
+
+pub async fn update_device_role(client: &MockNetBoxClient, id: u64, name: Option<&str>, slug: Option<&str>, color: Option<&str>, vm_role: Option<bool>, description: Option<String>, comments: Option<String>, tags: Option<Vec<String>>) -> Result<DeviceRole, NetBoxError> {
+        let device_roles = client.device_roles.lock().unwrap();
+        let device_role = device_roles.values().find(|dr| dr.id == id)
+            .ok_or_else(|| NetBoxError::NotFound(format!("Device role {} not found", id)))?;
+        let mut updated = device_role.clone();
+        
+        if let Some(name_val) = name {
+            updated.name = name_val.to_string();
+            updated.display = name_val.to_string();
+        }
+        
+        if let Some(slug_val) = slug {
+            updated.slug = slug_val.to_string();
+        }
+        
+        if color.is_some() {
+            updated.color = color.map(|s| s.to_string());
+        }
+        
+        if vm_role.is_some() {
+            updated.vm_role = vm_role.unwrap_or(false);
+        }
+        
+        if description.is_some() {
+            updated.description = description;
+        }
+        
+        if comments.is_some() {
+            updated.comments = comments;
+        }
+        
+        if let Some(tags_vec) = tags {
+            updated.tags = tags_vec.into_iter().map(|t| NestedTag {
+                id: 0,
+                url: String::new(),
+                display: t.clone(),
+                name: t,
+                slug: String::new(),
+            }).collect();
+        }
+        
+        updated.last_updated = chrono::Utc::now().to_rfc3339();
+        drop(device_roles);
+        client.device_roles.lock().unwrap().insert(updated.name.clone(), updated.clone());
+        Ok(updated)
     }
 
 pub async fn query_manufacturers(client: &MockNetBoxClient, _filters: &[(&str, &str)], _fetch_all: bool) -> Result<Vec<Manufacturer>, NetBoxError> {
@@ -594,7 +793,7 @@ pub async fn get_manufacturer_by_name(client: &MockNetBoxClient, name: &str) -> 
         Ok(client.manufacturers.lock().unwrap().get(name).cloned())
 }
 
-pub async fn create_manufacturer(client: &MockNetBoxClient, name: &str, slug: Option<&str>, description: Option<String>) -> Result<Manufacturer, NetBoxError> {
+pub async fn create_manufacturer(client: &MockNetBoxClient, name: &str, slug: Option<&str>, description: Option<String>, tags: Option<Vec<String>>) -> Result<Manufacturer, NetBoxError> {
         let id = client.next_id();
         let slug_value = slug.map(|s| s.to_string()).unwrap_or_else(|| name.to_lowercase().replace(' ', "-"));
         let manufacturer = Manufacturer {
@@ -607,12 +806,54 @@ pub async fn create_manufacturer(client: &MockNetBoxClient, name: &str, slug: Op
             devicetype_count: 0,
             inventoryitem_count: 0,
             platform_count: 0,
+            tags: tags.unwrap_or_default().into_iter().map(|t| NestedTag {
+                id: 0,
+                url: String::new(),
+                display: t.clone(),
+                name: t,
+                slug: String::new(),
+            }).collect(),
             created: chrono::Utc::now().to_rfc3339(),
             last_updated: chrono::Utc::now().to_rfc3339(),
         };
 
         client.manufacturers.lock().unwrap().insert(name.to_string(), manufacturer.clone());
         Ok(manufacturer)
+}
+
+pub async fn update_manufacturer(client: &MockNetBoxClient, id: u64, name: Option<&str>, slug: Option<&str>, description: Option<String>, tags: Option<Vec<String>>) -> Result<Manufacturer, NetBoxError> {
+        let manufacturers = client.manufacturers.lock().unwrap();
+        let manufacturer = manufacturers.values().find(|m| m.id == id)
+            .ok_or_else(|| NetBoxError::NotFound(format!("Manufacturer {} not found", id)))?;
+        let mut updated = manufacturer.clone();
+        
+        if let Some(name_val) = name {
+            updated.name = name_val.to_string();
+            updated.display = name_val.to_string();
+        }
+        
+        if let Some(slug_val) = slug {
+            updated.slug = slug_val.to_string();
+        }
+        
+        if description.is_some() {
+            updated.description = description;
+        }
+        
+        if let Some(tags_vec) = tags {
+            updated.tags = tags_vec.into_iter().map(|t| NestedTag {
+                id: 0,
+                url: String::new(),
+                display: t.clone(),
+                name: t,
+                slug: String::new(),
+            }).collect();
+        }
+        
+        updated.last_updated = chrono::Utc::now().to_rfc3339();
+        drop(manufacturers);
+        client.manufacturers.lock().unwrap().insert(updated.name.clone(), updated.clone());
+        Ok(updated)
 }
 
 pub async fn query_platforms(client: &MockNetBoxClient, _filters: &[(&str, &str)], _fetch_all: bool) -> Result<Vec<Platform>, NetBoxError> {
@@ -624,7 +865,7 @@ pub async fn get_platform_by_name(client: &MockNetBoxClient, name: &str) -> Resu
         Ok(client.platforms.lock().unwrap().get(name).cloned())
 }
 
-pub async fn create_platform(client: &MockNetBoxClient, name: &str, slug: Option<&str>, manufacturer_id: Option<u64>, napalm_driver: Option<&str>, napalm_args: Option<&str>, description: Option<String>, comments: Option<String>) -> Result<Platform, NetBoxError> {
+pub async fn create_platform(client: &MockNetBoxClient, name: &str, slug: Option<&str>, manufacturer_id: Option<u64>, napalm_driver: Option<&str>, napalm_args: Option<&str>, description: Option<String>, comments: Option<String>, tags: Option<Vec<String>>) -> Result<Platform, NetBoxError> {
         let id = client.next_id();
         let slug_value = slug.map(|s| s.to_string()).unwrap_or_else(|| name.to_lowercase().replace(' ', "-"));
         let platform = Platform {
@@ -640,6 +881,13 @@ pub async fn create_platform(client: &MockNetBoxClient, name: &str, slug: Option
             comments,
             device_count: 0,
             virtualmachine_count: 0,
+            tags: tags.unwrap_or_default().into_iter().map(|t| NestedTag {
+                id: 0,
+                url: String::new(),
+                display: t.clone(),
+                name: t,
+                slug: String::new(),
+            }).collect(),
             created: chrono::Utc::now().to_rfc3339(),
             last_updated: chrono::Utc::now().to_rfc3339(),
         };
@@ -647,6 +895,57 @@ pub async fn create_platform(client: &MockNetBoxClient, name: &str, slug: Option
         client.platforms.lock().unwrap().insert(name.to_string(), platform.clone());
         Ok(platform)
     }
+
+pub async fn update_platform(client: &MockNetBoxClient, id: u64, name: Option<&str>, slug: Option<&str>, manufacturer_id: Option<u64>, napalm_driver: Option<&str>, napalm_args: Option<&str>, description: Option<String>, comments: Option<String>, tags: Option<Vec<String>>) -> Result<Platform, NetBoxError> {
+        let platforms = client.platforms.lock().unwrap();
+        let platform = platforms.values().find(|p| p.id == id)
+            .ok_or_else(|| NetBoxError::NotFound(format!("Platform {} not found", id)))?;
+        let mut updated = platform.clone();
+        
+        if let Some(name_val) = name {
+            updated.name = name_val.to_string();
+            updated.display = name_val.to_string();
+        }
+        
+        if let Some(slug_val) = slug {
+            updated.slug = slug_val.to_string();
+        }
+        
+        if let Some(manufacturer) = manufacturer_id {
+            updated.manufacturer = Some(client.helpers().create_nested_manufacturer(manufacturer, None));
+        }
+        
+        if napalm_driver.is_some() {
+            updated.napalm_driver = napalm_driver.map(|s| s.to_string());
+        }
+        
+        if napalm_args.is_some() {
+            updated.napalm_args = napalm_args.map(|s| s.to_string());
+        }
+        
+        if description.is_some() {
+            updated.description = description;
+        }
+        
+        if comments.is_some() {
+            updated.comments = comments;
+        }
+        
+        if let Some(tags_vec) = tags {
+            updated.tags = tags_vec.into_iter().map(|t| NestedTag {
+                id: 0,
+                url: String::new(),
+                display: t.clone(),
+                name: t,
+                slug: String::new(),
+            }).collect();
+        }
+        
+        updated.last_updated = chrono::Utc::now().to_rfc3339();
+        drop(platforms);
+        client.platforms.lock().unwrap().insert(updated.name.clone(), updated.clone());
+        Ok(updated)
+}
 
 pub async fn query_device_types(client: &MockNetBoxClient, _filters: &[(&str, &str)], _fetch_all: bool) -> Result<Vec<DeviceType>, NetBoxError> {
         let device_types = client.device_types.lock().unwrap();
@@ -657,7 +956,7 @@ pub async fn get_device_type_by_model(client: &MockNetBoxClient, manufacturer_id
         Ok(client.device_types.lock().unwrap().get(&(manufacturer_id, model.to_string())).cloned())
 }
 
-pub async fn create_device_type(client: &MockNetBoxClient, manufacturer_id: u64, model: &str, slug: Option<&str>, part_number: Option<&str>, u_height: Option<f64>, is_full_depth: Option<bool>, description: Option<String>, comments: Option<String>) -> Result<DeviceType, NetBoxError> {
+pub async fn create_device_type(client: &MockNetBoxClient, manufacturer_id: u64, model: &str, slug: Option<&str>, part_number: Option<&str>, u_height: Option<f64>, is_full_depth: Option<bool>, description: Option<String>, comments: Option<String>, tags: Option<Vec<String>>) -> Result<DeviceType, NetBoxError> {
         let id = client.next_id();
         let slug_value = slug.map(|s| s.to_string()).unwrap_or_else(|| model.to_lowercase().replace(' ', "-"));
         let device_type = DeviceType {
@@ -679,6 +978,13 @@ pub async fn create_device_type(client: &MockNetBoxClient, manufacturer_id: u64,
             description,
             comments,
             device_count: 0,
+            tags: tags.unwrap_or_default().into_iter().map(|t| NestedTag {
+                id: 0,
+                url: String::new(),
+                display: t.clone(),
+                name: t,
+                slug: String::new(),
+            }).collect(),
             created: chrono::Utc::now().to_rfc3339(),
             last_updated: chrono::Utc::now().to_rfc3339(),
         };
@@ -686,5 +992,67 @@ pub async fn create_device_type(client: &MockNetBoxClient, manufacturer_id: u64,
         client.device_types.lock().unwrap().insert((manufacturer_id, model.to_string()), device_type.clone());
         Ok(device_type)
     }
+
+pub async fn update_device_type(client: &MockNetBoxClient, id: u64, manufacturer_id: Option<u64>, model: Option<&str>, slug: Option<&str>, part_number: Option<&str>, u_height: Option<f64>, is_full_depth: Option<bool>, description: Option<String>, comments: Option<String>, tags: Option<Vec<String>>) -> Result<DeviceType, NetBoxError> {
+        let device_types = client.device_types.lock().unwrap();
+        let device_type = device_types.values().find(|dt| dt.id == id)
+            .ok_or_else(|| NetBoxError::NotFound(format!("Device type {} not found", id)))?;
+        let mut updated = device_type.clone();
+        
+        if let Some(manufacturer) = manufacturer_id {
+            updated.manufacturer = NestedManufacturer {
+                id: manufacturer,
+                url: format!("{}/api/dcim/manufacturers/{}/", client.base_url, manufacturer),
+                display: format!("Manufacturer {}", manufacturer),
+                name: format!("Manufacturer {}", manufacturer),
+                slug: format!("manufacturer-{}", manufacturer),
+            };
+        }
+        
+        if let Some(model_val) = model {
+            updated.model = model_val.to_string();
+            updated.display = model_val.to_string();
+        }
+        
+        if let Some(slug_val) = slug {
+            updated.slug = slug_val.to_string();
+        }
+        
+        if part_number.is_some() {
+            updated.part_number = part_number.map(|s| s.to_string());
+        }
+        
+        if u_height.is_some() {
+            updated.u_height = u_height.unwrap_or(0.0);
+        }
+        
+        if is_full_depth.is_some() {
+            updated.is_full_depth = is_full_depth.unwrap_or(false);
+        }
+        
+        if description.is_some() {
+            updated.description = description;
+        }
+        
+        if comments.is_some() {
+            updated.comments = comments;
+        }
+        
+        if let Some(tags_vec) = tags {
+            updated.tags = tags_vec.into_iter().map(|t| NestedTag {
+                id: 0,
+                url: String::new(),
+                display: t.clone(),
+                name: t,
+                slug: String::new(),
+            }).collect();
+        }
+        
+        updated.last_updated = chrono::Utc::now().to_rfc3339();
+        drop(device_types);
+        let key = (updated.manufacturer.id, updated.model.clone());
+        client.device_types.lock().unwrap().insert(key, updated.clone());
+        Ok(updated)
+}
 
     // Tenancy Operations

@@ -32,6 +32,10 @@ pub struct NetBoxRegionSpec {
     /// Description of the region
     #[serde(skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
+    
+    /// Tag references (references NetBoxTag CRDs)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tags: Option<Vec<NetBoxResourceReference>>,
 }
 
 /// NetBoxRegionStatus defines the observed state of a NetBox region

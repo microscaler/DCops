@@ -272,6 +272,7 @@ impl Reconciler {
                         tenant_crd.spec.description.clone(),
                         tenant_crd.spec.comments.clone(),
                         group_id.map(TenantGroupId),
+                        None, // tags - not yet implemented in reconciler
                     ).await {
                         Ok(updated) => {
                             info!("Updated tenant {} in NetBox (ID: {})", updated.name, updated.id);
@@ -397,6 +398,7 @@ impl Reconciler {
                                 Some("Default tenant group for DCops".to_string()),
                                 None, // comments
                                 None, // parent_id
+                                None, // tags - not yet implemented
                             ).await {
                                 Ok(group) => {
                                     info!("Created default tenant group '{}' (ID: {})", group.name, group.id);
@@ -425,6 +427,7 @@ impl Reconciler {
                         tenant_crd.spec.description.clone(),
                         tenant_crd.spec.comments.clone(),
                         group_id.map(TenantGroupId),
+                        None, // tags - not yet implemented in reconciler
                     ).await {
                         Ok(created) => {
                             info!("Created tenant {} in NetBox (ID: {})", created.name, created.id);

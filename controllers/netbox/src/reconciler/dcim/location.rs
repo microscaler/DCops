@@ -189,6 +189,7 @@ impl Reconciler {
                         location_crd.spec.facility.as_deref(),
                         location_crd.spec.description.clone(),
                         None, // comments not in spec
+                        None, // tags - not yet implemented in reconciler
                     ).await {
                         Ok(created) => {
                             info!("Created location {} in NetBox (ID: {})", created.name, created.id);

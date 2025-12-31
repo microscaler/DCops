@@ -38,14 +38,13 @@ spec:
   description: "Web server primary IP address"
   
   # Tag references (optional)
+  # Tags must exist in NetBox before they can be referenced
+  # See netbox-tag-example.yaml for creating tags
+  # Example:
   tags:
     - apiGroup: dcops.microscaler.io
       kind: NetBoxTag
-      name: production
-      namespace: default
-    - apiGroup: dcops.microscaler.io
-      kind: NetBoxTag
-      name: web-tier
+      name: managed-by-dcops
       namespace: default
   
   # Comments (optional)

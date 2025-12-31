@@ -44,6 +44,10 @@ pub struct NetBoxLocationSpec {
     /// Description of the location
     #[serde(skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
+    
+    /// Tag references (references NetBoxTag CRDs)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tags: Option<Vec<NetBoxResourceReference>>,
 }
 
 /// NetBoxLocationStatus defines the observed state of a NetBox location

@@ -55,6 +55,11 @@ impl Reconciler {
             return true;
         }
         
+        // Compare tags using helper function
+        if crate::reconcile_helpers::tags_differ(&existing.tags, &spec.tags) {
+            return true;
+        }
+        
         false // No changes needed
     }
 
@@ -159,7 +164,32 @@ impl Reconciler {
                     crds::IPRangeStatus::Deprecated => "deprecated",
                 };
                 
-                // Check if any field changed
+                // Always resolve tags (even if nothing else changed, tags might need updating)
+                let resolved_tags_json = self.resolve_tag_references(
+                    netbox_client.as_ref(),
+                    &ip_range_crd.spec.tags,
+                    namespace,
+                    name,
+                ).await;
+                
+                // Convert resolved tags from Vec<serde_json::Value> to Vec<String>
+                // IPRange client expects Vec<String> (tag IDs as strings)
+                let resolved_tags: Option<Vec<String>> = resolved_tags_json.map(|tags| {
+                    tags.into_iter()
+                        .filter_map(|tag_value| {
+                            // Extract numeric ID from serde_json::Value
+                            if let Some(id) = tag_value.as_u64() {
+                                Some(id.to_string())
+                            } else {
+                                // If it's an object (slug format), we can't use it with IPRange's current API
+                                warn!("Tag resolved to non-numeric format, skipping (IPRange requires tag IDs as strings)");
+                                None
+                            }
+                        })
+                        .collect()
+                });
+                
+                // Check if any field changed (including tags)
                 if Self::ip_range_needs_update(
                     &ip_range_crd.spec,
                     &existing_range,
@@ -173,6 +203,8 @@ impl Reconciler {
                         crds::IPRangeStatus::Deprecated => Some(IPRangeStatus::Deprecated),
                     };
                     
+                    debug!("Updating IP range {} with tenant_id: {}, tags: {:?}", existing_range.id, tenant_id, resolved_tags);
+                    
                     match netbox_client.update_ip_range(
                         IPRangeId(existing_range.id),
                         Some(&start_ip_net),
@@ -184,7 +216,7 @@ impl Reconciler {
                         ip_range_crd.spec.description.clone(),
                         Some(ip_range_crd.spec.mark_utilized),
                         Some(ip_range_crd.spec.mark_populated),
-                        None, // Tags not yet supported
+                        resolved_tags,
                     ).await {
                         Ok(updated_range) => {
                             // Update successful
@@ -316,6 +348,33 @@ impl Reconciler {
             Err(_) => (None, false), // If query fails, proceed with creation
         };
         
+        // Resolve tags for creation
+        let resolved_tags_json = self.resolve_tag_references(
+            netbox_client.as_ref(),
+            &ip_range_crd.spec.tags,
+            namespace,
+            name,
+        ).await;
+        
+        // Convert resolved tags from Vec<serde_json::Value> to Vec<String>
+        // IPRange client expects Vec<String> (tag IDs as strings)
+        let resolved_tags: Option<Vec<String>> = resolved_tags_json.map(|tags| {
+            tags.into_iter()
+                .filter_map(|tag_value| {
+                    // Extract numeric ID from serde_json::Value
+                    if let Some(id) = tag_value.as_u64() {
+                        Some(id.to_string())
+                    } else {
+                        // If it's an object (slug format), we can't use it with IPRange's current API
+                        warn!("Tag resolved to non-numeric format, skipping (IPRange requires tag IDs as strings)");
+                        None
+                    }
+                })
+                .collect()
+        });
+        
+        debug!("Creating IP range {} - {} with tenant_id: {}, tags: {:?}", start_ip_net, end_ip_net, tenant_id, resolved_tags);
+        
         let netbox_ip_range = if let Some(existing) = existing_range_opt {
             // Range was found in pre-check
             existing
@@ -331,7 +390,7 @@ impl Reconciler {
                 ip_range_crd.spec.description.clone(),
                 Some(ip_range_crd.spec.mark_utilized),
                 Some(ip_range_crd.spec.mark_populated),
-                None, // Tags not yet supported
+                resolved_tags,
             ).await {
                 Ok(created_range) => {
                     // Creation successful

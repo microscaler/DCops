@@ -137,6 +137,7 @@ impl Reconciler {
                         platform_crd.spec.napalm_args.as_deref(),
                         platform_crd.spec.description.clone(),
                         platform_crd.spec.comments.clone(),
+                        None, // tags - not yet implemented in reconciler
                     ).await {
                         Ok(created) => {
                             info!("Created platform {} in NetBox (ID: {})", created.name, created.id);

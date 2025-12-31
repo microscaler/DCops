@@ -124,6 +124,7 @@ impl Reconciler {
                         rir_crd.spec.slug.as_deref(),
                         rir_crd.spec.description.clone(),
                         rir_crd.spec.is_private,
+                        None, // tags - not yet implemented in reconciler
                     ).await {
                         Ok(created) => {
                             info!("Created RIR {} in NetBox (ID: {})", created.name, created.id);

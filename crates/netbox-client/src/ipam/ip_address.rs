@@ -110,10 +110,9 @@ pub async fn create_ip_address(
         if let Some(dns_name) = req.dns_name {
             body["dns_name"] = serde_json::Value::String(dns_name);
         }
-        if let Some(tags) = req.tags {
-            body["tags"] = serde_json::to_value(tags)
-                .map_err(|e| NetBoxError::Serialization(e))?;
-        }
+        // Use nested reference helper like Prefix does - NetBox requires {"id": X} not just X
+        helpers::add_nested_reference(&mut body, "tenant", req.tenant);
+        helpers::add_optional_tags_field(&mut body, req.tags)?;
     }
     
     let url = format!("{}/api/ipam/ip-addresses/", core.base_url);
@@ -164,6 +163,8 @@ pub async fn update_ip_address(
     helpers::add_optional_enum_field(&mut body, "status", request.status)?;
     helpers::add_optional_string_field(&mut body, "role", request.role.as_deref());
     helpers::add_optional_string_field(&mut body, "dns_name", request.dns_name.as_deref());
+    // Use nested reference helper like Prefix does - NetBox requires {"id": X} not just X
+    helpers::add_nested_reference(&mut body, "tenant", request.tenant);
     helpers::add_optional_enum_field(&mut body, "tags", request.tags)?;
     
     let url = format!("{}/api/ipam/ip-addresses/{}/", core.base_url, id);
@@ -266,10 +267,7 @@ pub async fn allocate_ip(
         if let Some(dns_name) = req.dns_name {
             body["dns_name"] = serde_json::Value::String(dns_name);
         }
-        if let Some(tags) = req.tags {
-            body["tags"] = serde_json::to_value(tags)
-                .map_err(|e| NetBoxError::Serialization(e))?;
-        }
+        helpers::add_optional_tags_field(&mut body, req.tags)?;
     }
     
     // Create IP address via POST to available-ips endpoint

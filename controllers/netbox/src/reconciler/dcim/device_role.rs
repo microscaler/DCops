@@ -137,6 +137,7 @@ impl Reconciler {
                         Some(device_role_crd.spec.vm_role),
                         device_role_crd.spec.description.clone(),
                         device_role_crd.spec.comments.clone(),
+                        None, // tags - not yet implemented in reconciler
                     ).await {
                         Ok(created) => {
                             info!("Created device role {} in NetBox (ID: {})", created.name, created.id);

@@ -21,6 +21,7 @@ use crds::{
 use kube::{Api, Client};
 use tokio::task::JoinHandle;
 use tracing::{info, warn};
+use std::sync::Arc;
 
 /// Main controller for NetBox resource management.
 pub struct Controller {
@@ -53,6 +54,43 @@ pub struct Controller {
 }
 
 impl Controller {
+    /// Performs startup tasks like reconciliation and cleanup.
+    async fn perform_startup_tasks(
+        reconciler: &Reconciler,
+        token_resolver: &std::sync::Arc<TokenResolver>,
+    ) {
+        // Perform startup reconciliation to map existing NetBox resources back to CRs
+        info!("Performing startup reconciliation to map existing NetBox resources...");
+        if let Err(e) = reconciler.startup_reconciliation().await {
+            warn!("Startup reconciliation failed (will continue): {}", e);
+        } else {
+            info!("Startup reconciliation completed");
+        }
+        
+        // Perform global duplicate IP address cleanup on startup
+        // Try to get a NetBox client for the default tenant to run cleanup
+        info!("Performing global duplicate IP address cleanup...");
+        use crds::NetBoxResourceReference;
+        let default_tenant_ref = NetBoxResourceReference {
+            api_group: "dcops.microscaler.io".to_string(),
+            kind: "NetBoxTenant".to_string(),
+            name: "datacenter-tenant".to_string(),
+            namespace: None,
+        };
+        if let Ok(netbox_client) = token_resolver.create_client_for_tenant("default", &default_tenant_ref).await {
+            match reconciler.cleanup_all_duplicate_ips(&netbox_client).await {
+                Ok((total, deleted, errors)) => {
+                    info!("Global duplicate IP cleanup completed: {} duplicates found, {} deleted, {} errors", total, deleted, errors);
+                }
+                Err(e) => {
+                    warn!("Global duplicate IP cleanup failed (will continue): {}", e);
+                }
+            }
+        } else {
+            warn!("Could not get NetBox client for global duplicate cleanup (will continue)");
+        }
+    }
+    
     /// Creates a new controller instance.
     pub async fn new(
         netbox_url: String,
@@ -109,7 +147,6 @@ impl Controller {
         // Create EventRecorder for emitting Kubernetes events
         use kube::runtime::events::{Reporter, Recorder};
         use crate::events::RecorderWrapper;
-        use std::sync::Arc;
         let reporter = Reporter {
             controller: "netbox-controller".to_string(),
             instance: Some("netbox-controller".to_string()),
@@ -149,13 +186,8 @@ impl Controller {
             KubeApiWrapper::new(ip_claim_api.clone()),
         );
         
-        // Perform startup reconciliation to map existing NetBox resources back to CRs
-        info!("Performing startup reconciliation to map existing NetBox resources...");
-        if let Err(e) = reconciler.startup_reconciliation().await {
-            warn!("Startup reconciliation failed (will continue): {}", e);
-        } else {
-            info!("Startup reconciliation completed");
-        }
+        // Perform startup tasks (reconciliation, cleanup, etc.)
+        Self::perform_startup_tasks(&reconciler, &token_resolver).await;
         
         // Create watchers - use Arc to share reconciler
         let reconciler_arc = Arc::new(reconciler);

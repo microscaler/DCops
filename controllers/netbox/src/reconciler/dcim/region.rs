@@ -86,37 +86,78 @@ impl Reconciler {
         // Handle existing region (from helper) or create new
         let netbox_region = match netbox_region {
             Some(region) => {
-                // Resource exists and is up-to-date - only update status if it changed
-                use crate::reconcile_helpers::status_needs_update;
-                let needs_status_update = status_needs_update(
-                    region_crd.status.as_ref(),
-                    region.id,
-                    &region.url,
-                    "Created",
-                    None,
-                );
+                // Always resolve tags (even if nothing else changed, tags might need updating)
+                let resolved_tags_json = self.resolve_tag_references(
+                    netbox_client.as_ref(),
+                    &region_crd.spec.tags,
+                    namespace,
+                    name,
+                ).await;
                 
-                if needs_status_update {
-                    use crate::reconcile_helpers::update_resource_status;
-                    let status_patch = Self::create_typed_region_status_patch(
+                // Convert resolved tags from Vec<serde_json::Value> to Vec<String>
+                let resolved_tags = crate::reconcile_helpers::convert_tags_to_strings(resolved_tags_json);
+                
+                // Check if tags need updating
+                let tags_need_update = crate::reconcile_helpers::tags_differ(&region.tags, &region_crd.spec.tags);
+                
+                if tags_need_update {
+                    info!("NetBoxRegion {}/{} tags differ, updating in NetBox", namespace, name);
+                    match netbox_client.update_region(
+                        RegionId(region.id),
+                        Some(&region_crd.spec.name),
+                        region_crd.spec.slug.as_deref(),
+                        parent_id.map(RegionId),
+                        region_crd.spec.description.clone(),
+                        None, // comments
+                        resolved_tags,
+                    ).await {
+                        Ok(updated) => {
+                            info!("Updated NetBoxRegion {}/{} tags in NetBox (ID: {})", namespace, name, updated.id);
+                            use crate::events::reasons;
+                            self.record_event_normal(
+                                reasons::UPDATED,
+                                &format!("Updated NetBoxRegion {}/{} tags in NetBox", namespace, name),
+                                region_crd,
+                            ).await;
+                            updated
+                        }
+                        Err(e) => {
+                            warn!("Failed to update NetBoxRegion {}/{} tags: {}", namespace, name, e);
+                            region // Use existing region if update fails
+                        }
+                    }
+                } else {
+                    // Tags are up-to-date - check if status needs updating
+                    use crate::reconcile_helpers::status_needs_update;
+                    let needs_status_update = status_needs_update(
+                        region_crd.status.as_ref(),
                         region.id,
-                        region.url.clone(),
-                        ResourceState::Created,
+                        &region.url,
+                        "Created",
                         None,
                     );
-                    update_resource_status(
-                        &*self.netbox_region_api,
-                        name,
-                        namespace,
-                        &status_patch,
-                        "NetBoxRegion",
-                        region.id,
-                    ).await?;
-                    debug!("Updated NetBoxRegion {}/{} status: NetBox ID {}", namespace, name, region.id);
-                    return Ok(());
-                } else {
-                    debug!("NetBoxRegion {}/{} already has correct status (ID: {}), skipping update", namespace, name, region.id);
-                    return Ok(());
+                    
+                    if needs_status_update {
+                        use crate::reconcile_helpers::update_resource_status;
+                        let status_patch = Self::create_typed_region_status_patch(
+                            region.id,
+                            region.url.clone(),
+                            ResourceState::Created,
+                            None,
+                        );
+                        update_resource_status(
+                            &*self.netbox_region_api,
+                            name,
+                            namespace,
+                            &status_patch,
+                            "NetBoxRegion",
+                            region.id,
+                        ).await?;
+                        debug!("Updated NetBoxRegion {}/{} status: NetBox ID {}", namespace, name, region.id);
+                    } else {
+                        debug!("NetBoxRegion {}/{} already has correct status (ID: {}), skipping update", namespace, name, region.id);
+                    }
+                    region // Return existing region
                 }
             }
             None => {
@@ -136,6 +177,16 @@ impl Reconciler {
                 if let Some(existing) = existing_region {
                     existing
                 } else {
+                    // Resolve tags before creation
+                    let resolved_tags_json = self.resolve_tag_references(
+                        netbox_client.as_ref(),
+                        &region_crd.spec.tags,
+                        namespace,
+                        name,
+                    ).await;
+                    
+                    let resolved_tags = crate::reconcile_helpers::convert_tags_to_strings(resolved_tags_json);
+                    
                     // Create region
                     debug!("Attempting to create region {} in NetBox", region_crd.spec.name);
                     match netbox_client.create_region(
@@ -144,6 +195,7 @@ impl Reconciler {
                         parent_id.map(RegionId),
                         region_crd.spec.description.clone(),
                         None, // comments - not in CRD spec yet
+                        resolved_tags,
                     ).await {
                         Ok(created) => {
                             info!("Created region {} in NetBox (ID: {})", created.name, created.id);

@@ -240,6 +240,55 @@ pub fn create_test_prefix(
     }
 }
 
+/// Helper to create test NetBoxTag CRD
+#[cfg(test)]
+pub fn create_test_netbox_tag(
+    name: &str,
+    namespace: &str,
+    netbox_id: Option<u64>,
+) -> crds::NetBoxTag {
+    use k8s_openapi::apimachinery::pkg::apis::meta::v1::ObjectMeta;
+    
+    crds::NetBoxTag {
+        metadata: ObjectMeta {
+            name: Some(name.to_string()),
+            namespace: Some(namespace.to_string()),
+            ..Default::default()
+        },
+        spec: crds::NetBoxTagSpec {
+            name: name.to_string(),
+            slug: Some(name.to_string()),
+            color: Some("9e9e9e".to_string()),
+            description: None,
+            comments: None,
+            tenant: None,
+        },
+        status: netbox_id.map(|id| crds::NetBoxTagStatus {
+            netbox_id: Some(id),
+            netbox_url: Some(format!("http://test-netbox/api/extras/tags/{}/", id)),
+            state: crds::ResourceState::Created,
+            error: None,
+            last_reconciled: None,
+        }),
+    }
+}
+
+/// Helper to create test NetBox Tag model (NestedTag)
+#[cfg(test)]
+pub fn create_test_nested_tag(
+    id: u64,
+    name: &str,
+    base_url: &str,
+) -> netbox_client::NestedTag {
+    netbox_client::NestedTag {
+        id,
+        url: format!("{}/api/extras/tags/{}/", base_url, id),
+        display: name.to_string(),
+        name: name.to_string(),
+        slug: name.to_string(),
+    }
+}
+
 /// Helper to create test IPClaim CRD
 #[cfg(test)]
 pub fn create_test_ip_claim(

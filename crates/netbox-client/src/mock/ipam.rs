@@ -570,7 +570,7 @@ pub async fn get_rir_by_name(client: &MockNetBoxClient, name: &str) -> Result<Op
         Ok(client.rirs.lock().unwrap().get(name).cloned())
 }
 
-pub async fn create_rir(client: &MockNetBoxClient, name: &str, slug: Option<&str>, description: Option<String>, is_private: Option<bool>) -> Result<Rir, NetBoxError> {
+pub async fn create_rir(client: &MockNetBoxClient, name: &str, slug: Option<&str>, description: Option<String>, is_private: Option<bool>, tags: Option<Vec<String>>) -> Result<Rir, NetBoxError> {
         let id = client.next_id();
         let slug_value = slug.map(|s| s.to_string()).unwrap_or_else(|| name.to_lowercase().replace(' ', "-"));
         let rir = Rir {
@@ -581,12 +581,58 @@ pub async fn create_rir(client: &MockNetBoxClient, name: &str, slug: Option<&str
             slug: slug_value,
             description,
             is_private: is_private.unwrap_or(false),
+            tags: tags.unwrap_or_default().into_iter().map(|t| NestedTag {
+                id: 0,
+                url: String::new(),
+                display: t.clone(),
+                name: t,
+                slug: String::new(),
+            }).collect(),
             created: chrono::Utc::now().to_rfc3339(),
             last_updated: chrono::Utc::now().to_rfc3339(),
         };
 
         client.rirs.lock().unwrap().insert(name.to_string(), rir.clone());
         Ok(rir)
+    }
+
+pub async fn update_rir(client: &MockNetBoxClient, id: u64, name: Option<&str>, slug: Option<&str>, description: Option<String>, is_private: Option<bool>, tags: Option<Vec<String>>) -> Result<Rir, NetBoxError> {
+        let rirs = client.rirs.lock().unwrap();
+        let rir = rirs.values().find(|r| r.id == id)
+            .ok_or_else(|| NetBoxError::NotFound(format!("RIR {} not found", id)))?;
+        let mut updated = rir.clone();
+        
+        if let Some(name_val) = name {
+            updated.name = name_val.to_string();
+            updated.display = name_val.to_string();
+        }
+        
+        if let Some(slug_val) = slug {
+            updated.slug = slug_val.to_string();
+        }
+        
+        if description.is_some() {
+            updated.description = description;
+        }
+        
+        if is_private.is_some() {
+            updated.is_private = is_private.unwrap_or(false);
+        }
+        
+        if let Some(tags_vec) = tags {
+            updated.tags = tags_vec.into_iter().map(|t| NestedTag {
+                id: 0,
+                url: String::new(),
+                display: t.clone(),
+                name: t,
+                slug: String::new(),
+            }).collect();
+        }
+        
+        updated.last_updated = chrono::Utc::now().to_rfc3339();
+        drop(rirs);
+        client.rirs.lock().unwrap().insert(updated.name.clone(), updated.clone());
+        Ok(updated)
     }
 
 pub async fn create_vlan(client: &MockNetBoxClient, vid: u16, name: &str, site_id: Option<SiteId>, _group_id: Option<VlanGroupId>, tenant_id: Option<TenantId>, role_id: Option<RoleId>, status: Option<&str>, description: Option<String>, comments: Option<String>) -> Result<Vlan, NetBoxError> {

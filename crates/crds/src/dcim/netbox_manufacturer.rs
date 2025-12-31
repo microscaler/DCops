@@ -5,6 +5,7 @@
 use kube::CustomResource;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
+use crate::references::NetBoxResourceReference;
 
 /// NetBoxManufacturerSpec defines the desired state of a NetBox manufacturer
 #[derive(CustomResource, Debug, Clone, Serialize, Deserialize, JsonSchema)]
@@ -27,6 +28,10 @@ pub struct NetBoxManufacturerSpec {
     /// Description of the manufacturer
     #[serde(skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
+    
+    /// Tag references (references NetBoxTag CRDs)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tags: Option<Vec<NetBoxResourceReference>>,
 }
 
 /// NetBoxManufacturerStatus defines the observed state of a NetBox manufacturer

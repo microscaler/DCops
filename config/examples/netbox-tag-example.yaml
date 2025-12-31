@@ -1,3 +1,4 @@
+# Platform-managed tag (no tenant specified - uses system tenant token)
 apiVersion: dcops.microscaler.io/v1alpha1
 kind: NetBoxTag
 metadata:
@@ -9,4 +10,84 @@ spec:
   description: "Resource managed by DCops controller"
   color: "9e9e9e"
   comments: "Auto-managed tag"
+  # No tenant specified - platform-managed tag
 
+---
+# Tenant-managed tag (uses datacenter-tenant's token)
+apiVersion: dcops.microscaler.io/v1alpha1
+kind: NetBoxTag
+metadata:
+  name: production
+  namespace: default
+spec:
+  name: "production"
+  slug: "production"
+  description: "Production environment resources"
+  color: "ff0000"
+  comments: "Tag for production resources"
+  # Tenant reference - tag will be managed using this tenant's NetBox API token
+  tenant:
+    apiGroup: dcops.microscaler.io
+    kind: NetBoxTenant
+    name: datacenter-tenant
+    namespace: default
+
+---
+# Tenant-managed tag (uses datacenter-tenant's token)
+apiVersion: dcops.microscaler.io/v1alpha1
+kind: NetBoxTag
+metadata:
+  name: web-tier
+  namespace: default
+spec:
+  name: "web-tier"
+  slug: "web-tier"
+  description: "Web tier infrastructure"
+  color: "00ff00"
+  comments: "Tag for web tier resources"
+  # Tenant reference - tag will be managed using this tenant's NetBox API token
+  tenant:
+    apiGroup: dcops.microscaler.io
+    kind: NetBoxTenant
+    name: datacenter-tenant
+    namespace: default
+
+---
+# Tenant-managed tag (uses datacenter-tenant's token)
+apiVersion: dcops.microscaler.io/v1alpha1
+kind: NetBoxTag
+metadata:
+  name: dhcp-managed
+  namespace: default
+spec:
+  name: "dhcp-managed"
+  slug: "dhcp-managed"
+  description: "DHCP-assigned IP addresses"
+  color: "0000ff"
+  comments: "Tag for DHCP-managed IP addresses"
+  # Tenant reference - tag will be managed using this tenant's NetBox API token
+  tenant:
+    apiGroup: dcops.microscaler.io
+    kind: NetBoxTenant
+    name: datacenter-tenant
+    namespace: default
+
+---
+# Tenant-managed tag (uses datacenter-tenant's token)
+apiVersion: dcops.microscaler.io/v1alpha1
+kind: NetBoxTag
+metadata:
+  name: client-device
+  namespace: default
+spec:
+  name: "client-device"
+  slug: "client-device"
+  description: "Client device resources"
+  color: "ffff00"
+  comments: "Tag for client devices"
+  # Tenant reference - tag will be managed using this tenant's NetBox API token
+  tenant:
+    apiGroup: dcops.microscaler.io
+    kind: NetBoxTenant
+    name: datacenter-tenant
+    namespace: default

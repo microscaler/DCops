@@ -51,6 +51,10 @@ pub struct NetBoxTenantSpec {
     /// Set to 0 to disable periodic reconciliation (only reconcile on changes).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reconcile_interval: Option<u64>,
+    
+    /// Tag references (references NetBoxTag CRDs)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tags: Option<Vec<NetBoxResourceReference>>,
 }
 
 /// NetBoxTenantStatus defines the observed state of a NetBox tenant

@@ -5,6 +5,7 @@
 use kube::CustomResource;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
+use crate::references::NetBoxResourceReference;
 
 /// NetBoxRIRSpec defines the desired state of a NetBox RIR
 #[derive(CustomResource, Debug, Clone, Serialize, Deserialize, JsonSchema)]
@@ -31,6 +32,10 @@ pub struct NetBoxRIRSpec {
     /// Whether this is a private RIR (default: false)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub is_private: Option<bool>,
+    
+    /// Tag references (references NetBoxTag CRDs)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tags: Option<Vec<NetBoxResourceReference>>,
 }
 
 /// NetBoxRIRStatus defines the observed state of a NetBox RIR

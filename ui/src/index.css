@@ -1,0 +1,183 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Skip links for accessibility */
+.skip-links {
+  position: absolute;
+  top: -100px;
+  left: 0;
+  z-index: 100;
+}
+
+.skip-link {
+  position: absolute;
+  top: 0;
+  left: 0;
+  background: #4a5a4c;
+  color: white;
+  padding: 0.75rem 1rem;
+  text-decoration: none;
+  font-weight: 600;
+  border-radius: 0 0 4px 0;
+  transform: translateY(-100%);
+  transition: transform 0.2s;
+}
+
+.skip-link:focus {
+  transform: translateY(0);
+  z-index: 100;
+}
+
+@layer base {
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
+      'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
+      sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    background-color: #faf9f7;
+    color: #2d3748;
+  }
+
+  code {
+    font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Roboto Mono', 
+      'source-code-pro', 'Menlo', 'Consolas', 'Courier New', monospace;
+    font-size: 0.9em;
+  }
+
+  pre {
+    background-color: #0d1117 !important;
+    border: 1px solid rgba(0, 255, 65, 0.2) !important;
+    box-shadow: 0 0 10px rgba(0, 255, 65, 0.1) !important;
+    max-width: 80ch !important;
+    width: 100%;
+    white-space: pre-wrap !important;
+    word-wrap: break-word !important;
+    overflow-wrap: break-word !important;
+    font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Roboto Mono', 
+      'source-code-pro', 'Menlo', 'Consolas', 'Courier New', monospace !important;
+  }
+
+  pre code {
+    color: #00ff41 !important;
+    background-color: transparent !important;
+    padding: 0 !important;
+    font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Roboto Mono', 
+      'source-code-pro', 'Menlo', 'Consolas', 'Courier New', monospace !important;
+    white-space: pre-wrap !important;
+    word-wrap: break-word !important;
+    overflow-wrap: break-word !important;
+    display: block;
+    width: 100%;
+  }
+
+  :not(pre) > code {
+    color: #c05621;
+    background-color: #f7f6f4;
+  }
+}
+
+@layer components {
+  .custom-scrollbar::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  
+  .custom-scrollbar::-webkit-scrollbar-track {
+    background: #f1f0ed;
+  }
+  
+  .custom-scrollbar::-webkit-scrollbar-thumb {
+    background: #cbd5e0;
+    border-radius: 4px;
+  }
+  
+  .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+    background: #a0aec0;
+  }
+
+  #table-of-contents nav button {
+    background-color: transparent;
+    border: none;
+    margin: 0;
+    padding: 0.5rem 0.75rem;
+    font-family: inherit;
+    font-size: 0.875rem;
+    line-height: inherit;
+    color: inherit;
+    cursor: pointer;
+    display: block;
+    width: 100%;
+    text-align: left;
+    border-radius: 0.375rem;
+    transition-property: color, background-color, border-color;
+    transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+    transition-duration: 150ms;
+  }
+
+  #table-of-contents nav button[data-active="true"],
+  #table-of-contents nav button[aria-current="location"] {
+    background-color: #e8f0e9 !important;
+    color: #2d4a2f !important;
+    font-weight: 500 !important;
+    border-left: 2px solid #4a5a4c !important;
+  }
+
+  #table-of-contents nav button[data-active="true"]:hover,
+  #table-of-contents nav button[aria-current="location"]:hover {
+    background-color: #e8f0e9 !important;
+  }
+
+  .mermaid {
+    display: flex;
+    justify-content: center;
+    align-content: flex-start;
+    height: fit-content;
+    margin: 1.5rem 0;
+  }
+
+  .mermaid > svg {
+    margin: 0 auto;
+    transform-origin: center;
+    transition: 100ms ease-in-out;
+    max-width: 100%;
+    height: auto;
+  }
+
+  .mermaid svg > g:first-child > rect:first-child[fill="#1f2328"],
+  .mermaid svg > g:first-child > rect:first-child[fill="#0d1117"],
+  .mermaid svg > g:first-child > rect:first-child[fill="#161b22"],
+  .mermaid svg > g:first-child > rect:first-child[fill="#21262d"],
+  .mermaid svg > g:first-child > rect:first-child[fill="#000000"] {
+    fill: #ffffff !important;
+    stroke: none !important;
+  }
+
+  .mermaid a,
+  .mermaid a .nodeLabel {
+    color: #0969da !important;
+    text-decoration: underline;
+    text-underline-offset: 0.2rem;
+  }
+
+  pre.group {
+    position: relative;
+  }
+
+  .copy-code-button {
+    position: absolute;
+    top: 0.5rem;
+    right: 0.5rem;
+    z-index: 10;
+    opacity: 0;
+    transition: opacity 0.2s;
+  }
+
+  pre.group:hover .copy-code-button,
+  .copy-code-button:focus {
+    opacity: 1;
+  }
+}
+

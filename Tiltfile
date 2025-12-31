@@ -9,6 +9,7 @@
 # Resources are organized into parallel streams using labels:
 # - 'infrastructure' label: NetBox, PostgreSQL, Redis
 # - 'controllers' label: DCops controllers (to be added)
+# - 'docs' label: DCops UI documentation site
 
 # ====================
 # Configuration
@@ -135,8 +136,10 @@ local_resource(
 # Apply example NetBox CRDs for development/testing
 # These are applied after CRDs are generated and before controllers start
 # This ensures the controller has resources to reconcile on startup
-# The script automatically discovers all YAML files in config/examples/
-# and applies them. This is more maintainable than a static list.
+# The script automatically discovers all YAML files in config/examples/ and subdirectories
+# and applies them. Examples are organized as:
+# - config/examples/platform/ - Platform-level resources (manufacturer, device-type, etc.)
+# - config/examples/tenant-<name>/ - Tenant-specific resources
 local_resource(
     'apply-netbox-examples',
     cmd='python3 scripts/apply_example_crs.py',
@@ -241,4 +244,37 @@ local_resource(
 # Future Controllers
 # ====================
 # Additional controllers will be added here as they're implemented
+
+# ====================
+# DCops UI Documentation Site
+# ====================
+
+# Build documentation site Docker image
+# Tilt will watch ui/ for changes and rebuild
+# Note: The build process runs 'yarn build' in the Dockerfile
+docker_build(
+    'dcops-ui',
+    '.',
+    dockerfile='./dockerfiles/Dockerfile.dcops-ui',
+    platform='linux/amd64',
+    only=[
+        './ui',
+        './dockerfiles/Dockerfile.dcops-ui',
+        './dockerfiles/nginx.dcops-ui.conf',
+    ],
+    ignore=[
+        'ui/node_modules',
+        'ui/dist',
+        'ui/.git',
+    ],
+)
+
+# Documentation site service (ClusterIP with port forward)
+k8s_yaml(kustomize('%s/config/dcops-ui' % DCops_DIR))
+
+k8s_resource(
+    'dcops-ui',
+    port_forwards='8800:80',
+    labels=['docs'],
+)
 

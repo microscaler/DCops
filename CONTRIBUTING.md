@@ -809,7 +809,13 @@ When adding a new NetBox CRD reconciler, follow this complete checklist:
 - [ ] Add permissions for the CRD (get, list, watch, create, update, patch, delete)
 - [ ] Add permissions for status subresource (get, patch, update)
 
-### 8. Example CR (`config/examples/netbox-<resource>-example.yaml`)
+### 8. Example CR (`config/examples/`)
+
+Example CRs are organized in subdirectories:
+- `config/examples/platform/` - Platform-level resources (manufacturer, device-type, device-role, platform)
+- `config/examples/tenant-<name>/` - Tenant-specific resources (site, device, IP addresses, etc.)
+
+Example files follow the pattern: `netbox-<resource>-example.yaml` or `<resource>-example.yaml`
 
 - [ ] Create example CR file with complete `spec`
 - [ ] Include realistic values

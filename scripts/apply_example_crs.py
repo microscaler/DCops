@@ -3,10 +3,14 @@
 Apply all example CRs from config/examples/ directory.
 
 This script:
-1. Discovers all YAML files in config/examples/
+1. Discovers all YAML files in config/examples/ and subdirectories
 2. Applies them to the Kubernetes cluster
 3. Handles errors gracefully (some CRs may fail if dependencies aren't ready)
 4. Provides clear output about what was applied
+
+The examples directory is organized as:
+- config/examples/platform/ - Platform-level resources (manufacturer, device-type, etc.)
+- config/examples/tenant-<name>/ - Tenant-specific resources
 
 Usage:
     python3 scripts/apply_example_crs.py
@@ -24,10 +28,11 @@ EXAMPLES_DIR = PROJECT_ROOT / "config" / "examples"
 
 
 def find_yaml_files(directory: Path) -> list[Path]:
-    """Find all YAML files in the given directory."""
+    """Find all YAML files in the given directory and subdirectories recursively."""
     yaml_files = []
     if directory.exists():
-        for file in sorted(directory.glob("*.yaml")):
+        # Recursively find all YAML files in subdirectories
+        for file in sorted(directory.rglob("*.yaml")):
             yaml_files.append(file)
     return yaml_files
 
@@ -51,9 +56,9 @@ def apply_yaml_file(file_path: Path) -> tuple[bool, str]:
 
 def main():
     """Main entry point."""
-    print("📋 Discovering example CRs in config/examples/...")
+    print("📋 Discovering example CRs in config/examples/ (including subdirectories)...")
     
-    # Find all YAML files
+    # Find all YAML files recursively
     yaml_files = find_yaml_files(EXAMPLES_DIR)
     
     if not yaml_files:
@@ -69,8 +74,13 @@ def main():
     errors = []
     
     for yaml_file in yaml_files:
-        file_name = yaml_file.name
-        print(f"  Applying {file_name}...", end=" ", flush=True)
+        # Show relative path from examples directory for clarity
+        try:
+            rel_path = yaml_file.relative_to(EXAMPLES_DIR)
+            file_display = str(rel_path)
+        except ValueError:
+            file_display = yaml_file.name
+        print(f"  Applying {file_display}...", end=" ", flush=True)
         
         success, output = apply_yaml_file(yaml_file)
         

@@ -47,6 +47,7 @@
     font-size: 0.9em;
   }
 
+  /* Default: dark background for all code blocks */
   pre {
     background-color: #0d1117 !important;
     border: 1px solid rgba(0, 255, 65, 0.2) !important;
@@ -58,6 +59,22 @@
     overflow-wrap: break-word !important;
     font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Roboto Mono', 
       'source-code-pro', 'Menlo', 'Consolas', 'Courier New', monospace !important;
+  }
+
+  /* Mermaid code blocks (before rendering) should have blue background */
+  pre.language-mermaid {
+    background-color: #e1f5ff !important;
+    border: 1px solid rgba(14, 165, 233, 0.3) !important;
+    box-shadow: 0 0 10px rgba(14, 165, 233, 0.1) !important;
+  }
+
+  /* Pre elements containing mermaid divs should have blue background */
+  /* Using both :has() selector and class-based targeting for compatibility */
+  pre:has(.mermaid),
+  pre.contains-mermaid {
+    background-color: #e1f5ff !important;
+    border: 1px solid rgba(14, 165, 233, 0.3) !important;
+    box-shadow: 0 0 10px rgba(14, 165, 233, 0.1) !important;
   }
 
   pre code {
@@ -144,14 +161,36 @@
     transition: 100ms ease-in-out;
     max-width: 100%;
     height: auto;
+    background-color: #e1f5ff !important;
   }
 
-  .mermaid svg > g:first-child > rect:first-child[fill="#1f2328"],
-  .mermaid svg > g:first-child > rect:first-child[fill="#0d1117"],
-  .mermaid svg > g:first-child > rect:first-child[fill="#161b22"],
-  .mermaid svg > g:first-child > rect:first-child[fill="#21262d"],
-  .mermaid svg > g:first-child > rect:first-child[fill="#000000"] {
-    fill: #ffffff !important;
+  /* Replace all dark background rectangles in Mermaid diagrams */
+  .mermaid svg rect[fill="#1f2328"],
+  .mermaid svg rect[fill="#0d1117"],
+  .mermaid svg rect[fill="#161b22"],
+  .mermaid svg rect[fill="#21262d"],
+  .mermaid svg rect[fill="#000000"],
+  .mermaid svg rect[fill="#1a1a1a"],
+  .mermaid svg rect[fill="#2d2d2d"],
+  .mermaid svg rect[fill="#333333"],
+  .mermaid svg rect[fill="#1e1e1e"],
+  .mermaid svg rect[fill="#0a0a0a"] {
+    fill: #e1f5ff !important;
+    stroke: none !important;
+  }
+
+  /* Also catch rectangles with dark fills via style attribute */
+  .mermaid svg rect[style*="fill: #1f2328"],
+  .mermaid svg rect[style*="fill: #0d1117"],
+  .mermaid svg rect[style*="fill: #161b22"],
+  .mermaid svg rect[style*="fill: #21262d"],
+  .mermaid svg rect[style*="fill: #000000"],
+  .mermaid svg rect[style*="fill:#1f2328"],
+  .mermaid svg rect[style*="fill:#0d1117"],
+  .mermaid svg rect[style*="fill:#161b22"],
+  .mermaid svg rect[style*="fill:#21262d"],
+  .mermaid svg rect[style*="fill:#000000"] {
+    fill: #e1f5ff !important;
     stroke: none !important;
   }
 

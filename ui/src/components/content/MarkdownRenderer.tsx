@@ -49,8 +49,8 @@ const MarkdownRenderer: Component<MarkdownRendererProps> = (props) => {
             
             const svg = wrapper.querySelector('svg');
             if (svg) {
-              // Set SVG background color
-              svg.style.backgroundColor = '#e1f5ff';
+              // Set SVG background to transparent
+              svg.style.backgroundColor = 'transparent';
               
               // Find and replace all dark background rectangles
               const allRects = svg.querySelectorAll('rect');
@@ -77,11 +77,11 @@ const MarkdownRenderer: Component<MarkdownRendererProps> = (props) => {
                   actualFill.toLowerCase() === color.toLowerCase().replace('#', '')
                 );
                 
-                // If it's a large rectangle at the origin with dark fill, replace it
+                // If it's a large rectangle at the origin with dark fill, make it transparent
                 if (isDarkBackground && width > 200 && height > 100 && 
                     Math.abs(x) < 10 && Math.abs(y) < 10) {
-                  rect.setAttribute('fill', '#e1f5ff');
-                  rect.setAttribute('style', (style + '; fill: #e1f5ff !important;').replace(/fill:[^;]+;?/gi, ''));
+                  rect.setAttribute('fill', 'transparent');
+                  rect.setAttribute('style', (style + '; fill: transparent !important;').replace(/fill:[^;]+;?/gi, ''));
                 }
               });
             }

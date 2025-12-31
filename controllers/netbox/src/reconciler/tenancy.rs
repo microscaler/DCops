@@ -246,7 +246,13 @@ impl Reconciler {
                         debug!("Tenant comments changed");
                     }
                     
-                    name_changed || slug_changed || description_changed || comments_changed
+                    // Compare tags using helper function
+                    let tags_changed = crate::reconcile_helpers::tags_differ(&tenant.tags, &tenant_crd.spec.tags);
+                    if tags_changed {
+                        debug!("Tenant tags changed");
+                    }
+                    
+                    name_changed || slug_changed || description_changed || comments_changed || tags_changed
                 };
                 
                 if needs_update {
@@ -265,6 +271,17 @@ impl Reconciler {
                         None
                     };
                     
+                    // Always resolve tags (even if nothing else changed, tags might need updating)
+                    info!("Resolving tags for tenant {}/{}: {:?}", namespace, name, tenant_crd.spec.tags);
+                    let resolved_tags_json = self.resolve_tag_references(
+                        netbox_client.as_ref(),
+                        &tenant_crd.spec.tags,
+                        namespace,
+                        name,
+                    ).await;
+                    
+                    let resolved_tags = crate::reconcile_helpers::convert_tags_to_strings(resolved_tags_json);
+                    
                     match netbox_client.as_ref().update_tenant(
                         TenantId(tenant.id),
                         Some(&tenant_crd.spec.name),
@@ -272,7 +289,7 @@ impl Reconciler {
                         tenant_crd.spec.description.clone(),
                         tenant_crd.spec.comments.clone(),
                         group_id.map(TenantGroupId),
-                        None, // tags - not yet implemented in reconciler
+                        resolved_tags,
                     ).await {
                         Ok(updated) => {
                             info!("Updated tenant {} in NetBox (ID: {})", updated.name, updated.id);

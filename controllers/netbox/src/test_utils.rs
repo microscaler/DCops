@@ -27,6 +27,12 @@ pub mod mock_event_recorder;
 pub mod event_test_helpers;
 
 #[cfg(test)]
+pub mod docker_test_container;
+
+#[cfg(test)]
+pub mod docker_helpers;
+
+#[cfg(test)]
 use crate::reconciler::Reconciler;
 #[cfg(test)]
 use crds::*;

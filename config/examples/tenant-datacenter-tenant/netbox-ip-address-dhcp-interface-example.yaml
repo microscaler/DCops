@@ -1,27 +1,20 @@
 apiVersion: dcops.microscaler.io/v1alpha1
 kind: NetBoxIPAddress
 metadata:
-  name: dhcp-client-ip-static
+  name: dhcp-server-ip
   namespace: default
 spec:
-  # Static DHCP reservation: specific IP assigned to device with MAC address
-  # This represents a DHCP reservation where a specific IP is always assigned
-  # to a device with a particular MAC address
-  address: "192.168.1.100/24"
+  # Static DHCP reservation using interface reference
+  # This is an alternative to using macAddress - directly reference the interface
+  address: "192.168.1.1/24"
   
-  # MAC address of the interface (required for static DHCP reservations)
-  # The reconciler will query NetBox to find the interface with this MAC
-  # and assign the IP to that interface
-  # Accepts formats: "aa:bb:cc:dd:ee:ff" or "aa-bb-cc-dd-ee-ff"
-  macAddress: "aa:bb:cc:dd:ee:ff"
-  
-  # Alternative: You can directly reference the interface instead of MAC
+  # Direct interface reference (alternative to MAC address)
   # If both macAddress and interface are specified, interface takes precedence
-  # interface:
-  #   apiGroup: dcops.microscaler.io
-  #   kind: NetBoxInterface
-  #   name: eth0
-  #   namespace: default
+  interface:
+    apiGroup: dcops.microscaler.io
+    kind: NetBoxInterface
+    name: eth0
+    namespace: default
   
   # IP range reference (optional, for validation)
   # If specified, the address must be within this range
@@ -42,7 +35,7 @@ spec:
   vlan:
     apiGroup: dcops.microscaler.io
     kind: NetBoxVLAN
-    name: client-vlan
+    name: server-vlan
     namespace: default
   
   # IP address status: dhcp (for DHCP-assigned addresses)
@@ -52,13 +45,12 @@ spec:
   
   # IP address role (optional)
   # Options: loopback, secondary, anycast, vip, vrrp, hsrp, glbp, carp
-  # DHCP addresses typically don't have a role
   
   # DNS name (optional)
-  dnsName: "dhcp-client.example.com"
+  dnsName: "dhcp-server.example.com"
   
   # Description (optional)
-  description: "Static DHCP reservation for client device - IP always assigned to this MAC"
+  description: "DHCP server IP assigned to interface"
   
   # Tag references (optional)
   tags:
@@ -68,16 +60,20 @@ spec:
       namespace: default
     - apiGroup: dcops.microscaler.io
       kind: NetBoxTag
-      name: client-device
+      name: server
       namespace: default
   
   # Comments (optional)
-  comments: "IP is statically reserved in DHCP server for this MAC address. This CR tracks the reservation in NetBox."
+  comments: "DHCP server IP statically reserved for this interface. The IP is assigned to the interface in NetBox."
 
   # NOTE: For static DHCP reservations:
-  # - Specify both address and macAddress (or interface)
-  # - The reconciler will assign the IP to the interface in NetBox
-  # - The IP will be linked to the interface via assigned_object_type/assigned_object_id
+  # - Option 1: Use macAddress (reconciler will query NetBox to find interface)
+  # - Option 2: Use interface (direct reference, takes precedence over macAddress)
+  # - Both require address to be specified
   #
-  # For random DHCP allocation (IP assigned from pool), see:
+  # The reconciler will assign the IP to the interface in NetBox using
+  # assigned_object_type: "dcim.interface" and assigned_object_id: <interface_id>
+  #
+  # For random DHCP allocation, see:
   # netbox-ip-address-dhcp-random-example.yaml
+

@@ -420,6 +420,38 @@ impl Reconciler {
             return Err(ControllerError::InvalidInput(error_msg));
         }
         
+        // Validate DHCP scenario requirements
+        if ip_address_crd.spec.status == crds::IPAddressStatus::Dhcp {
+            if ip_address_crd.spec.address.is_some() {
+                // Static reservation: require macAddress or interface
+                if ip_address_crd.spec.mac_address.is_none() && ip_address_crd.spec.interface.is_none() {
+                    let error_msg = "For static DHCP reservations (status: dhcp with address specified), either 'macAddress' or 'interface' must be provided".to_string();
+                    error!("NetBoxIPAddress {}/{}: {}", namespace, name, error_msg);
+                    update_status_error(&*self.netbox_ip_address_api, name, namespace, error_msg.clone(), ip_address_crd.status.as_ref()).await;
+                    return Err(ControllerError::InvalidInput(error_msg));
+                }
+                
+                // Validate MAC address format if provided
+                if let Some(mac) = &ip_address_crd.spec.mac_address {
+                    use crate::reconcile_helpers::is_valid_mac_address;
+                    if !is_valid_mac_address(mac) {
+                        let error_msg = format!("Invalid MAC address format '{}'. Expected format: 'aa:bb:cc:dd:ee:ff' or 'aa-bb-cc-dd-ee-ff'", mac);
+                        error!("NetBoxIPAddress {}/{}: {}", namespace, name, error_msg);
+                        update_status_error(&*self.netbox_ip_address_api, name, namespace, error_msg.clone(), ip_address_crd.status.as_ref()).await;
+                        return Err(ControllerError::InvalidInput(error_msg));
+                    }
+                }
+            } else {
+                // Random allocation: require ipRange, no address
+                if ip_address_crd.spec.ip_range.is_none() {
+                    let error_msg = "For random DHCP allocation (status: dhcp without address), 'ipRange' must be specified".to_string();
+                    error!("NetBoxIPAddress {}/{}: {}", namespace, name, error_msg);
+                    update_status_error(&*self.netbox_ip_address_api, name, namespace, error_msg.clone(), ip_address_crd.status.as_ref()).await;
+                    return Err(ControllerError::InvalidInput(error_msg));
+                }
+            }
+        }
+        
         // Resolve IP range reference if provided
         let ip_range_id: Option<u64> = if let Some(ip_range_ref) = &ip_address_crd.spec.ip_range {
             validate_reference_kind(ip_range_ref, "NetBoxIPRange", "ipRange", name)?;

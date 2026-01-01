@@ -41,6 +41,8 @@ mod tests {
                 description: Some("Test IP address".to_string()),
                 tags: None,
                 comments: None,
+                mac_address: None,
+                interface: None,
             },
             status: None,
         };
@@ -226,7 +228,8 @@ mod tests {
                 ..Default::default()
             },
             spec: crds::NetBoxIPAddressSpec {
-                address: "192.168.1.10/24".to_string(),
+                address: Some("192.168.1.10/24".to_string()),
+                ip_range: None,
                 tenant: crds::NetBoxResourceReference {
                     api_group: "dcops.microscaler.io".to_string(),
                     kind: "NetBoxTenant".to_string(),
@@ -241,8 +244,11 @@ mod tests {
                 description: Some("New description".to_string()), // Changed description
                 tags: None,
                 comments: None,
+                mac_address: None,
+                interface: None,
             },
             status: Some(crds::NetBoxIPAddressStatus {
+                address: Some("192.168.1.10/24".to_string()),
                 netbox_id: Some(42),
                 netbox_url: Some("http://test-netbox/api/ipam/ip-addresses/42/".to_string()),
                 state: ResourceState::Created,
@@ -288,7 +294,8 @@ mod tests {
                 ..Default::default()
             },
             spec: crds::NetBoxIPAddressSpec {
-                address: "192.168.1.10/24".to_string(),
+                address: Some("192.168.1.10/24".to_string()),
+                ip_range: None,
                 tenant: crds::NetBoxResourceReference {
                     api_group: "dcops.microscaler.io".to_string(),
                     kind: "NetBoxTenant".to_string(),
@@ -303,6 +310,8 @@ mod tests {
                 description: None,
                 tags: None,
                 comments: None,
+                mac_address: None,
+                interface: None,
             },
             status: None,
         };
@@ -362,6 +371,8 @@ mod tests {
                 description: None,
                 tags: None,
                 comments: None,
+                mac_address: None,
+                interface: None,
             },
             status: None,
         };
@@ -811,6 +822,368 @@ mod tests {
         
         // Assert: Should succeed (invalid tag kind is skipped, not an error)
         assert!(result.is_ok(), "Reconciliation should succeed even with invalid tag kind: {:?}", result.err());
+    }
+    
+    #[tokio::test]
+    async fn test_reconcile_dhcp_static_with_mac() {
+        use crate::test_utils::mock_token_resolver::{MockTokenResolver, create_test_reconciler_with_mock_token_resolver};
+        use crate::kube_api_trait::KubeApiTrait;
+        use std::sync::Arc;
+        
+        // Setup: Create mock TokenResolver with MockNetBoxClient
+        let netbox_url = "http://test-netbox".to_string();
+        let mock_token_resolver = Arc::new(MockTokenResolver::new(netbox_url.clone()));
+        
+        // Setup: Add secret for tenant
+        mock_token_resolver.add_secret("default", "netbox-token-datacenter-tenant", "test-token".to_string());
+        
+        // Setup: Get MockNetBoxClient to set up test data
+        let mock_client = mock_token_resolver.mock_client();
+        
+        // Setup: Create test tenant
+        let tenant = create_test_netbox_tenant(
+            "datacenter-tenant",
+            "default",
+            Some(1),
+            Some("http://test-netbox/api/tenancy/tenants/1/".to_string()),
+        );
+        
+        // Setup: Create test IP address CRD with DHCP static reservation
+        let mut ip_address = NetBoxIPAddress {
+            metadata: k8s_openapi::apimachinery::pkg::apis::meta::v1::ObjectMeta {
+                name: Some("dhcp-static-ip".to_string()),
+                namespace: Some("default".to_string()),
+                ..Default::default()
+            },
+            spec: crds::NetBoxIPAddressSpec {
+                address: Some("192.168.1.100/24".to_string()),
+                ip_range: None,
+                tenant: crds::NetBoxResourceReference {
+                    api_group: "dcops.microscaler.io".to_string(),
+                    kind: "NetBoxTenant".to_string(),
+                    name: "datacenter-tenant".to_string(),
+                    namespace: Some("default".to_string()),
+                },
+                vrf: None,
+                vlan: None,
+                status: crds::IPAddressStatus::Dhcp,
+                role: None,
+                dns_name: None,
+                description: Some("Static DHCP reservation".to_string()),
+                tags: None,
+                comments: None,
+                mac_address: Some("aa:bb:cc:dd:ee:ff".to_string()),
+                interface: None,
+            },
+            status: None,
+        };
+        
+        // Setup: Create reconciler
+        let (reconciler, apis, _mock_event_recorder) = 
+            create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
+        
+        // Setup: Store test data
+        apis.tenant_api.store("datacenter-tenant".to_string(), tenant);
+        apis.ip_address_api.store("dhcp-static-ip".to_string(), ip_address.clone());
+        
+        // Setup: Add tenant to mock NetBox
+        use netbox_client::Tenant;
+        let netbox_tenant = Tenant {
+            id: 1,
+            url: "http://test-netbox/api/tenancy/tenants/1/".to_string(),
+            display: "Data Center Operations".to_string(),
+            name: "Data Center Operations".to_string(),
+            slug: "datacenter-ops".to_string(),
+            description: None,
+            comments: None,
+            group: None,
+            tags: vec![],
+            created: "2024-01-01T00:00:00Z".to_string(),
+            last_updated: "2024-01-01T00:00:00Z".to_string(),
+        };
+        mock_client.add_tenant(netbox_tenant);
+        
+        // Setup: Mock interface with matching MAC address
+        use netbox_client::Interface;
+        use netbox_client::NestedDevice;
+        let interface = Interface {
+            id: 10,
+            url: "http://test-netbox/api/dcim/interfaces/10/".to_string(),
+            display: "eth0".to_string(),
+            device: NestedDevice {
+                id: 1,
+                url: "http://test-netbox/api/dcim/devices/1/".to_string(),
+                display: "test-device".to_string(),
+                name: "test-device".to_string(),
+            },
+            vdcs: vec![],
+            module: None,
+            name: "eth0".to_string(),
+            label: None,
+            r#type: "1000base-t".to_string(),
+            enabled: true,
+            parent: None,
+            bridge: None,
+            lag: None,
+            mac_address: Some("aa:bb:cc:dd:ee:ff".to_string()),
+            mtu: Some(1500),
+            description: None,
+            ip_addresses: vec![],
+            tags: vec![],
+            created: "2024-01-01T00:00:00Z".to_string(),
+            last_updated: "2024-01-01T00:00:00Z".to_string(),
+        };
+        mock_client.add_interface(interface);
+        
+        // Setup: Mock IP address creation
+        let ip_net = IpNet::from_str("192.168.1.100/24").unwrap();
+        let created_ip = netbox_client::IPAddress {
+            id: 42,
+            url: "http://test-netbox/api/ipam/ip-addresses/42/".to_string(),
+            display: "192.168.1.100/24".to_string(),
+            family: 4,
+            address: ip_net,
+            vrf: None,
+            tenant: Some(netbox_client::NestedTenant {
+                id: 1,
+                url: "http://test-netbox/api/tenancy/tenants/1/".to_string(),
+                display: "Data Center Operations".to_string(),
+                name: "Data Center Operations".to_string(),
+                slug: "datacenter-ops".to_string(),
+            }),
+            status: netbox_client::IPAddressStatus::Dhcp,
+            role: None,
+            assigned_object_type: Some("dcim.interface".to_string()),
+            assigned_object_id: Some(10),
+            assigned_object: None,
+            nat_inside: None,
+            nat_outside: vec![],
+            dns_name: None,
+            description: "Static DHCP reservation".to_string(),
+            comments: String::new(),
+            tags: vec![],
+            custom_fields: serde_json::json!({}),
+            created: "2024-01-01T00:00:00Z".to_string(),
+            last_updated: "2024-01-01T00:00:00Z".to_string(),
+        };
+        mock_client.add_ip_address(created_ip);
+        
+        // Execute: Reconcile
+        let result = reconciler.reconcile_netbox_ip_address(&ip_address).await;
+        
+        // Assert: Should succeed
+        assert!(result.is_ok(), "Reconciliation should succeed: {:?}", result.err());
+        
+        // Assert: IP should be created with interface assignment
+        let stored_ip = apis.ip_address_api.get("dhcp-static-ip").await.unwrap();
+        assert!(stored_ip.status.is_some(), "Status should be set");
+        let status = stored_ip.status.as_ref().unwrap();
+        assert_eq!(status.netbox_id, Some(42), "NetBox ID should be set");
+        assert_eq!(status.address, Some("192.168.1.100/24".to_string()), "Address should be in status");
+    }
+    
+    #[tokio::test]
+    async fn test_validation_dhcp_static_missing_mac_and_interface() {
+        use crate::test_utils::mock_token_resolver::{MockTokenResolver, create_test_reconciler_with_mock_token_resolver};
+        use std::sync::Arc;
+        
+        // Setup: Create mock TokenResolver
+        let netbox_url = "http://test-netbox".to_string();
+        let mock_token_resolver = Arc::new(MockTokenResolver::new(netbox_url));
+        mock_token_resolver.add_secret("default", "netbox-token-datacenter-tenant", "test-token".to_string());
+        
+        // Setup: Create test IP address CRD with DHCP but no MAC or interface
+        let ip_address = NetBoxIPAddress {
+            metadata: k8s_openapi::apimachinery::pkg::apis::meta::v1::ObjectMeta {
+                name: Some("dhcp-invalid".to_string()),
+                namespace: Some("default".to_string()),
+                ..Default::default()
+            },
+            spec: crds::NetBoxIPAddressSpec {
+                address: Some("192.168.1.100/24".to_string()),
+                ip_range: None,
+                tenant: crds::NetBoxResourceReference {
+                    api_group: "dcops.microscaler.io".to_string(),
+                    kind: "NetBoxTenant".to_string(),
+                    name: "datacenter-tenant".to_string(),
+                    namespace: Some("default".to_string()),
+                },
+                vrf: None,
+                vlan: None,
+                status: crds::IPAddressStatus::Dhcp,
+                role: None,
+                dns_name: None,
+                description: None,
+                tags: None,
+                comments: None,
+                mac_address: None,
+                interface: None,
+            },
+            status: None,
+        };
+        
+        // Setup: Create reconciler
+        let (reconciler, apis, _mock_event_recorder) = 
+            create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
+        
+        // Setup: Store tenant
+        let tenant = create_test_netbox_tenant(
+            "datacenter-tenant",
+            "default",
+            Some(1),
+            Some("http://test-netbox/api/tenancy/tenants/1/".to_string()),
+        );
+        apis.tenant_api.store("datacenter-tenant".to_string(), tenant);
+        apis.ip_address_api.store("dhcp-invalid".to_string(), ip_address.clone());
+        
+        // Execute: Reconcile
+        let result = reconciler.reconcile_netbox_ip_address(&ip_address).await;
+        
+        // Assert: Should fail with InvalidInput error
+        assert!(result.is_err(), "Reconciliation should fail");
+        match result.unwrap_err() {
+            crate::error::ControllerError::InvalidInput(msg) => {
+                assert!(msg.contains("macAddress") || msg.contains("interface"), 
+                    "Error message should mention macAddress or interface: {}", msg);
+            }
+            e => panic!("Expected InvalidInput error, got: {:?}", e),
+        }
+    }
+    
+    #[tokio::test]
+    async fn test_validation_invalid_mac_format() {
+        use crate::test_utils::mock_token_resolver::{MockTokenResolver, create_test_reconciler_with_mock_token_resolver};
+        use std::sync::Arc;
+        
+        // Setup: Create mock TokenResolver
+        let netbox_url = "http://test-netbox".to_string();
+        let mock_token_resolver = Arc::new(MockTokenResolver::new(netbox_url));
+        mock_token_resolver.add_secret("default", "netbox-token-datacenter-tenant", "test-token".to_string());
+        
+        // Setup: Create test IP address CRD with invalid MAC format
+        let ip_address = NetBoxIPAddress {
+            metadata: k8s_openapi::apimachinery::pkg::apis::meta::v1::ObjectMeta {
+                name: Some("dhcp-invalid-mac".to_string()),
+                namespace: Some("default".to_string()),
+                ..Default::default()
+            },
+            spec: crds::NetBoxIPAddressSpec {
+                address: Some("192.168.1.100/24".to_string()),
+                ip_range: None,
+                tenant: crds::NetBoxResourceReference {
+                    api_group: "dcops.microscaler.io".to_string(),
+                    kind: "NetBoxTenant".to_string(),
+                    name: "datacenter-tenant".to_string(),
+                    namespace: Some("default".to_string()),
+                },
+                vrf: None,
+                vlan: None,
+                status: crds::IPAddressStatus::Dhcp,
+                role: None,
+                dns_name: None,
+                description: None,
+                tags: None,
+                comments: None,
+                mac_address: Some("invalid-format".to_string()),
+                interface: None,
+            },
+            status: None,
+        };
+        
+        // Setup: Create reconciler
+        let (reconciler, apis, _mock_event_recorder) = 
+            create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
+        
+        // Setup: Store tenant
+        let tenant = create_test_netbox_tenant(
+            "datacenter-tenant",
+            "default",
+            Some(1),
+            Some("http://test-netbox/api/tenancy/tenants/1/".to_string()),
+        );
+        apis.tenant_api.store("datacenter-tenant".to_string(), tenant);
+        apis.ip_address_api.store("dhcp-invalid-mac".to_string(), ip_address.clone());
+        
+        // Execute: Reconcile
+        let result = reconciler.reconcile_netbox_ip_address(&ip_address).await;
+        
+        // Assert: Should fail with InvalidInput error
+        assert!(result.is_err(), "Reconciliation should fail");
+        match result.unwrap_err() {
+            crate::error::ControllerError::InvalidInput(msg) => {
+                assert!(msg.contains("Invalid MAC address format") || msg.contains("MAC address"), 
+                    "Error message should mention MAC address format: {}", msg);
+            }
+            e => panic!("Expected InvalidInput error, got: {:?}", e),
+        }
+    }
+    
+    #[tokio::test]
+    async fn test_validation_dhcp_random_missing_ip_range() {
+        use crate::test_utils::mock_token_resolver::{MockTokenResolver, create_test_reconciler_with_mock_token_resolver};
+        use std::sync::Arc;
+        
+        // Setup: Create mock TokenResolver
+        let netbox_url = "http://test-netbox".to_string();
+        let mock_token_resolver = Arc::new(MockTokenResolver::new(netbox_url));
+        mock_token_resolver.add_secret("default", "netbox-token-datacenter-tenant", "test-token".to_string());
+        
+        // Setup: Create test IP address CRD with DHCP but no address and no ipRange
+        let ip_address = NetBoxIPAddress {
+            metadata: k8s_openapi::apimachinery::pkg::apis::meta::v1::ObjectMeta {
+                name: Some("dhcp-random-invalid".to_string()),
+                namespace: Some("default".to_string()),
+                ..Default::default()
+            },
+            spec: crds::NetBoxIPAddressSpec {
+                address: None,
+                ip_range: None,
+                tenant: crds::NetBoxResourceReference {
+                    api_group: "dcops.microscaler.io".to_string(),
+                    kind: "NetBoxTenant".to_string(),
+                    name: "datacenter-tenant".to_string(),
+                    namespace: Some("default".to_string()),
+                },
+                vrf: None,
+                vlan: None,
+                status: crds::IPAddressStatus::Dhcp,
+                role: None,
+                dns_name: None,
+                description: None,
+                tags: None,
+                comments: None,
+                mac_address: None,
+                interface: None,
+            },
+            status: None,
+        };
+        
+        // Setup: Create reconciler
+        let (reconciler, apis, _mock_event_recorder) = 
+            create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
+        
+        // Setup: Store tenant
+        let tenant = create_test_netbox_tenant(
+            "datacenter-tenant",
+            "default",
+            Some(1),
+            Some("http://test-netbox/api/tenancy/tenants/1/".to_string()),
+        );
+        apis.tenant_api.store("datacenter-tenant".to_string(), tenant);
+        apis.ip_address_api.store("dhcp-random-invalid".to_string(), ip_address.clone());
+        
+        // Execute: Reconcile
+        let result = reconciler.reconcile_netbox_ip_address(&ip_address).await;
+        
+        // Assert: Should fail with InvalidInput error
+        assert!(result.is_err(), "Reconciliation should fail");
+        match result.unwrap_err() {
+            crate::error::ControllerError::InvalidInput(msg) => {
+                assert!(msg.contains("ipRange") || msg.contains("address"), 
+                    "Error message should mention ipRange or address: {}", msg);
+            }
+            e => panic!("Expected InvalidInput error, got: {:?}", e),
+        }
     }
 }
 

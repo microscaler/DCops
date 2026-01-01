@@ -1520,6 +1520,24 @@ mod tests {
     }
 }
 
+/// Validate MAC address format using clia-macaddr crate
+/// 
+/// Accepts various MAC address formats and validates them.
+/// Returns true if the MAC address is valid, false otherwise.
+pub fn is_valid_mac_address(mac: &str) -> bool {
+    clia_macaddr::parse_mac_addr(mac).is_ok()
+}
+
+/// Parse and normalize MAC address to standard format
+/// 
+/// Returns the MAC address in lowercase colon-separated format (e.g., "aa:bb:cc:dd:ee:ff")
+/// or None if the MAC address is invalid.
+pub fn normalize_mac_address(mac: &str) -> Option<String> {
+    clia_macaddr::parse_mac_addr(mac)
+        .ok()
+        .map(|m| clia_macaddr::format_mac_addr(&m)) // Format to standard format
+}
+
 pub fn is_conflict_error(error: &netbox_client::NetBoxError) -> bool {
     let error_str = format!("{}", error);
     error_str.contains("already exists") ||

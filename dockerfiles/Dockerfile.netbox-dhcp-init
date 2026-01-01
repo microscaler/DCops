@@ -1,0 +1,41 @@
+# Dockerfile for NetBox DHCP Init Container
+# Uses dhcpm CLI tool to request DHCP IP and update NetBoxIPAddress CRD
+# This is a simple init container that runs before the main pod container
+
+# Stage 1: Build dhcpm binary
+ARG BUILDPLATFORM=linux/amd64
+FROM --platform=$BUILDPLATFORM rust:alpine AS builder
+
+# Install build dependencies
+RUN apk add --no-cache musl-dev
+
+# Install dhcpm CLI tool
+# Note: Using --locked as recommended by dhcpm documentation
+RUN cargo install dhcpm --locked
+
+# Stage 2: Runtime image
+FROM alpine:latest
+
+# Install runtime dependencies
+# - iproute2: for ip command (interface configuration)
+# - jq: for parsing JSON output from dhcpm
+# - kubectl: for updating NetBoxIPAddress CRD (or use Kubernetes API client)
+RUN apk add --no-cache \
+    iproute2 \
+    jq \
+    curl \
+    ca-certificates
+
+# Copy dhcpm binary from builder
+COPY --from=builder /usr/local/cargo/bin/dhcpm /usr/local/bin/dhcpm
+
+# Copy init script
+COPY dockerfiles/dhcp-init.sh /usr/local/bin/dhcp-init.sh
+RUN chmod +x /usr/local/bin/dhcp-init.sh
+
+# Set working directory
+WORKDIR /app
+
+# Default command
+ENTRYPOINT ["/usr/local/bin/dhcp-init.sh"]
+

@@ -159,6 +159,9 @@ pub async fn query_interfaces(client: &MockNetBoxClient, filters: &[(&str, &str)
                 "name" => {
                     results.retain(|i| i.name == *value);
                 }
+                "mac_address" => {
+                    results.retain(|i| i.mac_address.as_ref().map(|m| m.as_str()) == Some(*value));
+                }
                 _ => {}
             }
         }

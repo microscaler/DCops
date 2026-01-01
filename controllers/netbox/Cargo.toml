@@ -35,6 +35,9 @@ netbox-client = { path = "../../crates/netbox-client", features = ["test-util"] 
 # IP network types
 ipnet = { workspace = true }
 
+# MAC address parsing and validation
+clia-macaddr = "0.1"
+
 # Async trait support
 async-trait = "0.1"
 
@@ -46,4 +49,10 @@ tower = { workspace = true }  # Needed for tower::Service trait in mocks
 # We need to use hyper 0.14 for compatibility
 hyper = { version = "0.14", features = ["full"] }
 bytes = "1.0"
+
+# Docker container testing (for DHCP integration tests)
+bollard = { version = "0.19", features = ["ssl", "chrono"] }
+futures-util = "0.3"
+reqwest = { version = "0.11", features = ["json"], default-features = false }
+uuid = { version = "1.0", features = ["v4"] }
 

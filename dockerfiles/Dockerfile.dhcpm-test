@@ -1,0 +1,39 @@
+# Dockerfile for DHCP Testing Container
+# Uses dhcpm CLI tool for testing DHCP allocation scenarios
+# This container is used in bollard-based integration tests (following BRRTRouter pattern)
+
+# Stage 1: Build dhcpm binary
+ARG BUILDPLATFORM=linux/amd64
+FROM --platform=$BUILDPLATFORM rust:alpine AS builder
+
+# Install build dependencies
+RUN apk add --no-cache musl-dev
+
+# Install dhcpm CLI tool
+# Note: Using --locked as recommended by dhcpm documentation
+RUN cargo install dhcpm --locked
+
+# Stage 2: Test container image
+FROM alpine:latest
+
+# Install runtime dependencies
+# - iproute2: for ip command (interface inspection)
+# - jq: for parsing JSON output from dhcpm
+# - curl: for HTTP requests (NetBox API, health checks)
+# - ca-certificates: for HTTPS
+RUN apk add --no-cache \
+    iproute2 \
+    jq \
+    curl \
+    ca-certificates \
+    bash
+
+# Copy dhcpm binary from builder
+COPY --from=builder /usr/local/cargo/bin/dhcpm /usr/local/bin/dhcpm
+
+# Set working directory
+WORKDIR /app
+
+# Default command (can be overridden in docker-compose or testcontainers)
+CMD ["/bin/sh"]
+

@@ -17,10 +17,12 @@
 //! }
 //! ```
 
-// TODO: Update to use bollard OpenAPI-generated types when bollard API stabilizes
-#[allow(deprecated)]
-use bollard::container::{Config, CreateContainerOptions, RemoveContainerOptions, StartContainerOptions};
+use bollard::models::{ContainerConfig, HostConfig, PortBinding};
 use bollard::Docker;
+use bollard::container::CreateContainerOptions;
+use bollard::container::RemoveContainerOptions;
+use bollard::container::StartContainerOptions;
+use std::collections::HashMap;
 use std::sync::Arc;
 use tracing::{debug, warn};
 
@@ -51,19 +53,17 @@ impl DockerTestContainer {
     pub async fn new(docker: &Docker, image: &str) -> Result<Self, bollard::errors::Error> {
         let docker = Arc::new(docker.clone());
         
-        // Create container configuration
-        #[allow(deprecated)]
-        let config = Config {
-            image: Some(image),
-            cmd: Some(vec!["sleep", "3600"]), // Default: sleep to keep container running
+        // Create container configuration using new API
+        let config = ContainerConfig {
+            image: Some(image.to_string()),
+            cmd: Some(vec!["sleep".to_string(), "3600".to_string()]), // Default: sleep to keep container running
             ..Default::default()
         };
         
         // Create container
-        #[allow(deprecated)]
         let create_options = CreateContainerOptions {
             name: format!("dcops-test-{}", uuid::Uuid::new_v4()),
-            platform: None, // Required field in newer bollard versions
+            platform: None,
         };
         
         let create_result = docker.create_container(Some(create_options), config).await?;
@@ -95,8 +95,7 @@ impl DockerTestContainer {
     
     /// Start the container
     pub async fn start(&self) -> Result<(), bollard::errors::Error> {
-        #[allow(deprecated)]
-        let options: StartContainerOptions<String> = StartContainerOptions::default();
+        let options = StartContainerOptions::default();
         self.docker.start_container(&self.container_id, Some(options)).await?;
         debug!("Started Docker container: {}", self.container_id);
         Ok(())
@@ -104,8 +103,7 @@ impl DockerTestContainer {
     
     /// Stop the container
     pub async fn stop(&self) -> Result<(), bollard::errors::Error> {
-        #[allow(deprecated)]
-        let options: bollard::container::StopContainerOptions<String> = Default::default();
+        let options = bollard::container::StopContainerOptions::default();
         self.docker.stop_container(&self.container_id, Some(options)).await?;
         debug!("Stopped Docker container: {}", self.container_id);
         Ok(())
@@ -120,12 +118,10 @@ impl Drop for DockerTestContainer {
         // Use tokio::spawn to handle async cleanup in Drop
         tokio::spawn(async move {
             // Try to stop the container first (ignore errors - might already be stopped)
-            #[allow(deprecated)]
-            let stop_options: bollard::container::StopContainerOptions<String> = Default::default();
+            let stop_options = bollard::container::StopContainerOptions::default();
             let _ = docker.stop_container(&container_id, Some(stop_options)).await;
             
             // Remove the container
-            #[allow(deprecated)]
             let remove_options = RemoveContainerOptions {
                 force: true, // Force removal even if running
                 ..Default::default()
@@ -166,4 +162,3 @@ mod tests {
         // (tested by checking container list after drop)
     }
 }
-

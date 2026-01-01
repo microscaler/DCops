@@ -111,7 +111,7 @@ impl Reconciler {
                             region_crd.spec.slug.as_deref(),
                             parent_id.map(RegionId),
                             region_crd.spec.description.clone(),
-                            None, // comments
+                            region_crd.spec.comments.clone(),
                             tags,
                         ).await
                     },
@@ -203,7 +203,7 @@ impl Reconciler {
                                 region_crd.spec.slug.as_deref(),
                                 parent_id.map(RegionId),
                                 region_crd.spec.description.clone(),
-                                None, // comments
+                                region_crd.spec.comments.clone(),
                                 tags,
                             ).await
                         },
@@ -242,7 +242,7 @@ impl Reconciler {
                         region_crd.spec.slug.as_deref(),
                         parent_id.map(RegionId),
                         region_crd.spec.description.clone(),
-                        None, // comments - not in CRD spec yet
+                        region_crd.spec.comments.clone(),
                         resolved_tags,
                     ).await {
                         Ok(created) => {

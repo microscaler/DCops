@@ -249,6 +249,8 @@ pub struct AllocateIPRequest {
     pub dns_name: Option<String>,
     pub tenant: Option<u64>, // Tenant ID (optional)
     pub tags: Option<Vec<serde_json::Value>>, // Tag references: numeric IDs or dictionaries with "name"/"slug"
+    pub assigned_object_type: Option<String>, // e.g., "dcim.interface"
+    pub assigned_object_id: Option<u64>, // ID of the assigned object (interface, etc.)
 }
 
 /// Device model (from DCIM API)

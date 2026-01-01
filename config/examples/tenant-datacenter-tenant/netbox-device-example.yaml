@@ -29,6 +29,15 @@ spec:
     apiGroup: "dcops.microscaler.io"
     kind: "NetBoxPlatform"
     name: "talos-linux"
+  tags:
+    - apiGroup: dcops.microscaler.io
+      kind: NetBoxTag
+      name: managed-by-dcops
+      namespace: default
+    - apiGroup: dcops.microscaler.io
+      kind: NetBoxTag
+      name: production
+      namespace: default
   serial: "RPI4-001"  # Serial number (optional)
   assetTag: "DC1-RACK-A-01"  # Asset tag (optional)
   status: active  # active, offline, planned, staged, failed, inventory, decommissioning

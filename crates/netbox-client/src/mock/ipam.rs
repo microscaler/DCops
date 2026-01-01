@@ -58,8 +58,8 @@ pub async fn allocate_ip(client: &MockNetBoxClient, prefix_id: PrefixId, request
                 .and_then(|r| r.status.clone())
                 .unwrap_or(IPAddressStatus::Active),
             role: request.as_ref().and_then(|r| r.role.clone()),
-            assigned_object_type: None,
-            assigned_object_id: None,
+            assigned_object_type: request.as_ref().and_then(|r| r.assigned_object_type.clone()),
+            assigned_object_id: request.as_ref().and_then(|r| r.assigned_object_id),
             assigned_object: None,
             nat_inside: None,
             nat_outside: vec![],
@@ -146,8 +146,8 @@ pub async fn create_ip_address(client: &MockNetBoxClient, address: &str, request
                 .and_then(|r| r.status.clone())
                 .unwrap_or(IPAddressStatus::Active),
             role: request.as_ref().and_then(|r| r.role.clone()),
-            assigned_object_type: None,
-            assigned_object_id: None,
+            assigned_object_type: request.as_ref().and_then(|r| r.assigned_object_type.clone()),
+            assigned_object_id: request.as_ref().and_then(|r| r.assigned_object_id),
             assigned_object: None,
             nat_inside: None,
             nat_outside: vec![],
@@ -525,7 +525,7 @@ pub async fn get_aggregate(client: &MockNetBoxClient, id: AggregateId) -> Result
             .ok_or_else(|| NetBoxError::NotFound(format!("Aggregate {} not found", id_value)))
 }
 
-pub async fn create_aggregate(client: &MockNetBoxClient, prefix: &str, rir_id: Option<RirId>, date_allocated: Option<&str>, description: Option<String>, comments: Option<String>) -> Result<Aggregate, NetBoxError> {
+pub async fn create_aggregate(client: &MockNetBoxClient, prefix: &str, rir_id: Option<RirId>, date_allocated: Option<&str>, description: Option<String>, comments: Option<String>, tags: Option<Vec<String>>) -> Result<Aggregate, NetBoxError> {
         // Note: This function still accepts &str for internal mock use
         // The trait method converts IpNet to string before calling this
         let id = client.next_id();
@@ -534,6 +534,24 @@ pub async fn create_aggregate(client: &MockNetBoxClient, prefix: &str, rir_id: O
         
         let prefix_net = IpNet::from_str(prefix)
             .map_err(|e| NetBoxError::Api(format!("Invalid prefix format: {} - {}", prefix, e)))?;
+        
+        // Convert tag IDs to NestedTag
+        let nested_tags: Vec<crate::models::NestedTag> = tags
+            .unwrap_or_default()
+            .iter()
+            .map(|tag_id| {
+                // Try to parse as ID, otherwise use as name
+                let tag_id_num = tag_id.parse::<u64>().unwrap_or(0);
+                crate::models::NestedTag {
+                    id: tag_id_num,
+                    url: format!("{}/api/extras/tags/{}/", client.base_url, tag_id_num),
+                    display: tag_id.clone(),
+                    name: tag_id.clone(),
+                    slug: tag_id.to_lowercase().replace(' ', "-"),
+                }
+            })
+            .collect();
+        
         let aggregate = Aggregate {
             id,
             url: format!("{}/api/ipam/aggregates/{}/", client.base_url, id),
@@ -552,13 +570,61 @@ pub async fn create_aggregate(client: &MockNetBoxClient, prefix: &str, rir_id: O
             date_allocated: date_allocated.map(|s| s.to_string()),
             description,
             comments,
-            tags: vec![],
+            tags: nested_tags,
             created: chrono::Utc::now().to_rfc3339(),
             last_updated: chrono::Utc::now().to_rfc3339(),
         };
 
         client.aggregates.lock().unwrap().insert(id, aggregate.clone());
         Ok(aggregate)
+    }
+
+pub async fn update_aggregate(client: &MockNetBoxClient, id: crate::types::AggregateId, rir_id: Option<RirId>, date_allocated: Option<&str>, description: Option<String>, comments: Option<String>, tags: Option<Vec<String>>) -> Result<Aggregate, NetBoxError> {
+        let id_value: u64 = id.into();
+        let mut aggregates = client.aggregates.lock().unwrap();
+        let aggregate = aggregates.get_mut(&id_value)
+            .ok_or_else(|| NetBoxError::NotFound(format!("Aggregate {} not found", id_value)))?;
+        
+        // Update fields
+        if let Some(rir_id) = rir_id {
+            let rir_id_value: u64 = rir_id.into();
+            aggregate.rir = Some(NestedRir {
+                id: rir_id_value,
+                url: format!("{}/api/ipam/rirs/{}/", client.base_url, rir_id_value),
+                display: format!("RIR {}", rir_id_value),
+                name: format!("RIR {}", rir_id_value),
+                slug: format!("rir-{}", rir_id_value),
+            });
+        }
+        if date_allocated.is_some() {
+            aggregate.date_allocated = date_allocated.map(|s| s.to_string());
+        }
+        if description.is_some() {
+            aggregate.description = description;
+        }
+        if comments.is_some() {
+            aggregate.comments = comments;
+        }
+        if tags.is_some() {
+            // Convert tag IDs to NestedTag
+            aggregate.tags = tags
+                .unwrap_or_default()
+                .iter()
+                .map(|tag_id| {
+                    let tag_id_num = tag_id.parse::<u64>().unwrap_or(0);
+                    crate::models::NestedTag {
+                        id: tag_id_num,
+                        url: format!("{}/api/extras/tags/{}/", client.base_url, tag_id_num),
+                        display: tag_id.clone(),
+                        name: tag_id.clone(),
+                        slug: tag_id.to_lowercase().replace(' ', "-"),
+                    }
+                })
+                .collect();
+        }
+        
+        aggregate.last_updated = chrono::Utc::now().to_rfc3339();
+        Ok(aggregate.clone())
     }
 
 pub async fn query_rirs(client: &MockNetBoxClient, _filters: &[(&str, &str)], _fetch_all: bool) -> Result<Vec<Rir>, NetBoxError> {
@@ -635,7 +701,7 @@ pub async fn update_rir(client: &MockNetBoxClient, id: u64, name: Option<&str>, 
         Ok(updated)
     }
 
-pub async fn create_vlan(client: &MockNetBoxClient, vid: u16, name: &str, site_id: Option<SiteId>, _group_id: Option<VlanGroupId>, tenant_id: Option<TenantId>, role_id: Option<RoleId>, status: Option<&str>, description: Option<String>, comments: Option<String>) -> Result<Vlan, NetBoxError> {
+pub async fn create_vlan(client: &MockNetBoxClient, vid: u16, name: &str, site_id: Option<SiteId>, _group_id: Option<VlanGroupId>, tenant_id: Option<TenantId>, role_id: Option<RoleId>, status: Option<&str>, description: Option<String>, comments: Option<String>, tags: Option<Vec<String>>) -> Result<Vlan, NetBoxError> {
         let id = client.next_id();
         let status_str = status.unwrap_or("active");
         let vlan_status = match status_str {
@@ -644,6 +710,22 @@ pub async fn create_vlan(client: &MockNetBoxClient, vid: u16, name: &str, site_i
             "deprecated" => VlanStatus::Deprecated,
             _ => VlanStatus::Active,
         };
+        
+        // Convert tag IDs to NestedTag
+        let nested_tags: Vec<crate::models::NestedTag> = tags
+            .unwrap_or_default()
+            .iter()
+            .map(|tag_id| {
+                let tag_id_num = tag_id.parse::<u64>().unwrap_or(0);
+                crate::models::NestedTag {
+                    id: tag_id_num,
+                    url: format!("{}/api/extras/tags/{}/", client.base_url, tag_id_num),
+                    display: tag_id.clone(),
+                    name: tag_id.clone(),
+                    slug: tag_id.to_lowercase().replace(' ', "-"),
+                }
+            })
+            .collect();
         
         let vlan = Vlan {
             id,
@@ -658,7 +740,7 @@ pub async fn create_vlan(client: &MockNetBoxClient, vid: u16, name: &str, site_i
             role: role_id.map(|id| client.helpers().create_nested_role(id.into(), None)),
             description: description.unwrap_or_default(),
             comments: comments.unwrap_or_default(),
-            tags: vec![],
+            tags: nested_tags,
             custom_fields: serde_json::json!({}),
             created: chrono::Utc::now().to_rfc3339(),
             last_updated: chrono::Utc::now().to_rfc3339(),
@@ -666,9 +748,9 @@ pub async fn create_vlan(client: &MockNetBoxClient, vid: u16, name: &str, site_i
 
         client.vlans.lock().unwrap().insert(id, vlan.clone());
         Ok(vlan)
-}
+    }
 
-pub async fn update_vlan(client: &MockNetBoxClient, id: VlanId, vid: Option<u16>, name: Option<&str>, site_id: Option<SiteId>, _group_id: Option<VlanGroupId>, tenant_id: Option<TenantId>, role_id: Option<RoleId>, status: Option<&str>, description: Option<String>, comments: Option<String>) -> Result<Vlan, NetBoxError> {
+pub async fn update_vlan(client: &MockNetBoxClient, id: VlanId, vid: Option<u16>, name: Option<&str>, site_id: Option<SiteId>, _group_id: Option<VlanGroupId>, tenant_id: Option<TenantId>, role_id: Option<RoleId>, status: Option<&str>, description: Option<String>, comments: Option<String>, tags: Option<Vec<String>>) -> Result<Vlan, NetBoxError> {
         let id_value: u32 = id.into();
         let id_value_u64 = id_value as u64;
         let mut vlans = client.vlans.lock().unwrap();
@@ -704,6 +786,23 @@ pub async fn update_vlan(client: &MockNetBoxClient, id: VlanId, vid: Option<u16>
         }
         if let Some(comments_str) = comments {
             vlan.comments = comments_str;
+        }
+        if tags.is_some() {
+            // Convert tag IDs to NestedTag
+            vlan.tags = tags
+                .unwrap_or_default()
+                .iter()
+                .map(|tag_id| {
+                    let tag_id_num = tag_id.parse::<u64>().unwrap_or(0);
+                    crate::models::NestedTag {
+                        id: tag_id_num,
+                        url: format!("{}/api/extras/tags/{}/", client.base_url, tag_id_num),
+                        display: tag_id.clone(),
+                        name: tag_id.clone(),
+                        slug: tag_id.to_lowercase().replace(' ', "-"),
+                    }
+                })
+                .collect();
         }
 
         Ok(vlan.clone())

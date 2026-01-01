@@ -4,7 +4,7 @@ use super::super::Reconciler;
 use crate::error::ControllerError;
 use tracing::{info, error, debug, warn};
 use crds::{NetBoxVLAN, ResourceState};
-use netbox_client::{NetBoxClientTrait, VlanId, SiteId, TenantId};
+use netbox_client::{VlanId, SiteId, TenantId};
 
 impl Reconciler {
     pub async fn reconcile_netbox_vlan(&self, vlan_crd: &NetBoxVLAN) -> Result<(), ControllerError> {
@@ -76,7 +76,59 @@ impl Reconciler {
         // Handle existing VLAN (from helper) or create new
         let netbox_vlan = match netbox_vlan {
             Some(vlan) => {
-                // Resource exists and is up-to-date - only update status if it changed
+                // Resolve tag references
+                let resolved_tags_json = self.resolve_tag_references(
+                    netbox_client.as_ref(),
+                    &vlan_crd.spec.tags,
+                    namespace,
+                    name,
+                ).await;
+                
+                // Convert resolved tags from Vec<serde_json::Value> to Vec<String>
+                let resolved_tags = crate::reconcile_helpers::convert_tags_to_strings(resolved_tags_json);
+                
+                // Update tags if they differ
+                use netbox_client::VlanId;
+                let vlan_id = vlan.id;
+                let vlan_clone = vlan.clone();
+                let vlan = match crate::reconcile_helpers::update_tags_if_differ(
+                    vlan,
+                    &vlan_crd.spec.tags,
+                    resolved_tags.clone(),
+                    |tags| async move {
+                        netbox_client.update_vlan(
+                            VlanId(vlan_id as u32),
+                            None, // vid
+                            None, // name
+                            None, // site_id
+                            None, // group_id
+                            None, // tenant_id
+                            None, // role_id
+                            None, // status
+                            None, // description
+                            None, // comments
+                            tags,
+                        ).await
+                    },
+                    &format!("NetBoxVLAN {}/{}", namespace, name),
+                ).await {
+                    Ok(Some(updated)) => {
+                        use crate::events::reasons;
+                        self.record_event_normal(
+                            reasons::UPDATED,
+                            &format!("Updated NetBoxVLAN {}/{} tags in NetBox", namespace, name),
+                            vlan_crd,
+                        ).await;
+                        updated
+                    }
+                    Ok(None) => vlan_clone, // Tags are up-to-date
+                    Err(e) => {
+                        warn!("Failed to update NetBoxVLAN {}/{} tags: {}", namespace, name, e);
+                        vlan_clone // Use existing if update fails
+                    }
+                };
+                
+                // Check if status needs updating
                 use crate::reconcile_helpers::status_needs_update;
                 let needs_status_update = status_needs_update(
                     vlan_crd.status.as_ref(),
@@ -168,6 +220,17 @@ impl Reconciler {
                     |crd| crd.status.as_ref(),
                 ).await;
                 
+                // Resolve tag references
+                let resolved_tags_json = self.resolve_tag_references(
+                    netbox_client.as_ref(),
+                    &vlan_crd.spec.tags,
+                    namespace,
+                    name,
+                ).await;
+                
+                // Convert resolved tags from Vec<serde_json::Value> to Vec<String>
+                let resolved_tags = crate::reconcile_helpers::convert_tags_to_strings(resolved_tags_json);
+                
                 // Convert status enum to string
                 let status_str = match vlan_crd.spec.status {
                     crds::VlanStatus::Active => Some("active"),
@@ -186,7 +249,46 @@ impl Reconciler {
                 
                 let netbox_vlan = if let Some(existing) = existing_vlan {
                     info!("VLAN {} already exists in NetBox (ID: {})", vlan_crd.spec.vid, existing.id);
-                    existing
+                    // Update tags if they differ (idempotency path)
+                    use netbox_client::VlanId;
+                    let existing_id = existing.id;
+                    let existing_clone = existing.clone();
+                    match crate::reconcile_helpers::update_tags_if_differ(
+                        existing,
+                        &vlan_crd.spec.tags,
+                        resolved_tags.clone(),
+                        |tags| async move {
+                            netbox_client.update_vlan(
+                                VlanId(existing_id as u32),
+                                None, // vid
+                                None, // name
+                                None, // site_id
+                                None, // group_id
+                                None, // tenant_id
+                                None, // role_id
+                                None, // status
+                                None, // description
+                                None, // comments
+                                tags,
+                            ).await
+                        },
+                        &format!("NetBoxVLAN {}/{}", namespace, name),
+                    ).await {
+                        Ok(Some(updated)) => {
+                            use crate::events::reasons;
+                            self.record_event_normal(
+                                reasons::UPDATED,
+                                &format!("Updated NetBoxVLAN {}/{} tags in NetBox", namespace, name),
+                                vlan_crd,
+                            ).await;
+                            updated
+                        }
+                        Ok(None) => existing_clone, // Tags are up-to-date
+                        Err(e) => {
+                            warn!("Failed to update NetBoxVLAN {}/{} tags: {}", namespace, name, e);
+                            existing_clone // Use existing if update fails
+                        }
+                    }
                 } else {
                     // Create VLAN - site is optional (only required if specified in spec)
                     match netbox_client.create_vlan(
@@ -199,6 +301,7 @@ impl Reconciler {
                         status_str, // status_str is already Option<&str>
                         vlan_crd.spec.description.clone(),
                         None, // comments
+                        resolved_tags.clone(),
                     ).await {
                         Ok(created) => {
                             info!("Created VLAN {} ({}) in NetBox (ID: {})", created.vid, created.name, created.id);
@@ -268,7 +371,46 @@ impl Reconciler {
                                 
                                 if let Some(found) = found_vlan {
                                     info!("Found existing VLAN {} (VID: {}) in NetBox (ID: {}) via conflict resolution (idempotency)", found.name, found.vid, found.id);
-                                    found
+                                    // Update tags if they differ (idempotency path)
+                                    use netbox_client::VlanId;
+                                    let found_id = found.id;
+                                    let found_clone = found.clone();
+                                    match crate::reconcile_helpers::update_tags_if_differ(
+                                        found,
+                                        &vlan_crd.spec.tags,
+                                        resolved_tags.clone(),
+                                        |tags| async move {
+                                            netbox_client.update_vlan(
+                                                VlanId(found_id as u32),
+                                                None, // vid
+                                                None, // name
+                                                None, // site_id
+                                                None, // group_id
+                                                None, // tenant_id
+                                                None, // role_id
+                                                None, // status
+                                                None, // description
+                                                None, // comments
+                                                tags,
+                                            ).await
+                                        },
+                                        &format!("NetBoxVLAN {}/{}", namespace, name),
+                                    ).await {
+                                        Ok(Some(updated)) => {
+                                            use crate::events::reasons;
+                                            self.record_event_normal(
+                                                reasons::UPDATED,
+                                                &format!("Updated NetBoxVLAN {}/{} tags in NetBox", namespace, name),
+                                                vlan_crd,
+                                            ).await;
+                                            updated
+                                        }
+                                        Ok(None) => found_clone, // Tags are up-to-date
+                                        Err(e) => {
+                                            warn!("Failed to update NetBoxVLAN {}/{} tags: {}", namespace, name, e);
+                                            found_clone // Use existing if update fails
+                                        }
+                                    }
                                 } else {
                                     let error_msg = format!("VLAN {} already exists in NetBox but could not retrieve it: {}", vlan_crd.spec.vid, e);
                                     error!("{}", error_msg);

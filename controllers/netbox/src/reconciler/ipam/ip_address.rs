@@ -341,6 +341,48 @@ impl Reconciler {
             .create_client_for_tenant(namespace, tenant_ref)
             .await?;
         
+        // Resolve interface ID for static DHCP reservations (early, so available in all code paths)
+        // Priority: 1. spec.interface (explicit reference), 2. spec.macAddress (query by MAC)
+        let interface_id: Option<u64> = if let Some(interface_ref) = &ip_address_crd.spec.interface {
+            // Explicit interface reference takes precedence
+            validate_reference_kind(interface_ref, "NetBoxInterface", "interface", name)?;
+            let id = resolve_optional_dependency_id(
+                &*self.netbox_interface_api,
+                Some(interface_ref),
+                "NetBoxInterface",
+                "interface",
+                name,
+                |crd| crd.status.as_ref(),
+            ).await;
+            if let Some(id) = id {
+                info!("Resolved interface reference '{}' to NetBox ID {}", interface_ref.name, id);
+                Some(id)
+            } else {
+                warn!("Interface reference '{}' not found, will skip interface assignment", interface_ref.name);
+                None
+            }
+        } else if let Some(mac_address) = &ip_address_crd.spec.mac_address {
+            // Query interfaces by MAC address
+            info!("Resolving interface by MAC address: {}", mac_address);
+            match netbox_client.query_interfaces(&[("mac_address", mac_address.as_str())], false).await {
+                Ok(interfaces) => {
+                    if let Some(interface) = interfaces.first() {
+                        info!("Found interface {} (ID: {}) with MAC address {}", interface.name, interface.id, mac_address);
+                        Some(interface.id)
+                    } else {
+                        warn!("No interface found with MAC address {}, will skip interface assignment", mac_address);
+                        None
+                    }
+                }
+                Err(e) => {
+                    warn!("Failed to query interfaces by MAC address {}: {}, will skip interface assignment", mac_address, e);
+                    None
+                }
+            }
+        } else {
+            None
+        };
+        
         // Helper function to update status with error
         async fn update_status_error(
             api: &dyn KubeApiTrait<NetBoxIPAddress>,
@@ -409,27 +451,45 @@ impl Reconciler {
             None
         };
         
-        // Parse IP address from spec (required for reconciliation)
+        // Parse IP address from spec or status (for DHCP IPs, address may be in status)
         let ip_net = if let Some(address) = &ip_address_crd.spec.address {
+            // Use address from spec (static IPs)
             IpNet::from_str(address)
                 .map_err(|e| ControllerError::InvalidInput(format!("Invalid IP address format '{}': {}", address, e)))?
+        } else if let Some(status) = &ip_address_crd.status {
+            // For DHCP IPs, try to get address from status (set after previous reconciliation)
+            if let Some(status_address) = &status.address {
+                IpNet::from_str(status_address)
+                    .map_err(|e| ControllerError::InvalidInput(format!("Invalid IP address format in status '{}': {}", status_address, e)))?
+            } else {
+                // No address in spec or status - for DHCP with ipRange, we need the address
+                let error_msg = "IP address must be specified in either spec.address or status.address. For DHCP IPs, the address will be stored in status.address after reconciliation.".to_string();
+                error!("NetBoxIPAddress {}/{}: {}", namespace, name, error_msg);
+                update_status_error(&*self.netbox_ip_address_api, name, namespace, error_msg.clone(), ip_address_crd.status.as_ref()).await;
+                return Err(ControllerError::InvalidInput(error_msg));
+            }
         } else {
-            // If no address but ip_range is provided, we can't proceed
-            // DHCP IPs should have the address specified (assigned by DHCP server)
-            let error_msg = "IP address must be specified when ipRange is provided. DHCP-assigned IPs should include the assigned address.".to_string();
+            // No address in spec or status
+            let error_msg = "IP address must be specified in either spec.address or status.address. For DHCP IPs, the address will be stored in status.address after reconciliation.".to_string();
             error!("NetBoxIPAddress {}/{}: {}", namespace, name, error_msg);
             update_status_error(&*self.netbox_ip_address_api, name, namespace, error_msg.clone(), ip_address_crd.status.as_ref()).await;
             return Err(ControllerError::InvalidInput(error_msg));
         };
         
-        // If both address and ip_range are provided, validate address is within range
-        if let (Some(address_str), Some(range_id)) = (&ip_address_crd.spec.address, ip_range_id) {
+        // If ip_range is provided, validate address (from spec or status) is within range
+        if let Some(range_id) = ip_range_id {
             // Get the IP range to validate address is within it
             match netbox_client.get_ip_range(netbox_client::IPRangeId(range_id)).await {
                 Ok(range) => {
                     let address_ip = ip_net.addr();
                     let range_start = range.start_address.addr();
                     let range_end = range.end_address.addr();
+                    
+                    // Get address string for error messages and logging
+                    let address_str = ip_address_crd.spec.address.as_ref()
+                        .or_else(|| ip_address_crd.status.as_ref().and_then(|s| s.address.as_ref()))
+                        .map(|s| s.as_str())
+                        .unwrap_or("unknown");
                     
                     // Check if address is within range
                     if address_ip < range_start || address_ip > range_end {
@@ -488,9 +548,10 @@ impl Reconciler {
                             warn!("NetBoxIPAddress {}/{}: Duplicate remediation selected different IP (ID: {} -> {}, created: {})", 
                                 namespace, name, existing_ip.id, ip.id, ip.created);
                             // Update the status to reflect the new ID
-                            let status_patch = Self::create_resource_status_patch(
+                            let status_patch = Self::create_typed_ip_address_status_patch(
                                 ip.id,
                                 ip.url.clone(),
+                                Some(ip.address.to_string()),
                                 ResourceState::Created,
                                 Some(format!("Remediated duplicates, using IP ID {} (created: {})", ip.id, ip.created)),
                             );
@@ -595,6 +656,8 @@ impl Reconciler {
                         dns_name: ip_address_crd.spec.dns_name.clone(),
                         tenant: Some(tenant_id),
                         tags: resolved_tags,
+                        assigned_object_type: interface_id.map(|_| "dcim.interface".to_string()),
+                        assigned_object_id: interface_id,
                     };
                     
                     match netbox_client.update_ip_address(IpAddressId(remediated_ip.id), update_request).await {
@@ -607,9 +670,10 @@ impl Reconciler {
                                 ip_address_crd,
                             ).await;
                             // Update status with the updated IP
-                            let status_patch = Self::create_resource_status_patch(
+                            let status_patch = Self::create_typed_ip_address_status_patch(
                                 updated_ip.id,
                                 updated_ip.url.clone(),
+                                Some(updated_ip.address.to_string()),
                                 ResourceState::Created,
                                 None,
                             );
@@ -647,9 +711,10 @@ impl Reconciler {
                     );
                     
                     if needs_status_update {
-                        let status_patch = Self::create_resource_status_patch(
+                        let status_patch = Self::create_typed_ip_address_status_patch(
                             remediated_ip.id,
                             remediated_ip.url.clone(),
+                            Some(remediated_ip.address.to_string()),
                             ResourceState::Created,
                             None,
                         );
@@ -696,9 +761,10 @@ impl Reconciler {
                         ).await;
                         
                         // Update status with correct netbox_id
-                        let status_patch = Self::create_resource_status_patch(
+                        let status_patch = Self::create_typed_ip_address_status_patch(
                             existing_ip.id,
                             existing_ip.url.clone(),
+                            Some(existing_ip.address.to_string()),
                             ResourceState::Created,
                             Some(format!("Recovered from invalid status: {}", message)),
                         );
@@ -723,9 +789,10 @@ impl Reconciler {
                             ip_address_crd,
                         ).await;
                         
-                        let status_patch = Self::create_resource_status_patch(
+                        let status_patch = Self::create_typed_ip_address_status_patch(
                             0,
                             String::new(),
+                            None, // No address yet
                             ResourceState::Pending,
                             Some(message),
                         );
@@ -750,9 +817,10 @@ impl Reconciler {
                             ip_address_crd,
                         ).await;
                         
-                        let status_patch = Self::create_resource_status_patch(
+                        let status_patch = Self::create_typed_ip_address_status_patch(
                             0,
                             String::new(),
+                            None, // No address yet
                             ResourceState::Pending,
                             Some(message),
                         );
@@ -784,9 +852,10 @@ impl Reconciler {
                         info!("NetBoxIPAddress {}/{}: Found existing IP {} (ID: {}) during recreate, updating status", 
                             namespace, name, address_str, existing_ip.id);
                         
-                        let status_patch = Self::create_resource_status_patch(
+                        let status_patch = Self::create_typed_ip_address_status_patch(
                             existing_ip.id,
                             existing_ip.url.clone(),
+                            Some(existing_ip.address.to_string()),
                             ResourceState::Created,
                             Some("Found existing IP during recreate".to_string()),
                         );
@@ -939,6 +1008,8 @@ impl Reconciler {
             dns_name: ip_address_crd.spec.dns_name.clone(),
             tenant: Some(tenant_id),
             tags: resolved_tags,
+            assigned_object_type: interface_id.map(|_| "dcim.interface".to_string()),
+            assigned_object_id: interface_id,
         };
         
         match netbox_client.create_ip_address(&ip_net, Some(create_request)).await {
@@ -997,9 +1068,10 @@ impl Reconciler {
                 };
         
         // Update status
-        let status_patch = Self::create_resource_status_patch(
+        let status_patch = Self::create_typed_ip_address_status_patch(
             netbox_ip_address.id,
             netbox_ip_address.url.clone(),
+            Some(netbox_ip_address.address.to_string()),
             ResourceState::Created,
             None,
         );

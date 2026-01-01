@@ -8,4 +8,12 @@ spec:
   interface: "talos-control-plane-01/eth0"  # Format: "<device-name>/<interface-name>" (references NetBoxInterface CRD)
   description: "MAC address for control plane node primary interface"
   comments: "Managed by DCops"
-
+  tags:
+    - apiGroup: dcops.microscaler.io
+      kind: NetBoxTag
+      name: managed-by-dcops
+      namespace: default
+    - apiGroup: dcops.microscaler.io
+      kind: NetBoxTag
+      name: production
+      namespace: default

@@ -100,6 +100,7 @@ pub async fn create_aggregate(
     date_allocated: Option<&str>, // ISO 8601 date
     description: Option<String>,
     comments: Option<String>,
+    tags: Option<Vec<String>>,
 ) -> Result<Aggregate, NetBoxError> {
     let url = format!("{}/api/ipam/aggregates/", core.base_url);
     let prefix_str = prefix.to_string();
@@ -120,6 +121,7 @@ pub async fn create_aggregate(
     helpers::add_optional_string_field(&mut body, "date_allocated", date_allocated);
     helpers::add_optional_string_field_owned(&mut body, "description", description);
     helpers::add_optional_string_field_owned(&mut body, "comments", comments);
+    helpers::add_optional_tags_field(&mut body, tags)?;
     
     let response = core.client
         .post(&url)
@@ -137,6 +139,52 @@ pub async fn create_aggregate(
         return Err(NetBoxError::Api(format!(
             "Failed to create aggregate: {} - {}",
             status, body
+        )));
+    }
+    
+    response.json().await.map_err(|e| NetBoxError::Http(e))
+}
+
+/// Update an existing aggregate
+pub async fn update_aggregate(
+    core: &NetBoxClientCore,
+    id: AggregateId,
+    rir_id: Option<RirId>,
+    date_allocated: Option<&str>, // ISO 8601 date
+    description: Option<String>,
+    comments: Option<String>,
+    tags: Option<Vec<String>>,
+) -> Result<Aggregate, NetBoxError> {
+    let id_value: u64 = id.into();
+    let url = format!("{}/api/ipam/aggregates/{}/", core.base_url, id_value);
+    debug!("Updating aggregate {} in NetBox", id_value);
+    
+    let mut body = serde_json::json!({});
+    
+    let rir_id_value: Option<u64> = rir_id.map(|id| id.into());
+    helpers::add_nested_reference(&mut body, "rir", rir_id_value);
+    
+    helpers::add_optional_string_field(&mut body, "date_allocated", date_allocated);
+    helpers::add_optional_string_field_owned(&mut body, "description", description);
+    helpers::add_optional_string_field_owned(&mut body, "comments", comments);
+    helpers::add_optional_tags_field(&mut body, tags)?;
+    
+    let response = core.client
+        .patch(&url)
+        .header("Authorization", format!("Token {}", core.token))
+        .header("Accept", "application/json")
+        .header("Content-Type", "application/json")
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| NetBoxError::Http(e))?;
+    
+    if !response.status().is_success() {
+        let status = response.status();
+        let body = response.text().await.unwrap_or_default();
+        return Err(NetBoxError::Api(format!(
+            "Failed to update aggregate {}: {} - {}",
+            id_value, status, body
         )));
     }
     

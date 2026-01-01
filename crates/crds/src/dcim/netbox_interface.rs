@@ -5,6 +5,7 @@
 use kube::CustomResource;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
+use crate::references::NetBoxResourceReference;
 
 /// NetBoxInterfaceSpec defines the desired state of a NetBox interface
 #[derive(CustomResource, Debug, Clone, Serialize, Deserialize, JsonSchema)]
@@ -42,6 +43,10 @@ pub struct NetBoxInterfaceSpec {
     /// Description
     #[serde(skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
+    
+    /// Tag references (references NetBoxTag CRDs)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tags: Option<Vec<NetBoxResourceReference>>,
 }
 
 fn default_interface_type() -> String {

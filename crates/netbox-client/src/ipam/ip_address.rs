@@ -113,6 +113,14 @@ pub async fn create_ip_address(
         // Use nested reference helper like Prefix does - NetBox requires {"id": X} not just X
         helpers::add_nested_reference(&mut body, "tenant", req.tenant);
         helpers::add_optional_tags_field(&mut body, req.tags)?;
+        
+        // Add assigned object (interface assignment)
+        if let Some(obj_type) = &req.assigned_object_type {
+            body["assigned_object_type"] = serde_json::Value::String(obj_type.clone());
+        }
+        if let Some(obj_id) = req.assigned_object_id {
+            body["assigned_object_id"] = serde_json::json!(obj_id);
+        }
     }
     
     let url = format!("{}/api/ipam/ip-addresses/", core.base_url);
@@ -166,6 +174,14 @@ pub async fn update_ip_address(
     // Use nested reference helper like Prefix does - NetBox requires {"id": X} not just X
     helpers::add_nested_reference(&mut body, "tenant", request.tenant);
     helpers::add_optional_enum_field(&mut body, "tags", request.tags)?;
+    
+    // Add assigned object (interface assignment)
+    if let Some(obj_type) = &request.assigned_object_type {
+        body["assigned_object_type"] = serde_json::Value::String(obj_type.clone());
+    }
+    if let Some(obj_id) = request.assigned_object_id {
+        body["assigned_object_id"] = serde_json::json!(obj_id);
+    }
     
     let url = format!("{}/api/ipam/ip-addresses/{}/", core.base_url, id);
     debug!("Updating IP address: {}", id);
@@ -268,6 +284,14 @@ pub async fn allocate_ip(
             body["dns_name"] = serde_json::Value::String(dns_name);
         }
         helpers::add_optional_tags_field(&mut body, req.tags)?;
+        
+        // Add assigned object (interface assignment)
+        if let Some(obj_type) = &req.assigned_object_type {
+            body["assigned_object_type"] = serde_json::Value::String(obj_type.clone());
+        }
+        if let Some(obj_id) = req.assigned_object_id {
+            body["assigned_object_id"] = serde_json::json!(obj_id);
+        }
     }
     
     // Create IP address via POST to available-ips endpoint

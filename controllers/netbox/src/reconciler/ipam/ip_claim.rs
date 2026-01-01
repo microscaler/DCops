@@ -201,6 +201,8 @@ impl Reconciler {
             role: None,
             dns_name: None,
             tenant: None, // IPClaim doesn't specify tenant directly - it's inherited from the prefix
+            assigned_object_type: None,
+            assigned_object_id: None,
             tags: tag_refs,
         };
         

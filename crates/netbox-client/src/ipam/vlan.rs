@@ -94,6 +94,7 @@ pub async fn create_vlan(
     status: Option<&str>,
     description: Option<String>,
     comments: Option<String>,
+    tags: Option<Vec<String>>,
 ) -> Result<Vlan, NetBoxError> {
     let url = format!("{}/api/ipam/vlans/", core.base_url);
     debug!("Creating VLAN {} ({}) in NetBox", vid, name);
@@ -112,6 +113,7 @@ pub async fn create_vlan(
     helpers::add_optional_string_field(&mut body, "status", status);
     helpers::add_optional_string_field_owned(&mut body, "description", description);
     helpers::add_optional_string_field_owned(&mut body, "comments", comments);
+    helpers::add_optional_tags_field(&mut body, tags)?;
     
     let response = core.client
         .post(&url)
@@ -148,6 +150,7 @@ pub async fn update_vlan(
     status: Option<&str>,
     description: Option<String>,
     comments: Option<String>,
+    tags: Option<Vec<String>>,
 ) -> Result<Vlan, NetBoxError> {
     let url = format!("{}/api/ipam/vlans/{}/", core.base_url, id);
     debug!("Updating VLAN {} in NetBox", id);
@@ -163,6 +166,7 @@ pub async fn update_vlan(
     helpers::add_optional_string_field(&mut body, "status", status);
     helpers::add_optional_string_field_owned(&mut body, "description", description);
     helpers::add_optional_string_field_owned(&mut body, "comments", comments);
+    helpers::add_optional_tags_field(&mut body, tags)?;
     
     let response = core.client
         .patch(&url)

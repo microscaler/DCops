@@ -11,4 +11,12 @@ spec:
   macAddress: "aa:bb:cc:dd:ee:ff"  # MAC address (optional, can be managed via NetBoxMACAddress CRD)
   mtu: 1500  # MTU (optional)
   description: "Primary Ethernet interface for control plane node"
-
+  tags:
+    - apiGroup: dcops.microscaler.io
+      kind: NetBoxTag
+      name: managed-by-dcops
+      namespace: default
+    - apiGroup: dcops.microscaler.io
+      kind: NetBoxTag
+      name: production
+      namespace: default

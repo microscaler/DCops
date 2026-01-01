@@ -373,6 +373,24 @@ impl Reconciler {
         };
         serde_json::json!({ "status": status })
     }
+
+    pub(crate) fn create_typed_ip_address_status_patch(
+        netbox_id: u64,
+        netbox_url: String,
+        address: Option<String>,
+        state: ResourceState,
+        error: Option<String>,
+    ) -> serde_json::Value {
+        let status = crds::NetBoxIPAddressStatus {
+            netbox_id: Some(netbox_id),
+            netbox_url: Some(netbox_url),
+            address,
+            state,
+            error,
+            last_reconciled: None,
+        };
+        serde_json::json!({ "status": status })
+    }
     
     /// Creates a new reconciler instance.
     pub fn new(

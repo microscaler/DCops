@@ -1335,6 +1335,15 @@ impl HasTags for netbox_client::Location {
 impl HasTags for netbox_client::Platform {
     fn tags(&self) -> &[netbox_client::NestedTag] { &self.tags }
 }
+impl HasTags for netbox_client::Tenant {
+    fn tags(&self) -> &[netbox_client::NestedTag] { &self.tags }
+}
+impl HasTags for netbox_client::Aggregate {
+    fn tags(&self) -> &[netbox_client::NestedTag] { &self.tags }
+}
+impl HasTags for netbox_client::Vlan {
+    fn tags(&self) -> &[netbox_client::NestedTag] { &self.tags }
+}
 
 /// Update tags on an existing NetBox resource if they differ
 /// 

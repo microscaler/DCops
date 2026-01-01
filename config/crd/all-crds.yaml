@@ -647,6 +647,10 @@ spec:
           spec:
             description: NetBoxRegionSpec defines the desired state of a NetBox region
             properties:
+              comments:
+                description: Comments
+                nullable: true
+                type: string
               description:
                 description: Description of the region
                 nullable: true
@@ -1200,6 +1204,41 @@ spec:
                 - retired
                 - staging
                 type: string
+              tags:
+                description: Tag references (references NetBoxTag CRDs)
+                items:
+                  description: |-
+                    Kubernetes-compliant resource reference for NetBox CRDs
+
+                    This follows the Kubernetes `TypedLocalObjectReference` pattern, which includes:
+                    - `apiGroup`: The API group of the referenced resource (e.g., "dcops.microscaler.io")
+                    - `kind`: The kind of the referenced resource (e.g., "NetBoxSite")
+                    - `name`: The name of the referenced resource (required)
+                    - `namespace`: The namespace of the referenced resource (optional, defaults to same namespace)
+
+                    This enables Kubernetes to validate reference types and provides clear documentation
+                    of what resource type is expected.
+                  properties:
+                    apiGroup:
+                      description: API group of the referenced resource (e.g., "dcops.microscaler.io")
+                      type: string
+                    kind:
+                      description: Kind of the referenced resource (e.g., "NetBoxSite", "NetBoxTenant")
+                      type: string
+                    name:
+                      description: Name of the referenced NetBox CRD resource
+                      type: string
+                    namespace:
+                      description: Namespace of the referenced resource (defaults to same namespace as the referencing resource)
+                      nullable: true
+                      type: string
+                  required:
+                  - apiGroup
+                  - kind
+                  - name
+                  type: object
+                nullable: true
+                type: array
               tenant:
                 description: |-
                   Tenant reference (references NetBoxTenant CRD, required)
@@ -1321,6 +1360,32 @@ spec:
                 description: DNS name
                 nullable: true
                 type: string
+              interface:
+                description: |-
+                  Interface reference (references NetBoxInterface CRD, optional)
+                  For static DHCP reservations, this can be resolved from macAddress
+                  If both macAddress and interface are specified, interface takes precedence
+                  When specified, the IP address will be assigned to this interface in NetBox
+                nullable: true
+                properties:
+                  apiGroup:
+                    description: API group of the referenced resource (e.g., "dcops.microscaler.io")
+                    type: string
+                  kind:
+                    description: Kind of the referenced resource (e.g., "NetBoxSite", "NetBoxTenant")
+                    type: string
+                  name:
+                    description: Name of the referenced NetBox CRD resource
+                    type: string
+                  namespace:
+                    description: Namespace of the referenced resource (defaults to same namespace as the referencing resource)
+                    nullable: true
+                    type: string
+                required:
+                - apiGroup
+                - kind
+                - name
+                type: object
               ipRange:
                 description: |-
                   IP range reference (references NetBoxIPRange CRD, optional)
@@ -1350,6 +1415,14 @@ spec:
                 - kind
                 - name
                 type: object
+              macAddress:
+                description: |-
+                  MAC address in hex format (e.g., "aa:bb:cc:dd:ee:ff" or "aa-bb-cc-dd-ee-ff")
+                  Required for static DHCP reservations (status: dhcp with address specified)
+                  Used to resolve the interface to which this IP should be assigned
+                  If both macAddress and interface are specified, interface takes precedence
+                nullable: true
+                type: string
               role:
                 description: IP address role (loopback, secondary, anycast, vip, vrrp, hsrp, glbp, carp)
                 nullable: true
@@ -1473,6 +1546,13 @@ spec:
             description: NetBoxIPAddressStatus defines the observed state of a NetBox IP address
             nullable: true
             properties:
+              address:
+                description: |-
+                  IP address with CIDR (set after creation/reconciliation)
+                  For DHCP-assigned IPs, this is the IP address that was allocated/assigned
+                  and is stored in the status rather than the spec
+                nullable: true
+                type: string
               error:
                 description: Error message if reconciliation failed
                 nullable: true
@@ -2011,6 +2091,41 @@ spec:
                 description: RIR (Regional Internet Registry) - ARIN, RIPE, APNIC, etc.
                 nullable: true
                 type: string
+              tags:
+                description: Tag references (references NetBoxTag CRDs)
+                items:
+                  description: |-
+                    Kubernetes-compliant resource reference for NetBox CRDs
+
+                    This follows the Kubernetes `TypedLocalObjectReference` pattern, which includes:
+                    - `apiGroup`: The API group of the referenced resource (e.g., "dcops.microscaler.io")
+                    - `kind`: The kind of the referenced resource (e.g., "NetBoxSite")
+                    - `name`: The name of the referenced resource (required)
+                    - `namespace`: The namespace of the referenced resource (optional, defaults to same namespace)
+
+                    This enables Kubernetes to validate reference types and provides clear documentation
+                    of what resource type is expected.
+                  properties:
+                    apiGroup:
+                      description: API group of the referenced resource (e.g., "dcops.microscaler.io")
+                      type: string
+                    kind:
+                      description: Kind of the referenced resource (e.g., "NetBoxSite", "NetBoxTenant")
+                      type: string
+                    name:
+                      description: Name of the referenced NetBox CRD resource
+                      type: string
+                    namespace:
+                      description: Namespace of the referenced resource (defaults to same namespace as the referencing resource)
+                      nullable: true
+                      type: string
+                  required:
+                  - apiGroup
+                  - kind
+                  - name
+                  type: object
+                nullable: true
+                type: array
             required:
             - prefix
             type: object
@@ -2165,6 +2280,41 @@ spec:
                 - reserved
                 - deprecated
                 type: string
+              tags:
+                description: Tag references (references NetBoxTag CRDs)
+                items:
+                  description: |-
+                    Kubernetes-compliant resource reference for NetBox CRDs
+
+                    This follows the Kubernetes `TypedLocalObjectReference` pattern, which includes:
+                    - `apiGroup`: The API group of the referenced resource (e.g., "dcops.microscaler.io")
+                    - `kind`: The kind of the referenced resource (e.g., "NetBoxSite")
+                    - `name`: The name of the referenced resource (required)
+                    - `namespace`: The namespace of the referenced resource (optional, defaults to same namespace)
+
+                    This enables Kubernetes to validate reference types and provides clear documentation
+                    of what resource type is expected.
+                  properties:
+                    apiGroup:
+                      description: API group of the referenced resource (e.g., "dcops.microscaler.io")
+                      type: string
+                    kind:
+                      description: Kind of the referenced resource (e.g., "NetBoxSite", "NetBoxTenant")
+                      type: string
+                    name:
+                      description: Name of the referenced NetBox CRD resource
+                      type: string
+                    namespace:
+                      description: Namespace of the referenced resource (defaults to same namespace as the referencing resource)
+                      nullable: true
+                      type: string
+                  required:
+                  - apiGroup
+                  - kind
+                  - name
+                  type: object
+                nullable: true
+                type: array
               tenant:
                 description: |-
                   Tenant reference (references NetBoxTenant CRD, required)
@@ -3310,6 +3460,41 @@ spec:
                 - inventory
                 - decommissioning
                 type: string
+              tags:
+                description: Tag references (references NetBoxTag CRDs)
+                items:
+                  description: |-
+                    Kubernetes-compliant resource reference for NetBox CRDs
+
+                    This follows the Kubernetes `TypedLocalObjectReference` pattern, which includes:
+                    - `apiGroup`: The API group of the referenced resource (e.g., "dcops.microscaler.io")
+                    - `kind`: The kind of the referenced resource (e.g., "NetBoxSite")
+                    - `name`: The name of the referenced resource (required)
+                    - `namespace`: The namespace of the referenced resource (optional, defaults to same namespace)
+
+                    This enables Kubernetes to validate reference types and provides clear documentation
+                    of what resource type is expected.
+                  properties:
+                    apiGroup:
+                      description: API group of the referenced resource (e.g., "dcops.microscaler.io")
+                      type: string
+                    kind:
+                      description: Kind of the referenced resource (e.g., "NetBoxSite", "NetBoxTenant")
+                      type: string
+                    name:
+                      description: Name of the referenced NetBox CRD resource
+                      type: string
+                    namespace:
+                      description: Namespace of the referenced resource (defaults to same namespace as the referencing resource)
+                      nullable: true
+                      type: string
+                  required:
+                  - apiGroup
+                  - kind
+                  - name
+                  type: object
+                nullable: true
+                type: array
               tenant:
                 description: |-
                   Tenant reference (references NetBoxTenant CRD, required)
@@ -3430,6 +3615,41 @@ spec:
               name:
                 description: Interface name (e.g., "eth0", "wlan0")
                 type: string
+              tags:
+                description: Tag references (references NetBoxTag CRDs)
+                items:
+                  description: |-
+                    Kubernetes-compliant resource reference for NetBox CRDs
+
+                    This follows the Kubernetes `TypedLocalObjectReference` pattern, which includes:
+                    - `apiGroup`: The API group of the referenced resource (e.g., "dcops.microscaler.io")
+                    - `kind`: The kind of the referenced resource (e.g., "NetBoxSite")
+                    - `name`: The name of the referenced resource (required)
+                    - `namespace`: The namespace of the referenced resource (optional, defaults to same namespace)
+
+                    This enables Kubernetes to validate reference types and provides clear documentation
+                    of what resource type is expected.
+                  properties:
+                    apiGroup:
+                      description: API group of the referenced resource (e.g., "dcops.microscaler.io")
+                      type: string
+                    kind:
+                      description: Kind of the referenced resource (e.g., "NetBoxSite", "NetBoxTenant")
+                      type: string
+                    name:
+                      description: Name of the referenced NetBox CRD resource
+                      type: string
+                    namespace:
+                      description: Namespace of the referenced resource (defaults to same namespace as the referencing resource)
+                      nullable: true
+                      type: string
+                  required:
+                  - apiGroup
+                  - kind
+                  - name
+                  type: object
+                nullable: true
+                type: array
               type:
                 default: other
                 description: Interface type (e.g., "1000base-t", "virtual", "other")
@@ -3520,6 +3740,41 @@ spec:
               macAddress:
                 description: 'MAC address (format: "aa:bb:cc:dd:ee:ff" or "aa-bb-cc-dd-ee-ff")'
                 type: string
+              tags:
+                description: Tag references (references NetBoxTag CRDs)
+                items:
+                  description: |-
+                    Kubernetes-compliant resource reference for NetBox CRDs
+
+                    This follows the Kubernetes `TypedLocalObjectReference` pattern, which includes:
+                    - `apiGroup`: The API group of the referenced resource (e.g., "dcops.microscaler.io")
+                    - `kind`: The kind of the referenced resource (e.g., "NetBoxSite")
+                    - `name`: The name of the referenced resource (required)
+                    - `namespace`: The namespace of the referenced resource (optional, defaults to same namespace)
+
+                    This enables Kubernetes to validate reference types and provides clear documentation
+                    of what resource type is expected.
+                  properties:
+                    apiGroup:
+                      description: API group of the referenced resource (e.g., "dcops.microscaler.io")
+                      type: string
+                    kind:
+                      description: Kind of the referenced resource (e.g., "NetBoxSite", "NetBoxTenant")
+                      type: string
+                    name:
+                      description: Name of the referenced NetBox CRD resource
+                      type: string
+                    namespace:
+                      description: Namespace of the referenced resource (defaults to same namespace as the referencing resource)
+                      nullable: true
+                      type: string
+                  required:
+                  - apiGroup
+                  - kind
+                  - name
+                  type: object
+                nullable: true
+                type: array
             required:
             - interface
             - macAddress

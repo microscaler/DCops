@@ -152,16 +152,16 @@ impl NetBoxClientTrait for MockNetBoxClientWrapper {
         self.client.create_rir(name, slug, description, is_private, tags).await
     }
 
-    async fn create_vlan(&self, vid: u16, name: &str, site_id: Option<netbox_client::SiteId>, group_id: Option<netbox_client::VlanGroupId>, tenant_id: Option<netbox_client::TenantId>, role_id: Option<netbox_client::RoleId>, status: Option<&str>, description: Option<String>, comments: Option<String>) -> Result<netbox_client::Vlan, netbox_client::NetBoxError> {
-        self.client.create_vlan(vid, name, site_id, group_id, tenant_id, role_id, status, description, comments).await
+    async fn create_vlan(&self, vid: u16, name: &str, site_id: Option<netbox_client::SiteId>, group_id: Option<netbox_client::VlanGroupId>, tenant_id: Option<netbox_client::TenantId>, role_id: Option<netbox_client::RoleId>, status: Option<&str>, description: Option<String>, comments: Option<String>, tags: Option<Vec<String>>) -> Result<netbox_client::Vlan, netbox_client::NetBoxError> {
+        self.client.create_vlan(vid, name, site_id, group_id, tenant_id, role_id, status, description, comments, tags).await
     }
 
     async fn get_vlan(&self, id: netbox_client::VlanId) -> Result<netbox_client::Vlan, netbox_client::NetBoxError> {
         self.client.get_vlan(id).await
     }
 
-    async fn update_vlan(&self, id: netbox_client::VlanId, vid: Option<u16>, name: Option<&str>, site_id: Option<netbox_client::SiteId>, group_id: Option<netbox_client::VlanGroupId>, tenant_id: Option<netbox_client::TenantId>, role_id: Option<netbox_client::RoleId>, status: Option<&str>, description: Option<String>, comments: Option<String>) -> Result<netbox_client::Vlan, netbox_client::NetBoxError> {
-        self.client.update_vlan(id, vid, name, site_id, group_id, tenant_id, role_id, status, description, comments).await
+    async fn update_vlan(&self, id: netbox_client::VlanId, vid: Option<u16>, name: Option<&str>, site_id: Option<netbox_client::SiteId>, group_id: Option<netbox_client::VlanGroupId>, tenant_id: Option<netbox_client::TenantId>, role_id: Option<netbox_client::RoleId>, status: Option<&str>, description: Option<String>, comments: Option<String>, tags: Option<Vec<String>>) -> Result<netbox_client::Vlan, netbox_client::NetBoxError> {
+        self.client.update_vlan(id, vid, name, site_id, group_id, tenant_id, role_id, status, description, comments, tags).await
     }
 
     async fn query_vlans(&self, filters: &[(&str, &str)], fetch_all: bool) -> Result<Vec<netbox_client::Vlan>, netbox_client::NetBoxError> {

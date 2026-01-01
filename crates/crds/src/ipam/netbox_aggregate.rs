@@ -5,6 +5,7 @@
 use kube::CustomResource;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
+use crate::references::NetBoxResourceReference;
 
 /// NetBoxAggregateSpec defines the desired state of a NetBox aggregate
 #[derive(CustomResource, Debug, Clone, Serialize, Deserialize, JsonSchema)]
@@ -37,6 +38,10 @@ pub struct NetBoxAggregateSpec {
     /// Comments
     #[serde(skip_serializing_if = "Option::is_none")]
     pub comments: Option<String>,
+    
+    /// Tag references (references NetBoxTag CRDs)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tags: Option<Vec<NetBoxResourceReference>>,
 }
 
 /// NetBoxAggregateStatus defines the observed state of a NetBox aggregate

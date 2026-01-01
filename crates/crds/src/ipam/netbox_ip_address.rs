@@ -75,6 +75,20 @@ pub struct NetBoxIPAddressSpec {
     /// Comments
     #[serde(skip_serializing_if = "Option::is_none")]
     pub comments: Option<String>,
+    
+    /// MAC address in hex format (e.g., "aa:bb:cc:dd:ee:ff" or "aa-bb-cc-dd-ee-ff")
+    /// Required for static DHCP reservations (status: dhcp with address specified)
+    /// Used to resolve the interface to which this IP should be assigned
+    /// If both macAddress and interface are specified, interface takes precedence
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mac_address: Option<String>,
+    
+    /// Interface reference (references NetBoxInterface CRD, optional)
+    /// For static DHCP reservations, this can be resolved from macAddress
+    /// If both macAddress and interface are specified, interface takes precedence
+    /// When specified, the IP address will be assigned to this interface in NetBox
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub interface: Option<NetBoxResourceReference>,
 }
 
 fn default_ip_address_status() -> IPAddressStatus {
@@ -104,6 +118,12 @@ pub struct NetBoxIPAddressStatus {
     /// NetBox IP address URL
     #[serde(skip_serializing_if = "Option::is_none")]
     pub netbox_url: Option<String>,
+    
+    /// IP address with CIDR (set after creation/reconciliation)
+    /// For DHCP-assigned IPs, this is the IP address that was allocated/assigned
+    /// and is stored in the status rather than the spec
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub address: Option<String>,
     
     /// Current state of the IP address
     pub state: crate::tenancy::netbox_tenant::ResourceState,

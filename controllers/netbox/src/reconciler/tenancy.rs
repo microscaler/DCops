@@ -6,7 +6,7 @@ use super::Reconciler;
 use crate::error::ControllerError;
 use crate::kube_api_trait::KubeApiTrait;
 use crds::{NetBoxTenant, ResourceState};
-use netbox_client::{NetBoxClientTrait, TenantId, TenantGroupId};
+use netbox_client::{TenantId, TenantGroupId};
 use tracing::{info, error, debug, warn};
 
 impl Reconciler {
@@ -215,6 +215,7 @@ impl Reconciler {
         let netbox_tenant = match netbox_tenant {
             Some(tenant) => {
                 // Resource exists - check for drift between spec and NetBox
+                // Separate tag updates from other field updates for DRY code
                 let needs_update = {
                     // Compare name
                     let name_changed = tenant_crd.spec.name != tenant.name;
@@ -246,16 +247,12 @@ impl Reconciler {
                         debug!("Tenant comments changed");
                     }
                     
-                    // Compare tags using helper function
-                    let tags_changed = crate::reconcile_helpers::tags_differ(&tenant.tags, &tenant_crd.spec.tags);
-                    if tags_changed {
-                        debug!("Tenant tags changed");
-                    }
-                    
-                    name_changed || slug_changed || description_changed || comments_changed || tags_changed
+                    // Note: Tags are handled separately using update_tags_if_differ helper
+                    name_changed || slug_changed || description_changed || comments_changed
                 };
                 
-                if needs_update {
+                // Update other fields if they changed
+                let mut tenant = if needs_update {
                     info!("Tenant {}/{} has drift, updating in NetBox", namespace, name);
                     // Update tenant in NetBox
                     let slug = tenant_crd.spec.slug.as_deref().map(|s| s.to_string())
@@ -271,17 +268,6 @@ impl Reconciler {
                         None
                     };
                     
-                    // Always resolve tags (even if nothing else changed, tags might need updating)
-                    info!("Resolving tags for tenant {}/{}: {:?}", namespace, name, tenant_crd.spec.tags);
-                    let resolved_tags_json = self.resolve_tag_references(
-                        netbox_client.as_ref(),
-                        &tenant_crd.spec.tags,
-                        namespace,
-                        name,
-                    ).await;
-                    
-                    let resolved_tags = crate::reconcile_helpers::convert_tags_to_strings(resolved_tags_json);
-                    
                     match netbox_client.as_ref().update_tenant(
                         TenantId(tenant.id),
                         Some(&tenant_crd.spec.name),
@@ -289,7 +275,7 @@ impl Reconciler {
                         tenant_crd.spec.description.clone(),
                         tenant_crd.spec.comments.clone(),
                         group_id.map(TenantGroupId),
-                        resolved_tags,
+                        None, // Tags handled separately
                     ).await {
                         Ok(updated) => {
                             info!("Updated tenant {} in NetBox (ID: {})", updated.name, updated.id);
@@ -310,6 +296,66 @@ impl Reconciler {
                         }
                     }
                 } else {
+                    tenant
+                };
+                
+                // Handle tag updates separately using DRY helper
+                // Note: We use tags_differ directly instead of update_tags_if_differ because
+                // netbox_client is Box<dyn NetBoxClientTrait> which can't be easily moved into a closure.
+                // This is still DRY as we use the tags_differ helper.
+                let tags_need_update = crate::reconcile_helpers::tags_differ(&tenant.tags, &tenant_crd.spec.tags);
+                
+                let tenant = if tags_need_update {
+                    info!("Tenant {}/{} tags differ, updating in NetBox", namespace, name);
+                    // Resolve tags
+                    let resolved_tags_json = self.resolve_tag_references(
+                        netbox_client.as_ref(),
+                        &tenant_crd.spec.tags,
+                        namespace,
+                        name,
+                    ).await;
+                    let resolved_tags = crate::reconcile_helpers::convert_tags_to_strings(resolved_tags_json);
+                    
+                    // Prepare slug for update
+                    let slug = tenant_crd.spec.slug.as_deref().map(|s| s.to_string())
+                        .unwrap_or_else(|| tenant_crd.spec.name.to_lowercase().replace(' ', "-"));
+                    
+                    // Resolve tenant group ID if group reference provided (needed for update)
+                    let group_id = if let Some(group_ref) = &tenant_crd.spec.group {
+                        match netbox_client.as_ref().get_tenant_group_by_name(&group_ref.name).await {
+                            Ok(Some(group)) => Some(group.id),
+                            _ => None,
+                        }
+                    } else {
+                        None
+                    };
+                    
+                    match netbox_client.as_ref().update_tenant(
+                        TenantId(tenant.id),
+                        Some(&tenant_crd.spec.name),
+                        Some(&slug),
+                        tenant_crd.spec.description.clone(),
+                        tenant_crd.spec.comments.clone(),
+                        group_id.map(TenantGroupId),
+                        resolved_tags,
+                    ).await {
+                        Ok(updated) => {
+                            info!("Updated tenant {} tags in NetBox (ID: {})", updated.name, updated.id);
+                            updated
+                        }
+                        Err(e) => {
+                            warn!("Failed to update tenant tags: {}", e);
+                            // Continue with existing tenant - tag update failure is non-fatal
+                            tenant
+                        }
+                    }
+                } else {
+                    debug!("Tenant {}/{} tags are up-to-date, skipping update", namespace, name);
+                    tenant
+                };
+                
+                // Check if tenant is up-to-date (after potential tag update)
+                {
                     debug!("Tenant {}/{} is up-to-date (ID: {}), no changes needed", namespace, name, tenant.id);
                     // Update status if needed
                     use crate::reconcile_helpers::status_needs_update;

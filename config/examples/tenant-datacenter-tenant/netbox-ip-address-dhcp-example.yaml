@@ -4,24 +4,23 @@ metadata:
   name: dhcp-client-ip
   namespace: default
 spec:
-  # IP range reference (required for DHCP IPs)
-  # Reference the NetBoxIPRange CRD that defines the DHCP pool from which this IP was assigned.
+  # IP range reference (required for DHCP-assigned IPs)
+  # Reference the NetBoxIPRange CRD that defines the DHCP pool from which the IP was assigned.
   # This links the IP address to its DHCP pool for proper tracking and management.
+  # 
+  # NOTE: For DHCP addresses, do NOT specify the address in spec.address.
+  # The IP address assigned by DHCP will be stored in status.address after reconciliation.
+  # The reconciler will track the DHCP-assigned IP and store it in the status section.
   ipRange:
     apiGroup: dcops.microscaler.io
     kind: NetBoxIPRange
     name: dhcp-pool-range
     namespace: default
   
-  # IP address with CIDR (optional for DHCP IPs when ipRange is specified)
-  # If tracking an already-assigned DHCP IP, specify the address here.
-  # If not specified and ipRange is provided, the reconciler will allocate an IP from the range.
-  # Must be a valid CIDR notation (IP address with prefix length)
-  # 
-  # NOTE: For DHCP addresses, this represents the IP that was assigned by DHCP
-  # and is being tracked in NetBox. DHCP does not pre-allocate specific IPs.
-  # This CR should be created AFTER a DHCP server has assigned an IP to track it.
-  address: "192.168.1.100/24"
+  # IP address with CIDR (NOT used for DHCP-assigned IPs)
+  # For DHCP IPs, the address is stored in status.address after reconciliation, not in spec.
+  # Only specify address here for statically-assigned IPs.
+  # address: "192.168.1.100/24"
   
   # Tenant reference (required)
   tenant:

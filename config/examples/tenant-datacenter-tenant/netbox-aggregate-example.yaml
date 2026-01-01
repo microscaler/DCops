@@ -8,4 +8,12 @@ spec:
   rir: "ARIN"
   description: "Private network aggregate for internal use"
   comments: "Managed by DCops"
-
+  tags:
+    - apiGroup: dcops.microscaler.io
+      kind: NetBoxTag
+      name: managed-by-dcops
+      namespace: default
+    - apiGroup: dcops.microscaler.io
+      kind: NetBoxTag
+      name: production
+      namespace: default

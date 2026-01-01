@@ -133,8 +133,12 @@ impl NetBoxClientTrait for NetBoxClient {
         ipam::get_aggregate(&self.core, id).await
     }
 
-    async fn create_aggregate(&self, prefix: &ipnet::IpNet, rir_id: Option<RirId>, date_allocated: Option<&str>, description: Option<String>, comments: Option<String>) -> Result<Aggregate, NetBoxError> {
-        ipam::create_aggregate(&self.core, prefix, rir_id, date_allocated, description, comments).await
+    async fn create_aggregate(&self, prefix: &ipnet::IpNet, rir_id: Option<RirId>, date_allocated: Option<&str>, description: Option<String>, comments: Option<String>, tags: Option<Vec<String>>) -> Result<Aggregate, NetBoxError> {
+        ipam::create_aggregate(&self.core, prefix, rir_id, date_allocated, description, comments, tags).await
+    }
+    
+    async fn update_aggregate(&self, id: AggregateId, rir_id: Option<RirId>, date_allocated: Option<&str>, description: Option<String>, comments: Option<String>, tags: Option<Vec<String>>) -> Result<Aggregate, NetBoxError> {
+        ipam::update_aggregate(&self.core, id, rir_id, date_allocated, description, comments, tags).await
     }
 
     async fn query_rirs(&self, filters: &[(&str, &str)], fetch_all: bool) -> Result<Vec<Rir>, NetBoxError> {
@@ -153,8 +157,8 @@ impl NetBoxClientTrait for NetBoxClient {
         ipam::update_rir(&self.core, id, name, slug, description, is_private, tags).await
     }
 
-    async fn create_vlan(&self, vid: u16, name: &str, site_id: Option<SiteId>, group_id: Option<VlanGroupId>, tenant_id: Option<TenantId>, role_id: Option<RoleId>, status: Option<&str>, description: Option<String>, comments: Option<String>) -> Result<Vlan, NetBoxError> {
-        ipam::create_vlan(&self.core, vid, name, site_id, group_id, tenant_id, role_id, status, description, comments).await
+    async fn create_vlan(&self, vid: u16, name: &str, site_id: Option<SiteId>, group_id: Option<VlanGroupId>, tenant_id: Option<TenantId>, role_id: Option<RoleId>, status: Option<&str>, description: Option<String>, comments: Option<String>, tags: Option<Vec<String>>) -> Result<Vlan, NetBoxError> {
+        ipam::create_vlan(&self.core, vid, name, site_id, group_id, tenant_id, role_id, status, description, comments, tags).await
     }
 
     async fn query_vlans(&self, filters: &[(&str, &str)], fetch_all: bool) -> Result<Vec<Vlan>, NetBoxError> {
@@ -166,8 +170,8 @@ impl NetBoxClientTrait for NetBoxClient {
     }
 
     // VLAN update with complex transformations
-    async fn update_vlan(&self, id: VlanId, vid: Option<u16>, name: Option<&str>, site_id: Option<SiteId>, group_id: Option<VlanGroupId>, tenant_id: Option<TenantId>, role_id: Option<RoleId>, status: Option<&str>, description: Option<String>, comments: Option<String>) -> Result<Vlan, NetBoxError> {
-        ipam::update_vlan(&self.core, <VlanId as Into<u32>>::into(id) as u64, vid, name, site_id.map(|id| id.into()), group_id.map(|id| id.into()), tenant_id.map(|id| id.into()), role_id.map(|id| id.into()), status, description, comments).await
+    async fn update_vlan(&self, id: VlanId, vid: Option<u16>, name: Option<&str>, site_id: Option<SiteId>, group_id: Option<VlanGroupId>, tenant_id: Option<TenantId>, role_id: Option<RoleId>, status: Option<&str>, description: Option<String>, comments: Option<String>, tags: Option<Vec<String>>) -> Result<Vlan, NetBoxError> {
+        ipam::update_vlan(&self.core, <VlanId as Into<u32>>::into(id) as u64, vid, name, site_id.map(|id| id.into()), group_id.map(|id| id.into()), tenant_id.map(|id| id.into()), role_id.map(|id| id.into()), status, description, comments, tags).await
     }
 
     // DCIM Operations

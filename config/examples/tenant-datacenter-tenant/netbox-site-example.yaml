@@ -20,6 +20,15 @@ spec:
     apiGroup: "dcops.microscaler.io"
     kind: "NetBoxSiteGroup"
     name: "production-sites"
+  tags:
+    - apiGroup: dcops.microscaler.io
+      kind: NetBoxTag
+      name: managed-by-dcops
+      namespace: default
+    - apiGroup: dcops.microscaler.io
+      kind: NetBoxTag
+      name: production
+      namespace: default
   facility: "DC1"
   timeZone: "UTC"
   comments: "Managed by DCops"

@@ -90,7 +90,7 @@ def main():
         else:
             print("❌")
             failed += 1
-            errors.append((file_name, output))
+            errors.append((file_display, output))
     
     print()
     print("=" * 60)

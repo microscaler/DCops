@@ -144,6 +144,43 @@ impl Reconciler {
         
         let netbox_aggregate = match netbox_aggregate {
             Some(aggregate) => {
+                // Check if tags need updating
+                let tags_need_update = crate::reconcile_helpers::tags_differ(&aggregate.tags, &aggregate_crd.spec.tags);
+                
+                let aggregate = if tags_need_update {
+                    info!("Aggregate {}/{} tags differ, updating in NetBox", namespace, name);
+                    // Resolve tags
+                    let resolved_tags_json = self.resolve_tag_references(
+                        netbox_client.as_ref(),
+                        &aggregate_crd.spec.tags,
+                        namespace,
+                        name,
+                    ).await;
+                    let resolved_tags = crate::reconcile_helpers::convert_tags_to_strings(resolved_tags_json);
+                    
+                    match netbox_client.as_ref().update_aggregate(
+                        netbox_client::AggregateId(aggregate.id),
+                        rir_id.map(netbox_client::RirId),
+                        aggregate_crd.spec.date_allocated.as_deref(),
+                        aggregate_crd.spec.description.clone(),
+                        aggregate_crd.spec.comments.clone(),
+                        resolved_tags,
+                    ).await {
+                        Ok(updated) => {
+                            info!("Updated aggregate {} tags in NetBox (ID: {})", updated.prefix, updated.id);
+                            updated
+                        }
+                        Err(e) => {
+                            warn!("Failed to update aggregate tags: {}", e);
+                            // Continue with existing aggregate - tag update failure is non-fatal
+                            aggregate
+                        }
+                    }
+                } else {
+                    debug!("Aggregate {}/{} tags are up-to-date, skipping update", namespace, name);
+                    aggregate
+                };
+                
                 use crate::reconcile_helpers::status_needs_update;
                 let needs_status_update = status_needs_update(
                     aggregate_crd.status.as_ref(),
@@ -191,8 +228,42 @@ impl Reconciler {
                     }
                 };
                 
-                if let Some(existing) = existing_aggregate {
-                    existing
+                if let Some(mut existing) = existing_aggregate {
+                    // Check if tags need updating in idempotency path
+                    let tags_need_update = crate::reconcile_helpers::tags_differ(&existing.tags, &aggregate_crd.spec.tags);
+                    
+                    if tags_need_update {
+                        info!("Aggregate {}/{} tags differ in idempotency path, updating in NetBox", namespace, name);
+                        // Resolve tags
+                        let resolved_tags_json = self.resolve_tag_references(
+                            netbox_client.as_ref(),
+                            &aggregate_crd.spec.tags,
+                            namespace,
+                            name,
+                        ).await;
+                        let resolved_tags = crate::reconcile_helpers::convert_tags_to_strings(resolved_tags_json);
+                        
+                        match netbox_client.as_ref().update_aggregate(
+                            netbox_client::AggregateId(existing.id),
+                            rir_id.map(netbox_client::RirId),
+                            aggregate_crd.spec.date_allocated.as_deref(),
+                            aggregate_crd.spec.description.clone(),
+                            aggregate_crd.spec.comments.clone(),
+                            resolved_tags,
+                        ).await {
+                            Ok(updated) => {
+                                info!("Updated aggregate {} tags in NetBox (ID: {}) via idempotency path", updated.prefix, updated.id);
+                                updated
+                            }
+                            Err(e) => {
+                                warn!("Failed to update aggregate tags in idempotency path: {}", e);
+                                // Continue with existing aggregate - tag update failure is non-fatal
+                                existing
+                            }
+                        }
+                    } else {
+                        existing
+                    }
                 } else {
                     // Convert CRD string to IpNet
                     use std::str::FromStr;
@@ -201,12 +272,23 @@ impl Reconciler {
                         .map_err(|e| ControllerError::InvalidIPFormat(format!("Invalid prefix format in CRD: {} - {}", aggregate_crd.spec.prefix, e)))?;
                     
                     debug!("Attempting to create NetBoxAggregate {} in NetBox", aggregate_crd.spec.prefix);
+                    
+                    // Resolve tags before creation
+                    let resolved_tags_json = self.resolve_tag_references(
+                        netbox_client.as_ref(),
+                        &aggregate_crd.spec.tags,
+                        namespace,
+                        name,
+                    ).await;
+                    let resolved_tags = crate::reconcile_helpers::convert_tags_to_strings(resolved_tags_json);
+                    
                     match netbox_client.create_aggregate(
                         &prefix_net,
                         rir_id.map(RirId),
                         aggregate_crd.spec.date_allocated.as_deref(),
                         aggregate_crd.spec.description.clone(),
                         aggregate_crd.spec.comments.clone(),
+                        resolved_tags,
                     ).await {
                         Ok(created_aggregate) => {
                             debug!("Successfully created NetBoxAggregate {} with ID {}", aggregate_crd.spec.prefix, created_aggregate.id);

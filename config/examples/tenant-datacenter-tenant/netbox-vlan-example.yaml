@@ -21,4 +21,12 @@ spec:
   status: active  # active, reserved, deprecated
   description: "VLAN for Kubernetes control plane traffic"
   comments: "Managed by DCops"
-
+  tags:
+    - apiGroup: dcops.microscaler.io
+      kind: NetBoxTag
+      name: managed-by-dcops
+      namespace: default
+    - apiGroup: dcops.microscaler.io
+      kind: NetBoxTag
+      name: production
+      namespace: default

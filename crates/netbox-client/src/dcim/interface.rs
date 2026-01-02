@@ -90,6 +90,7 @@ pub async fn create_interface(
     mac_address: Option<&str>,
     mtu: Option<u16>,
     description: Option<String>,
+    comments: Option<String>,
 ) -> Result<Interface, NetBoxError> {
     let device_id_value: u64 = device_id.into();
     let url = format!("{}/api/dcim/interfaces/", core.base_url);
@@ -105,6 +106,7 @@ pub async fn create_interface(
     helpers::add_optional_string_field(&mut body, "mac_address", mac_address);
     helpers::add_optional_number_field(&mut body, "mtu", mtu);
     helpers::add_optional_string_field_owned(&mut body, "description", description);
+    helpers::add_optional_string_field_owned(&mut body, "comments", comments);
     
     let response = core.client
         .post(&url)
@@ -147,6 +149,7 @@ pub async fn update_interface(
     mac_address: Option<&str>,
     mtu: Option<u16>,
     description: Option<String>,
+    comments: Option<String>,
 ) -> Result<Interface, NetBoxError> {
     let id_value: u64 = id.into();
     let url = format!("{}/api/dcim/interfaces/{}/", core.base_url, id_value);
@@ -166,6 +169,7 @@ pub async fn update_interface(
     helpers::add_optional_string_field(&mut body, "mac_address", mac_address);
     helpers::add_optional_number_field(&mut body, "mtu", mtu);
     helpers::add_optional_string_field_owned(&mut body, "description", description);
+    helpers::add_optional_string_field_owned(&mut body, "comments", comments);
     
     let response = core.client
         .patch(&url)

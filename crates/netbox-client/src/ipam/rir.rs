@@ -69,6 +69,7 @@ pub async fn create_rir(
     name: &str,
     slug: Option<&str>,
     description: Option<String>,
+    comments: Option<String>,
     is_private: Option<bool>,
     tags: Option<Vec<String>>,
 ) -> Result<Rir, NetBoxError> {
@@ -82,6 +83,7 @@ pub async fn create_rir(
     });
     
     helpers::add_optional_string_field_owned(&mut body, "description", description);
+    helpers::add_optional_string_field_owned(&mut body, "comments", comments);
     helpers::add_optional_bool_field(&mut body, "is_private", is_private);
     
     helpers::add_optional_tags_field(&mut body, tags)?;
@@ -115,6 +117,7 @@ pub async fn update_rir(
     name: Option<&str>,
     slug: Option<&str>,
     description: Option<String>,
+    comments: Option<String>,
     is_private: Option<bool>,
     tags: Option<Vec<String>>,
 ) -> Result<Rir, NetBoxError> {
@@ -127,6 +130,7 @@ pub async fn update_rir(
     helpers::add_optional_string_field(&mut body, "name", name);
     helpers::add_optional_string_field(&mut body, "slug", slug);
     helpers::add_optional_string_field_owned(&mut body, "description", description);
+    helpers::add_optional_string_field_owned(&mut body, "comments", comments);
     helpers::add_optional_bool_field(&mut body, "is_private", is_private);
     helpers::add_optional_tags_field(&mut body, tags)?;
     

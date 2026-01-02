@@ -32,6 +32,8 @@ mod tests {
                 mac_address: None,
                 mtu: None,
                 description: None,
+                comments: None,
+                tags: None,
             },
             status: netbox_id.map(|id| crds::NetBoxInterfaceStatus {
                 netbox_id: Some(id),

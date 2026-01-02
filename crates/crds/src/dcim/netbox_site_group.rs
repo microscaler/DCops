@@ -33,6 +33,11 @@ pub struct NetBoxSiteGroupSpec {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
     
+    /// Comments (optional)
+    /// Additional notes or documentation about this site group
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub comments: Option<String>,
+    
     /// Tag references (references NetBoxTag CRDs)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tags: Option<Vec<NetBoxResourceReference>>,

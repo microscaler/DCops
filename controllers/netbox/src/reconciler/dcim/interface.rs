@@ -152,6 +152,7 @@ impl Reconciler {
                         interface_crd.spec.mac_address.as_deref(),
                         interface_crd.spec.mtu,
                         interface_crd.spec.description.clone(),
+                        interface_crd.spec.comments.clone(),
                     ).await {
                         Ok(created) => {
                             info!("Created interface {} on device {} in NetBox (ID: {})", created.name, device_name, created.id);

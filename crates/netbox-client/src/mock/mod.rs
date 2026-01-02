@@ -268,12 +268,12 @@ impl NetBoxClientTrait for MockNetBoxClient {
         ipam::query_ip_ranges(self, filters, fetch_all).await
     }
     
-    async fn create_ip_range(&self, start_address: &ipnet::IpNet, end_address: &ipnet::IpNet, vrf_id: Option<u64>, tenant_id: Option<TenantId>, role_id: Option<RoleId>, status: Option<IPRangeStatus>, description: Option<String>, mark_utilized: Option<bool>, mark_populated: Option<bool>, tags: Option<Vec<String>>) -> Result<IPRange, NetBoxError> {
-        ipam::create_ip_range(self, start_address, end_address, vrf_id, tenant_id, role_id, status, description, mark_utilized, mark_populated, tags).await
+    async fn create_ip_range(&self, start_address: &ipnet::IpNet, end_address: &ipnet::IpNet, vrf_id: Option<u64>, tenant_id: Option<TenantId>, role_id: Option<RoleId>, status: Option<IPRangeStatus>, description: Option<String>, comments: Option<String>, mark_utilized: Option<bool>, mark_populated: Option<bool>, tags: Option<Vec<String>>) -> Result<IPRange, NetBoxError> {
+        ipam::create_ip_range(self, start_address, end_address, vrf_id, tenant_id, role_id, status, description, comments, mark_utilized, mark_populated, tags).await
     }
-    
-    async fn update_ip_range(&self, id: IPRangeId, start_address: Option<&ipnet::IpNet>, end_address: Option<&ipnet::IpNet>, vrf_id: Option<u64>, tenant_id: Option<TenantId>, role_id: Option<RoleId>, status: Option<IPRangeStatus>, description: Option<String>, mark_utilized: Option<bool>, mark_populated: Option<bool>, tags: Option<Vec<String>>) -> Result<IPRange, NetBoxError> {
-        ipam::update_ip_range(self, id, start_address, end_address, vrf_id, tenant_id, role_id, status, description, mark_utilized, mark_populated, tags).await
+
+    async fn update_ip_range(&self, id: IPRangeId, start_address: Option<&ipnet::IpNet>, end_address: Option<&ipnet::IpNet>, vrf_id: Option<u64>, tenant_id: Option<TenantId>, role_id: Option<RoleId>, status: Option<IPRangeStatus>, description: Option<String>, comments: Option<String>, mark_utilized: Option<bool>, mark_populated: Option<bool>, tags: Option<Vec<String>>) -> Result<IPRange, NetBoxError> {
+        ipam::update_ip_range(self, id, start_address, end_address, vrf_id, tenant_id, role_id, status, description, comments, mark_utilized, mark_populated, tags).await
     }
     
     async fn delete_ip_range(&self, id: IPRangeId) -> Result<(), NetBoxError> {
@@ -315,12 +315,12 @@ impl NetBoxClientTrait for MockNetBoxClient {
         ipam::get_rir_by_name(self, name).await
     }
 
-    async fn create_rir(&self, name: &str, slug: Option<&str>, description: Option<String>, is_private: Option<bool>, tags: Option<Vec<String>>) -> Result<Rir, NetBoxError> {
-        ipam::create_rir(self, name, slug, description, is_private, tags).await
+    async fn create_rir(&self, name: &str, slug: Option<&str>, description: Option<String>, comments: Option<String>, is_private: Option<bool>, tags: Option<Vec<String>>) -> Result<Rir, NetBoxError> {
+        ipam::create_rir(self, name, slug, description, comments, is_private, tags).await
     }
 
-    async fn update_rir(&self, id: RirId, name: Option<&str>, slug: Option<&str>, description: Option<String>, is_private: Option<bool>, tags: Option<Vec<String>>) -> Result<Rir, NetBoxError> {
-        ipam::update_rir(self, id.into(), name, slug, description, is_private, tags).await
+    async fn update_rir(&self, id: RirId, name: Option<&str>, slug: Option<&str>, description: Option<String>, comments: Option<String>, is_private: Option<bool>, tags: Option<Vec<String>>) -> Result<Rir, NetBoxError> {
+        ipam::update_rir(self, id.into(), name, slug, description, comments, is_private, tags).await
     }
     
     async fn create_vlan(&self, vid: u16, name: &str, site_id: Option<SiteId>, group_id: Option<VlanGroupId>, tenant_id: Option<TenantId>, role_id: Option<RoleId>, status: Option<&str>, description: Option<String>, comments: Option<String>, tags: Option<Vec<String>>) -> Result<Vlan, NetBoxError> {
@@ -418,12 +418,12 @@ impl NetBoxClientTrait for MockNetBoxClient {
         dcim::get_interface(self, id.into()).await
     }
 
-    async fn create_interface(&self, device_id: DeviceId, name: &str, interface_type: &str, enabled: Option<bool>, mac_address: Option<&str>, mtu: Option<u16>, description: Option<String>) -> Result<Interface, NetBoxError> {
-        dcim::create_interface(self, device_id.into(), name, interface_type, enabled, mac_address, mtu, description).await
+    async fn create_interface(&self, device_id: DeviceId, name: &str, interface_type: &str, enabled: Option<bool>, mac_address: Option<&str>, mtu: Option<u16>, description: Option<String>, comments: Option<String>) -> Result<Interface, NetBoxError> {
+        dcim::create_interface(self, device_id.into(), name, interface_type, enabled, mac_address, mtu, description, comments).await
     }
 
-    async fn update_interface(&self, id: InterfaceId, name: Option<&str>, interface_type: Option<&str>, enabled: Option<bool>, mac_address: Option<&str>, mtu: Option<u16>, description: Option<String>) -> Result<Interface, NetBoxError> {
-        dcim::update_interface(self, id.into(), name, interface_type, enabled, mac_address, mtu, description).await
+    async fn update_interface(&self, id: InterfaceId, name: Option<&str>, interface_type: Option<&str>, enabled: Option<bool>, mac_address: Option<&str>, mtu: Option<u16>, description: Option<String>, comments: Option<String>) -> Result<Interface, NetBoxError> {
+        dcim::update_interface(self, id.into(), name, interface_type, enabled, mac_address, mtu, description, comments).await
     }
 
     async fn query_mac_addresses(&self, filters: &[(&str, &str)], fetch_all: bool) -> Result<Vec<MACAddress>, NetBoxError> {
@@ -538,12 +538,12 @@ impl NetBoxClientTrait for MockNetBoxClient {
         dcim::get_manufacturer_by_name(self, name).await
     }
 
-    async fn create_manufacturer(&self, name: &str, slug: Option<&str>, description: Option<String>, tags: Option<Vec<String>>) -> Result<Manufacturer, NetBoxError> {
-        dcim::create_manufacturer(self, name, slug, description, tags).await
+    async fn create_manufacturer(&self, name: &str, slug: Option<&str>, description: Option<String>, comments: Option<String>, tags: Option<Vec<String>>) -> Result<Manufacturer, NetBoxError> {
+        dcim::create_manufacturer(self, name, slug, description, comments, tags).await
     }
 
-    async fn update_manufacturer(&self, id: ManufacturerId, name: Option<&str>, slug: Option<&str>, description: Option<String>, tags: Option<Vec<String>>) -> Result<Manufacturer, NetBoxError> {
-        dcim::update_manufacturer(self, id.into(), name, slug, description, tags).await
+    async fn update_manufacturer(&self, id: ManufacturerId, name: Option<&str>, slug: Option<&str>, description: Option<String>, comments: Option<String>, tags: Option<Vec<String>>) -> Result<Manufacturer, NetBoxError> {
+        dcim::update_manufacturer(self, id.into(), name, slug, description, comments, tags).await
     }
 
     async fn query_platforms(&self, filters: &[(&str, &str)], fetch_all: bool) -> Result<Vec<Platform>, NetBoxError> {

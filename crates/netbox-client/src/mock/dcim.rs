@@ -178,7 +178,7 @@ pub async fn get_interface(client: &MockNetBoxClient, id: u64) -> Result<Interfa
             .ok_or_else(|| NetBoxError::NotFound(format!("Interface {} not found", id)))
 }
 
-pub async fn create_interface(client: &MockNetBoxClient, device_id: u64, name: &str, interface_type: &str, enabled: Option<bool>, mac_address: Option<&str>, mtu: Option<u16>, description: Option<String>) -> Result<Interface, NetBoxError> {
+pub async fn create_interface(client: &MockNetBoxClient, device_id: u64, name: &str, interface_type: &str, enabled: Option<bool>, mac_address: Option<&str>, mtu: Option<u16>, description: Option<String>, comments: Option<String>) -> Result<Interface, NetBoxError> {
         use chrono::Utc;
         
         // Verify device exists
@@ -212,6 +212,7 @@ pub async fn create_interface(client: &MockNetBoxClient, device_id: u64, name: &
             mac_address: mac_address.map(|s| s.to_string()),
             mtu,
             description,
+            comments,
             ip_addresses: vec![],
             tags: vec![],
             created: Utc::now().to_rfc3339(),
@@ -222,7 +223,7 @@ pub async fn create_interface(client: &MockNetBoxClient, device_id: u64, name: &
         Ok(interface)
     }
 
-pub async fn update_interface(_client: &MockNetBoxClient, _id: u64, _name: Option<&str>, _interface_type: Option<&str>, _enabled: Option<bool>, _mac_address: Option<&str>, _mtu: Option<u16>, _description: Option<String>) -> Result<Interface, NetBoxError> {
+pub async fn update_interface(_client: &MockNetBoxClient, _id: u64, _name: Option<&str>, _interface_type: Option<&str>, _enabled: Option<bool>, _mac_address: Option<&str>, _mtu: Option<u16>, _description: Option<String>, _comments: Option<String>) -> Result<Interface, NetBoxError> {
         Err(NetBoxError::Api("Not implemented in mock".to_string()))
     }
 
@@ -796,7 +797,7 @@ pub async fn get_manufacturer_by_name(client: &MockNetBoxClient, name: &str) -> 
         Ok(client.manufacturers.lock().unwrap().get(name).cloned())
 }
 
-pub async fn create_manufacturer(client: &MockNetBoxClient, name: &str, slug: Option<&str>, description: Option<String>, tags: Option<Vec<String>>) -> Result<Manufacturer, NetBoxError> {
+pub async fn create_manufacturer(client: &MockNetBoxClient, name: &str, slug: Option<&str>, description: Option<String>, comments: Option<String>, tags: Option<Vec<String>>) -> Result<Manufacturer, NetBoxError> {
         let id = client.next_id();
         let slug_value = slug.map(|s| s.to_string()).unwrap_or_else(|| name.to_lowercase().replace(' ', "-"));
         let manufacturer = Manufacturer {
@@ -806,6 +807,7 @@ pub async fn create_manufacturer(client: &MockNetBoxClient, name: &str, slug: Op
             name: name.to_string(),
             slug: slug_value,
             description,
+            comments,
             devicetype_count: 0,
             inventoryitem_count: 0,
             platform_count: 0,
@@ -824,7 +826,7 @@ pub async fn create_manufacturer(client: &MockNetBoxClient, name: &str, slug: Op
         Ok(manufacturer)
 }
 
-pub async fn update_manufacturer(client: &MockNetBoxClient, id: u64, name: Option<&str>, slug: Option<&str>, description: Option<String>, tags: Option<Vec<String>>) -> Result<Manufacturer, NetBoxError> {
+pub async fn update_manufacturer(client: &MockNetBoxClient, id: u64, name: Option<&str>, slug: Option<&str>, description: Option<String>, comments: Option<String>, tags: Option<Vec<String>>) -> Result<Manufacturer, NetBoxError> {
         let manufacturers = client.manufacturers.lock().unwrap();
         let manufacturer = manufacturers.values().find(|m| m.id == id)
             .ok_or_else(|| NetBoxError::NotFound(format!("Manufacturer {} not found", id)))?;
@@ -841,6 +843,10 @@ pub async fn update_manufacturer(client: &MockNetBoxClient, id: u64, name: Optio
         
         if description.is_some() {
             updated.description = description;
+        }
+        
+        if comments.is_some() {
+            updated.comments = comments;
         }
         
         if let Some(tags_vec) = tags {

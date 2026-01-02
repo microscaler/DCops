@@ -95,6 +95,7 @@ impl Reconciler {
                             Some(&rir_crd.spec.name),
                             rir_crd.spec.slug.as_deref(),
                             rir_crd.spec.description.clone(),
+                            rir_crd.spec.comments.clone(),
                             rir_crd.spec.is_private,
                             tags,
                         ).await
@@ -187,6 +188,7 @@ impl Reconciler {
                                 Some(&rir_crd.spec.name),
                                 rir_crd.spec.slug.as_deref(),
                                 rir_crd.spec.description.clone(),
+                                rir_crd.spec.comments.clone(),
                                 rir_crd.spec.is_private,
                                 tags,
                             ).await
@@ -223,6 +225,7 @@ impl Reconciler {
                         &rir_crd.spec.name,
                         rir_crd.spec.slug.as_deref(),
                         rir_crd.spec.description.clone(),
+                        rir_crd.spec.comments.clone(),
                         rir_crd.spec.is_private,
                         resolved_tags,
                     ).await {

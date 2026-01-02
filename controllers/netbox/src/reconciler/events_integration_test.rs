@@ -572,6 +572,7 @@ mod tests {
                 date_allocated: None,
                 description: None,
                 comments: None,
+                tags: None,
             },
             status: None,
         };
@@ -616,6 +617,7 @@ mod tests {
                 vm_role: false,
                 description: None,
                 comments: None,
+                tags: None,
             },
             status: None,
         };
@@ -663,6 +665,8 @@ mod tests {
                 is_full_depth: false,
                 description: None,
                 comments: None,
+                tags: None,
+                comments: None,
             },
             status: None,
         };
@@ -704,6 +708,7 @@ mod tests {
                 napalm_args: None,
                 description: None,
                 comments: None,
+                tags: None,
             },
             status: None,
         };
@@ -742,6 +747,8 @@ mod tests {
                 slug: Some("test-region".to_string()),
                 parent: None,
                 description: None,
+                comments: None,
+                tags: None,
             },
             status: None,
         };
@@ -780,6 +787,8 @@ mod tests {
                 slug: Some("test-site-group".to_string()),
                 parent: None,
                 description: None,
+                comments: None,
+                tags: None,
             },
             status: None,
         };
@@ -879,6 +888,7 @@ mod tests {
                 status: VlanStatus::Active,
                 description: None,
                 comments: None,
+                tags: None,
             },
             status: None,
         };
@@ -916,7 +926,9 @@ mod tests {
                 name: "test-rir".to_string(),
                 slug: Some("test-rir".to_string()),
                 description: None,
+                comments: None,
                 is_private: Some(false),
+                tags: None,
             },
             status: None,
         };
@@ -995,6 +1007,7 @@ mod tests {
                 color: Some("9e9e9e".to_string()),
                 description: None,
                 comments: None,
+                tenant: None,
             },
             status: None,
         };
@@ -1036,6 +1049,8 @@ mod tests {
                 mac_address: None,
                 mtu: None,
                 description: None,
+                comments: None,
+                tags: None,
             },
             status: None,
         };
@@ -1074,6 +1089,7 @@ mod tests {
                 interface: "test-device/eth0".to_string(),
                 description: None,
                 comments: None,
+                tags: None,
             },
             status: None,
         };

@@ -7,6 +7,7 @@ spec:
   name: "Raspberry Pi"
   slug: "raspberry-pi"
   description: "Raspberry Pi Foundation single-board computers"
+  comments: "Raspberry Pi Foundation manufacturer entry. Managed by DCops controller."
   # Tag references (optional)
   # Tags must exist in NetBox before they can be referenced
   # See netbox-tag-example.yaml for creating tags

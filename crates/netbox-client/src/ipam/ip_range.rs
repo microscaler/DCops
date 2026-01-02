@@ -102,6 +102,7 @@ pub async fn create_ip_range(
     role_id: Option<RoleId>,
     status: Option<IPRangeStatus>,
     description: Option<String>,
+    comments: Option<String>,
     mark_utilized: Option<bool>,
     mark_populated: Option<bool>,
     tags: Option<Vec<String>>,
@@ -126,6 +127,9 @@ pub async fn create_ip_range(
     }
     if let Some(desc) = description {
         body["description"] = serde_json::Value::String(desc);
+    }
+    if let Some(comments_str) = comments {
+        body["comments"] = serde_json::Value::String(comments_str);
     }
     if let Some(utilized) = mark_utilized {
         body["mark_utilized"] = serde_json::Value::Bool(utilized);
@@ -173,6 +177,7 @@ pub async fn update_ip_range(
     role_id: Option<RoleId>,
     status: Option<IPRangeStatus>,
     description: Option<String>,
+    comments: Option<String>,
     mark_utilized: Option<bool>,
     mark_populated: Option<bool>,
     tags: Option<Vec<String>>,
@@ -197,6 +202,7 @@ pub async fn update_ip_range(
             .map_err(|e| NetBoxError::Serialization(e))?;
     }
     helpers::add_optional_string_field_owned(&mut body, "description", description);
+    helpers::add_optional_string_field_owned(&mut body, "comments", comments);
     if let Some(utilized) = mark_utilized {
         body["mark_utilized"] = serde_json::Value::Bool(utilized);
     }

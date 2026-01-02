@@ -137,7 +137,7 @@ impl Reconciler {
                                 Some(TenantId(tenant_id)),
                                 location_crd.spec.facility.as_deref(),
                                 location_crd.spec.description.clone(),
-                                None, // comments
+                                location_crd.spec.comments.clone(),
                                 tags,
                             ).await
                         },
@@ -349,7 +349,7 @@ impl Reconciler {
                         Some(TenantId(tenant_id)),
                         location_crd.spec.facility.as_deref(),
                         location_crd.spec.description.clone(),
-                        None, // comments not in spec
+                        location_crd.spec.comments.clone(),
                         resolved_tags,
                     ).await {
                         Ok(created) => {

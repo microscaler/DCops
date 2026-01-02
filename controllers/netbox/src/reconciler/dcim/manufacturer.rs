@@ -95,6 +95,7 @@ impl Reconciler {
                             Some(&manufacturer_crd.spec.name),
                             manufacturer_crd.spec.slug.as_deref(),
                             manufacturer_crd.spec.description.clone(),
+                            manufacturer_crd.spec.comments.clone(),
                             tags,
                         ).await
                     },
@@ -185,6 +186,7 @@ impl Reconciler {
                                 Some(&manufacturer_crd.spec.name),
                                 manufacturer_crd.spec.slug.as_deref(),
                                 manufacturer_crd.spec.description.clone(),
+                                manufacturer_crd.spec.comments.clone(),
                                 tags,
                             ).await
                         },
@@ -220,6 +222,7 @@ impl Reconciler {
                         &manufacturer_crd.spec.name,
                         manufacturer_crd.spec.slug.as_deref(),
                         manufacturer_crd.spec.description.clone(),
+                        manufacturer_crd.spec.comments.clone(),
                         resolved_tags,
                     ).await {
                         Ok(created) => {

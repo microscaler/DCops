@@ -35,6 +35,8 @@ mod tests {
                     namespace: None,
                 }),
                 description: Some(format!("Test site group {}", name)),
+                comments: None,
+                tags: None,
             },
             status: netbox_id.map(|id| crds::NetBoxSiteGroupStatus {
                 netbox_id: Some(id),

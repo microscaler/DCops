@@ -788,6 +788,12 @@ spec:
           spec:
             description: NetBoxSiteGroupSpec defines the desired state of a NetBox site group
             properties:
+              comments:
+                description: |-
+                  Comments (optional)
+                  Additional notes or documentation about this site group
+                nullable: true
+                type: string
               description:
                 description: Description of the site group
                 nullable: true
@@ -925,6 +931,12 @@ spec:
           spec:
             description: NetBoxLocationSpec defines the desired state of a NetBox location
             properties:
+              comments:
+                description: |-
+                  Comments (optional)
+                  Additional notes or documentation about this location
+                nullable: true
+                type: string
               description:
                 description: Description of the location
                 nullable: true
@@ -1615,6 +1627,12 @@ spec:
           spec:
             description: NetBoxIPRangeSpec defines the desired state of a NetBox IP range
             properties:
+              comments:
+                description: |-
+                  Comments (optional)
+                  Additional notes or documentation about this IP range
+                nullable: true
+                type: string
               description:
                 description: Description
                 nullable: true
@@ -2415,6 +2433,12 @@ spec:
           spec:
             description: NetBoxRIRSpec defines the desired state of a NetBox RIR
             properties:
+              comments:
+                description: |-
+                  Comments (optional)
+                  Additional notes or documentation about this RIR
+                nullable: true
+                type: string
               description:
                 description: Description of the RIR
                 nullable: true
@@ -3199,6 +3223,12 @@ spec:
           spec:
             description: NetBoxManufacturerSpec defines the desired state of a NetBox manufacturer
             properties:
+              comments:
+                description: |-
+                  Comments (optional)
+                  Additional notes or documentation about this manufacturer
+                nullable: true
+                type: string
               description:
                 description: Description of the manufacturer
                 nullable: true
@@ -3972,6 +4002,12 @@ spec:
           spec:
             description: NetBoxInterfaceSpec defines the desired state of a NetBox interface
             properties:
+              comments:
+                description: |-
+                  Comments (optional)
+                  Additional notes or documentation about this interface
+                nullable: true
+                type: string
               description:
                 description: Description
                 nullable: true

@@ -60,6 +60,11 @@ pub struct NetBoxIPRangeSpec {
     #[serde(default = "default_false")]
     pub mark_populated: bool,
 
+    /// Comments (optional)
+    /// Additional notes or documentation about this IP range
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub comments: Option<String>,
+
     /// Tag references (references NetBoxTag CRDs)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tags: Option<Vec<NetBoxResourceReference>>,

@@ -15,6 +15,7 @@ spec:
     kind: "NetBoxTenant"
     name: "datacenter-tenant"
   description: "Rack A in datacenter-1"
+  comments: "Rack A location in datacenter-1. Managed by DCops controller."
   # Optional: parent location for nested locations
   # parent:
   #   apiGroup: "dcops.microscaler.io"

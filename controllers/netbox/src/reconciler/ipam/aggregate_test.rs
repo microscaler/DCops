@@ -31,6 +31,7 @@ mod tests {
                 date_allocated: None,
                 description: None,
                 comments: None,
+                tags: None,
             },
             status: netbox_id.map(|id| crds::NetBoxAggregateStatus {
                 netbox_id: Some(id),

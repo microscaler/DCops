@@ -249,7 +249,7 @@ pub async fn query_ip_ranges(client: &MockNetBoxClient, filters: &[(&str, &str)]
     Ok(results)
 }
 
-pub async fn create_ip_range(client: &MockNetBoxClient, start_address: &ipnet::IpNet, end_address: &ipnet::IpNet, vrf_id: Option<u64>, tenant_id: Option<TenantId>, role_id: Option<RoleId>, status: Option<IPRangeStatus>, description: Option<String>, mark_utilized: Option<bool>, mark_populated: Option<bool>, tags: Option<Vec<String>>) -> Result<IPRange, NetBoxError> {
+pub async fn create_ip_range(client: &MockNetBoxClient, start_address: &ipnet::IpNet, end_address: &ipnet::IpNet, vrf_id: Option<u64>, tenant_id: Option<TenantId>, role_id: Option<RoleId>, status: Option<IPRangeStatus>, description: Option<String>, comments: Option<String>, mark_utilized: Option<bool>, mark_populated: Option<bool>, tags: Option<Vec<String>>) -> Result<IPRange, NetBoxError> {
     let id = client.next_id();
     let status_value = status.unwrap_or(IPRangeStatus::Active);
     
@@ -308,6 +308,7 @@ pub async fn create_ip_range(client: &MockNetBoxClient, start_address: &ipnet::I
         status: status_value,
         role,
         description: description.unwrap_or_default(),
+        comments,
         mark_utilized: mark_utilized.unwrap_or(false),
         mark_populated: mark_populated.unwrap_or(false),
         tags: tags_vec,
@@ -320,7 +321,7 @@ pub async fn create_ip_range(client: &MockNetBoxClient, start_address: &ipnet::I
     Ok(ip_range)
 }
 
-pub async fn update_ip_range(client: &MockNetBoxClient, id: IPRangeId, start_address: Option<&ipnet::IpNet>, end_address: Option<&ipnet::IpNet>, vrf_id: Option<u64>, tenant_id: Option<TenantId>, role_id: Option<RoleId>, status: Option<IPRangeStatus>, description: Option<String>, mark_utilized: Option<bool>, mark_populated: Option<bool>, tags: Option<Vec<String>>) -> Result<IPRange, NetBoxError> {
+pub async fn update_ip_range(client: &MockNetBoxClient, id: IPRangeId, start_address: Option<&ipnet::IpNet>, end_address: Option<&ipnet::IpNet>, vrf_id: Option<u64>, tenant_id: Option<TenantId>, role_id: Option<RoleId>, status: Option<IPRangeStatus>, description: Option<String>, comments: Option<String>, mark_utilized: Option<bool>, mark_populated: Option<bool>, tags: Option<Vec<String>>) -> Result<IPRange, NetBoxError> {
     let id_value: u64 = id.into();
     let mut ranges = client.ip_ranges.lock().unwrap();
     let range = ranges.get_mut(&id_value)
@@ -368,6 +369,9 @@ pub async fn update_ip_range(client: &MockNetBoxClient, id: IPRangeId, start_add
     }
     if let Some(desc) = description {
         range.description = desc;
+    }
+    if comments.is_some() {
+        range.comments = comments;
     }
     if let Some(utilized) = mark_utilized {
         range.mark_utilized = utilized;
@@ -636,7 +640,7 @@ pub async fn get_rir_by_name(client: &MockNetBoxClient, name: &str) -> Result<Op
         Ok(client.rirs.lock().unwrap().get(name).cloned())
 }
 
-pub async fn create_rir(client: &MockNetBoxClient, name: &str, slug: Option<&str>, description: Option<String>, is_private: Option<bool>, tags: Option<Vec<String>>) -> Result<Rir, NetBoxError> {
+pub async fn create_rir(client: &MockNetBoxClient, name: &str, slug: Option<&str>, description: Option<String>, comments: Option<String>, is_private: Option<bool>, tags: Option<Vec<String>>) -> Result<Rir, NetBoxError> {
         let id = client.next_id();
         let slug_value = slug.map(|s| s.to_string()).unwrap_or_else(|| name.to_lowercase().replace(' ', "-"));
         let rir = Rir {
@@ -646,6 +650,7 @@ pub async fn create_rir(client: &MockNetBoxClient, name: &str, slug: Option<&str
             name: name.to_string(),
             slug: slug_value,
             description,
+            comments,
             is_private: is_private.unwrap_or(false),
             tags: tags.unwrap_or_default().into_iter().map(|t| NestedTag {
                 id: 0,
@@ -662,7 +667,7 @@ pub async fn create_rir(client: &MockNetBoxClient, name: &str, slug: Option<&str
         Ok(rir)
     }
 
-pub async fn update_rir(client: &MockNetBoxClient, id: u64, name: Option<&str>, slug: Option<&str>, description: Option<String>, is_private: Option<bool>, tags: Option<Vec<String>>) -> Result<Rir, NetBoxError> {
+pub async fn update_rir(client: &MockNetBoxClient, id: u64, name: Option<&str>, slug: Option<&str>, description: Option<String>, comments: Option<String>, is_private: Option<bool>, tags: Option<Vec<String>>) -> Result<Rir, NetBoxError> {
         let rirs = client.rirs.lock().unwrap();
         let rir = rirs.values().find(|r| r.id == id)
             .ok_or_else(|| NetBoxError::NotFound(format!("RIR {} not found", id)))?;
@@ -679,6 +684,10 @@ pub async fn update_rir(client: &MockNetBoxClient, id: u64, name: Option<&str>, 
         
         if description.is_some() {
             updated.description = description;
+        }
+        
+        if comments.is_some() {
+            updated.comments = comments;
         }
         
         if is_private.is_some() {

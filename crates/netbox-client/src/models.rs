@@ -181,6 +181,7 @@ pub struct IPRange {
     pub status: IPRangeStatus,
     pub role: Option<NestedRole>,
     pub description: String,
+    pub comments: Option<String>,
     pub mark_utilized: bool, // For DHCP ranges, set to true
     pub mark_populated: bool, // For DHCP ranges, set to true
     pub tags: Vec<NestedTag>,
@@ -401,6 +402,7 @@ pub struct Interface {
     pub mac_address: Option<String>,
     pub mtu: Option<u16>,
     pub description: Option<String>,
+    pub comments: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub ip_addresses: Vec<NestedIPAddress>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -760,6 +762,7 @@ pub struct Rir {
     pub name: String,
     pub slug: String,
     pub description: Option<String>,
+    pub comments: Option<String>,
     pub is_private: bool,
     pub tags: Vec<NestedTag>,
     pub created: String,
@@ -820,6 +823,7 @@ pub struct Manufacturer {
     pub name: String,
     pub slug: String,
     pub description: Option<String>,
+    pub comments: Option<String>,
     pub devicetype_count: u64,
     pub inventoryitem_count: u64,
     pub platform_count: u64,

@@ -32,9 +32,10 @@ mod tests {
                     api_group: "dcops.microscaler.io".to_string(),
                     kind: "NetBoxRegion".to_string(),
                     name: p.to_string(),
-                    namespace: None,
                 }),
                 description: Some(format!("Test region {}", name)),
+                comments: None,
+                tags: None,
             },
             status: netbox_id.map(|id| crds::NetBoxRegionStatus {
                 netbox_id: Some(id),

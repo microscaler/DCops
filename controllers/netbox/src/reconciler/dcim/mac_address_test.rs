@@ -30,6 +30,7 @@ mod tests {
                 interface: interface.to_string(),
                 description: Some(format!("Test MAC address {}", name)),
                 comments: None,
+                tags: None,
             },
             status: netbox_id.map(|id| crds::NetBoxMACAddressStatus {
                 netbox_id: Some(id),
@@ -64,6 +65,8 @@ mod tests {
                 mac_address: None,
                 mtu: None,
                 description: None,
+                comments: None,
+                tags: None,
             },
             status: netbox_id.map(|id| crds::NetBoxInterfaceStatus {
                 netbox_id: Some(id),

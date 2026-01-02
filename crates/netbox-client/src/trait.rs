@@ -38,8 +38,8 @@ pub trait NetBoxClientTrait: Send + Sync {
     // IP Range operations - signatures match ipam::ip_range module exactly
     async fn get_ip_range(&self, id: IPRangeId) -> Result<IPRange, NetBoxError>;
     async fn query_ip_ranges(&self, filters: &[(&str, &str)], fetch_all: bool) -> Result<Vec<IPRange>, NetBoxError>;
-    async fn create_ip_range(&self, start_address: &IpNet, end_address: &IpNet, vrf_id: Option<u64>, tenant_id: Option<TenantId>, role_id: Option<RoleId>, status: Option<IPRangeStatus>, description: Option<String>, mark_utilized: Option<bool>, mark_populated: Option<bool>, tags: Option<Vec<String>>) -> Result<IPRange, NetBoxError>;
-    async fn update_ip_range(&self, id: IPRangeId, start_address: Option<&IpNet>, end_address: Option<&IpNet>, vrf_id: Option<u64>, tenant_id: Option<TenantId>, role_id: Option<RoleId>, status: Option<IPRangeStatus>, description: Option<String>, mark_utilized: Option<bool>, mark_populated: Option<bool>, tags: Option<Vec<String>>) -> Result<IPRange, NetBoxError>;
+    async fn create_ip_range(&self, start_address: &IpNet, end_address: &IpNet, vrf_id: Option<u64>, tenant_id: Option<TenantId>, role_id: Option<RoleId>, status: Option<IPRangeStatus>, description: Option<String>, comments: Option<String>, mark_utilized: Option<bool>, mark_populated: Option<bool>, tags: Option<Vec<String>>) -> Result<IPRange, NetBoxError>;
+    async fn update_ip_range(&self, id: IPRangeId, start_address: Option<&IpNet>, end_address: Option<&IpNet>, vrf_id: Option<u64>, tenant_id: Option<TenantId>, role_id: Option<RoleId>, status: Option<IPRangeStatus>, description: Option<String>, comments: Option<String>, mark_utilized: Option<bool>, mark_populated: Option<bool>, tags: Option<Vec<String>>) -> Result<IPRange, NetBoxError>;
     async fn delete_ip_range(&self, id: IPRangeId) -> Result<(), NetBoxError>;
     
     // Prefix operations - signatures match ipam::prefix module exactly
@@ -53,8 +53,8 @@ pub trait NetBoxClientTrait: Send + Sync {
     
     async fn query_rirs(&self, filters: &[(&str, &str)], fetch_all: bool) -> Result<Vec<Rir>, NetBoxError>;
     async fn get_rir_by_name(&self, name: &str) -> Result<Option<Rir>, NetBoxError>;
-    async fn create_rir(&self, name: &str, slug: Option<&str>, description: Option<String>, is_private: Option<bool>, tags: Option<Vec<String>>) -> Result<Rir, NetBoxError>;
-    async fn update_rir(&self, id: RirId, name: Option<&str>, slug: Option<&str>, description: Option<String>, is_private: Option<bool>, tags: Option<Vec<String>>) -> Result<Rir, NetBoxError>;
+    async fn create_rir(&self, name: &str, slug: Option<&str>, description: Option<String>, comments: Option<String>, is_private: Option<bool>, tags: Option<Vec<String>>) -> Result<Rir, NetBoxError>;
+    async fn update_rir(&self, id: RirId, name: Option<&str>, slug: Option<&str>, description: Option<String>, comments: Option<String>, is_private: Option<bool>, tags: Option<Vec<String>>) -> Result<Rir, NetBoxError>;
     
     async fn create_vlan(&self, vid: u16, name: &str, site_id: Option<SiteId>, group_id: Option<VlanGroupId>, tenant_id: Option<TenantId>, role_id: Option<RoleId>, status: Option<&str>, description: Option<String>, comments: Option<String>, tags: Option<Vec<String>>) -> Result<Vlan, NetBoxError>;
     async fn update_vlan(&self, id: VlanId, vid: Option<u16>, name: Option<&str>, site_id: Option<SiteId>, group_id: Option<VlanGroupId>, tenant_id: Option<TenantId>, role_id: Option<RoleId>, status: Option<&str>, description: Option<String>, comments: Option<String>, tags: Option<Vec<String>>) -> Result<Vlan, NetBoxError>;
@@ -88,8 +88,8 @@ pub trait NetBoxClientTrait: Send + Sync {
     
     async fn query_interfaces(&self, filters: &[(&str, &str)], fetch_all: bool) -> Result<Vec<Interface>, NetBoxError>;
     async fn get_interface(&self, id: InterfaceId) -> Result<Interface, NetBoxError>;
-    async fn create_interface(&self, device_id: DeviceId, name: &str, interface_type: &str, enabled: Option<bool>, mac_address: Option<&str>, mtu: Option<u16>, description: Option<String>) -> Result<Interface, NetBoxError>;
-    async fn update_interface(&self, id: InterfaceId, name: Option<&str>, interface_type: Option<&str>, enabled: Option<bool>, mac_address: Option<&str>, mtu: Option<u16>, description: Option<String>) -> Result<Interface, NetBoxError>;
+    async fn create_interface(&self, device_id: DeviceId, name: &str, interface_type: &str, enabled: Option<bool>, mac_address: Option<&str>, mtu: Option<u16>, description: Option<String>, comments: Option<String>) -> Result<Interface, NetBoxError>;
+    async fn update_interface(&self, id: InterfaceId, name: Option<&str>, interface_type: Option<&str>, enabled: Option<bool>, mac_address: Option<&str>, mtu: Option<u16>, description: Option<String>, comments: Option<String>) -> Result<Interface, NetBoxError>;
     
     async fn query_mac_addresses(&self, filters: &[(&str, &str)], fetch_all: bool) -> Result<Vec<MACAddress>, NetBoxError>;
     async fn get_mac_address_by_address(&self, mac: &str) -> Result<Option<MACAddress>, NetBoxError>;
@@ -125,8 +125,8 @@ pub trait NetBoxClientTrait: Send + Sync {
     
     async fn query_manufacturers(&self, filters: &[(&str, &str)], fetch_all: bool) -> Result<Vec<Manufacturer>, NetBoxError>;
     async fn get_manufacturer_by_name(&self, name: &str) -> Result<Option<Manufacturer>, NetBoxError>;
-    async fn create_manufacturer(&self, name: &str, slug: Option<&str>, description: Option<String>, tags: Option<Vec<String>>) -> Result<Manufacturer, NetBoxError>;
-    async fn update_manufacturer(&self, id: ManufacturerId, name: Option<&str>, slug: Option<&str>, description: Option<String>, tags: Option<Vec<String>>) -> Result<Manufacturer, NetBoxError>;
+    async fn create_manufacturer(&self, name: &str, slug: Option<&str>, description: Option<String>, comments: Option<String>, tags: Option<Vec<String>>) -> Result<Manufacturer, NetBoxError>;
+    async fn update_manufacturer(&self, id: ManufacturerId, name: Option<&str>, slug: Option<&str>, description: Option<String>, comments: Option<String>, tags: Option<Vec<String>>) -> Result<Manufacturer, NetBoxError>;
     
     async fn query_platforms(&self, filters: &[(&str, &str)], fetch_all: bool) -> Result<Vec<Platform>, NetBoxError>;
     async fn get_platform_by_name(&self, name: &str) -> Result<Option<Platform>, NetBoxError>;

@@ -46,6 +46,7 @@ mod tests {
                 status: VlanStatus::Active,
                 description: None,
                 comments: None,
+                tags: None,
             },
             status: netbox_id.map(|id| crds::NetBoxVLANStatus {
                 netbox_id: Some(id),

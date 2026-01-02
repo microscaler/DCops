@@ -47,6 +47,7 @@ mod tests {
                 is_full_depth: false, // bool, not Option
                 description: None,
                 comments: None,
+                tags: None,
             },
             status: Some(crds::NetBoxDeviceTypeStatus {
                 netbox_id: Some(1),
@@ -71,6 +72,7 @@ mod tests {
                 vm_role: false,
                 description: None,
                 comments: None,
+                tags: None,
             },
             status: Some(crds::NetBoxDeviceRoleStatus {
                 netbox_id: Some(1),

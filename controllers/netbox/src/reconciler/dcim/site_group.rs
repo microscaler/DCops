@@ -110,7 +110,7 @@ impl Reconciler {
                             site_group_crd.spec.slug.as_deref(),
                             parent_id.map(SiteGroupId),
                             site_group_crd.spec.description.clone(),
-                            None, // comments
+                            site_group_crd.spec.comments.clone(),
                             tags,
                         ).await
                     },
@@ -241,7 +241,7 @@ impl Reconciler {
                         site_group_crd.spec.slug.as_deref(),
                         parent_id.map(SiteGroupId),
                         site_group_crd.spec.description.clone(),
-                        None, // comments - not in CRD spec yet
+                        site_group_crd.spec.comments.clone(),
                         resolved_tags,
                     ).await {
                         Ok(created) => {

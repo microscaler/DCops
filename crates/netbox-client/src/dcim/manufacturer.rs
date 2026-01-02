@@ -70,6 +70,7 @@ pub async fn create_manufacturer(
     name: &str,
     slug: Option<&str>,
     description: Option<String>,
+    comments: Option<String>,
     tags: Option<Vec<String>>,
 ) -> Result<Manufacturer, NetBoxError> {
     let url = format!("{}/api/dcim/manufacturers/", core.base_url);
@@ -82,6 +83,7 @@ pub async fn create_manufacturer(
     });
     
     helpers::add_optional_string_field_owned(&mut body, "description", description);
+    helpers::add_optional_string_field_owned(&mut body, "comments", comments);
     
     helpers::add_optional_tags_field(&mut body, tags)?;
     
@@ -118,6 +120,7 @@ pub async fn update_manufacturer(
     name: Option<&str>,
     slug: Option<&str>,
     description: Option<String>,
+    comments: Option<String>,
     tags: Option<Vec<String>>,
 ) -> Result<Manufacturer, NetBoxError> {
     let id_value: u64 = id.into();
@@ -129,6 +132,7 @@ pub async fn update_manufacturer(
     helpers::add_optional_string_field(&mut body, "name", name);
     helpers::add_optional_string_field(&mut body, "slug", slug);
     helpers::add_optional_string_field_owned(&mut body, "description", description);
+    helpers::add_optional_string_field_owned(&mut body, "comments", comments);
     helpers::add_optional_tags_field(&mut body, tags)?;
     
     let response = core.client

@@ -41,6 +41,10 @@ spec:
   # Description (optional)
   description: "DHCP pool range for client devices"
 
+  # Comments (optional)
+  # Additional notes or documentation about this IP range
+  comments: "This IP range is used for DHCP pool allocation. Managed by DCops controller."
+
   # Mark as utilized (for DHCP ranges, set to true)
   # When true, all IPs in the range are considered utilized
   markUtilized: true

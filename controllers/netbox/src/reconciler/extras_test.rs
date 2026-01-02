@@ -61,6 +61,7 @@ mod tests {
                 color: Some("9e9e9e".to_string()),
                 description: None,
                 comments: None,
+                tenant: None,
             },
             status: netbox_id.map(|id| crds::NetBoxTagStatus {
                 netbox_id: Some(id),

@@ -152,7 +152,7 @@ mod tests {
         let mock_client = mock_token_resolver.mock_client();
         
         // Setup: Create reconciler
-        let (reconciler, apis, _mock_event_recorder, _mock_secret_fetcher) = 
+        let (reconciler, apis, _mock_event_recorder) = 
             create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
         
         // Setup: Create tenant
@@ -270,7 +270,7 @@ mod tests {
         mock_token_resolver.add_secret("default", "netbox-token-datacenter-tenant", "test-token".to_string());
         
         // Setup: Create reconciler
-        let (reconciler, apis, _mock_event_recorder, _mock_secret_fetcher) = 
+        let (reconciler, apis, _mock_event_recorder) = 
             create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
         
         // Setup: Create IP range CRD with missing tenant dependency
@@ -319,7 +319,7 @@ mod tests {
         mock_token_resolver.add_secret("default", "netbox-token-datacenter-tenant", "test-token".to_string());
         
         // Setup: Create reconciler
-        let (reconciler, apis, _mock_event_recorder, _mock_secret_fetcher) = 
+        let (reconciler, apis, _mock_event_recorder) = 
             create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
         
         // Setup: Create tenant
@@ -381,7 +381,7 @@ mod tests {
         mock_token_resolver.add_secret("default", "netbox-token-datacenter-tenant", "test-token".to_string());
         
         // Setup: Create reconciler
-        let (reconciler, apis, _mock_event_recorder, _mock_secret_fetcher) = 
+        let (reconciler, apis, _mock_event_recorder) = 
             create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
         
         // Setup: Create tenant

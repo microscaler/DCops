@@ -37,6 +37,7 @@ mod tests {
                 napalm_args: None,
                 description: None,
                 comments: None,
+                tags: None,
             },
             status: netbox_id.map(|id| crds::NetBoxPlatformStatus {
                 netbox_id: Some(id),

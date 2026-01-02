@@ -550,6 +550,7 @@ mod tests {
         ip_address.status = Some(crds::NetBoxIPAddressStatus {
             netbox_id: Some(42),
             netbox_url: Some(format!("{}/api/ipam/ip-addresses/42/", netbox_url)),
+            address: None,
             state: ResourceState::Created,
             error: None,
             last_reconciled: None,

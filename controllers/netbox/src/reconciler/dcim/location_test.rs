@@ -50,6 +50,8 @@ mod tests {
                 }),
                 facility: None,
                 description: Some(format!("Test location {}", name)),
+                comments: None,
+                tags: None,
             },
             status: netbox_id.map(|id| crds::NetBoxLocationStatus {
                 netbox_id: Some(id),

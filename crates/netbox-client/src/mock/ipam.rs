@@ -823,3 +823,366 @@ pub async fn get_vlan(client: &MockNetBoxClient, id: VlanId) -> Result<Vlan, Net
             .cloned()
             .ok_or_else(|| NetBoxError::NotFound(format!("VLAN {} not found", id_value_u64)))
 }
+
+// ============================================================================
+// VRF Operations
+// ============================================================================
+
+pub async fn query_vrfs(client: &MockNetBoxClient, filters: &[(&str, &str)], _fetch_all: bool) -> Result<Vec<Vrf>, NetBoxError> {
+    let vrfs = client.vrfs.lock().unwrap();
+    let mut results: Vec<Vrf> = vrfs.values().cloned().collect();
+    
+    // Apply filters
+    for (key, value) in filters {
+        results.retain(|vrf| {
+            match *key {
+                "name" => vrf.name == *value,
+                "rd" => vrf.rd.as_ref().map(|rd| rd == value).unwrap_or(false),
+                _ => true, // Ignore unknown filters
+            }
+        });
+    }
+    
+    Ok(results)
+}
+
+pub async fn get_vrf(client: &MockNetBoxClient, id: VrfId) -> Result<Vrf, NetBoxError> {
+    let id_value: u64 = id.into();
+    client.vrfs
+        .lock()
+        .unwrap()
+        .get(&id_value)
+        .cloned()
+        .ok_or_else(|| NetBoxError::NotFound(format!("VRF {} not found", id_value)))
+}
+
+pub async fn get_vrf_by_name(client: &MockNetBoxClient, name: &str) -> Result<Option<Vrf>, NetBoxError> {
+    let vrfs = client.vrfs.lock().unwrap();
+    Ok(vrfs.values().find(|vrf| vrf.name == name).cloned())
+}
+
+pub async fn create_vrf(
+    client: &MockNetBoxClient,
+    name: &str,
+    rd: Option<&str>,
+    enforce_unique: Option<bool>,
+    tenant_id: Option<TenantId>,
+    description: Option<String>,
+    comments: Option<String>,
+    import_targets: Option<Vec<RouteTargetId>>,
+    export_targets: Option<Vec<RouteTargetId>>,
+    tags: Option<Vec<String>>,
+) -> Result<Vrf, NetBoxError> {
+    let id = client.next_id();
+    
+    // Build import/export targets
+    let import_targets_nested = import_targets.map(|ids| {
+        ids.into_iter().map(|rt_id| {
+            let rt_id_value: u64 = rt_id.into();
+            // Try to get the route target to get its name
+            let rt_name = client.route_targets
+                .lock()
+                .unwrap()
+                .get(&rt_id_value)
+                .map(|rt| rt.name.clone())
+                .unwrap_or_else(|| format!("RT-{}", rt_id_value));
+            NestedRouteTarget {
+                id: rt_id_value,
+                url: format!("{}/api/ipam/route-targets/{}/", client.base_url, rt_id_value),
+                display: rt_name.clone(),
+                name: rt_name,
+            }
+        }).collect()
+    }).unwrap_or_default();
+    
+    let export_targets_nested = export_targets.map(|ids| {
+        ids.into_iter().map(|rt_id| {
+            let rt_id_value: u64 = rt_id.into();
+            let rt_name = client.route_targets
+                .lock()
+                .unwrap()
+                .get(&rt_id_value)
+                .map(|rt| rt.name.clone())
+                .unwrap_or_else(|| format!("RT-{}", rt_id_value));
+            NestedRouteTarget {
+                id: rt_id_value,
+                url: format!("{}/api/ipam/route-targets/{}/", client.base_url, rt_id_value),
+                display: rt_name.clone(),
+                name: rt_name,
+            }
+        }).collect()
+    }).unwrap_or_default();
+    
+    let vrf = Vrf {
+        id,
+        url: format!("{}/api/ipam/vrfs/{}/", client.base_url, id),
+        display: name.to_string(),
+        name: name.to_string(),
+        rd: rd.map(|s| s.to_string()),
+        enforce_unique: enforce_unique.unwrap_or(false),
+        tenant: tenant_id.map(|tid| client.helpers().create_nested_tenant(tid.into(), None)),
+        description: description.unwrap_or_default(),
+        comments: comments.unwrap_or_default(),
+        import_targets: import_targets_nested,
+        export_targets: export_targets_nested,
+        tags: tags
+            .unwrap_or_default()
+            .iter()
+            .map(|tag_id| {
+                let tag_id_num = tag_id.parse::<u64>().unwrap_or(0);
+                NestedTag {
+                    id: tag_id_num,
+                    url: format!("{}/api/extras/tags/{}/", client.base_url, tag_id_num),
+                    display: tag_id.clone(),
+                    name: tag_id.clone(),
+                    slug: tag_id.to_lowercase().replace(' ', "-"),
+                }
+            })
+            .collect(),
+        custom_fields: serde_json::json!({}),
+        created: chrono::Utc::now().to_rfc3339(),
+        last_updated: chrono::Utc::now().to_rfc3339(),
+        ipaddress_count: 0,
+        prefix_count: 0,
+    };
+    
+    client.vrfs.lock().unwrap().insert(id, vrf.clone());
+    Ok(vrf)
+}
+
+pub async fn update_vrf(
+    client: &MockNetBoxClient,
+    id: VrfId,
+    name: Option<&str>,
+    rd: Option<&str>,
+    enforce_unique: Option<bool>,
+    tenant_id: Option<TenantId>,
+    description: Option<String>,
+    comments: Option<String>,
+    import_targets: Option<Vec<RouteTargetId>>,
+    export_targets: Option<Vec<RouteTargetId>>,
+    tags: Option<Vec<String>>,
+) -> Result<Vrf, NetBoxError> {
+    let id_value: u64 = id.into();
+    let mut vrfs = client.vrfs.lock().unwrap();
+    let vrf = vrfs.get_mut(&id_value)
+        .ok_or_else(|| NetBoxError::NotFound(format!("VRF {} not found", id_value)))?;
+    
+    if let Some(name_str) = name {
+        vrf.name = name_str.to_string();
+        vrf.display = name_str.to_string();
+    }
+    if rd.is_some() {
+        vrf.rd = rd.map(|s| s.to_string());
+    }
+    if enforce_unique.is_some() {
+        vrf.enforce_unique = enforce_unique.unwrap();
+    }
+    if tenant_id.is_some() {
+        vrf.tenant = tenant_id.map(|tid| client.helpers().create_nested_tenant(tid.into(), None));
+    }
+    if description.is_some() {
+        vrf.description = description.unwrap_or_default();
+    }
+    if comments.is_some() {
+        vrf.comments = comments.unwrap_or_default();
+    }
+    if import_targets.is_some() {
+        vrf.import_targets = import_targets.map(|ids| {
+            ids.into_iter().map(|rt_id| {
+                let rt_id_value: u64 = rt_id.into();
+                let rt_name = client.route_targets
+                    .lock()
+                    .unwrap()
+                    .get(&rt_id_value)
+                    .map(|rt| rt.name.clone())
+                    .unwrap_or_else(|| format!("RT-{}", rt_id_value));
+                NestedRouteTarget {
+                    id: rt_id_value,
+                    url: format!("{}/api/ipam/route-targets/{}/", client.base_url, rt_id_value),
+                    display: rt_name.clone(),
+                    name: rt_name,
+                }
+            }).collect()
+        }).unwrap_or_default();
+    }
+    if export_targets.is_some() {
+        vrf.export_targets = export_targets.map(|ids| {
+            ids.into_iter().map(|rt_id| {
+                let rt_id_value: u64 = rt_id.into();
+                let rt_name = client.route_targets
+                    .lock()
+                    .unwrap()
+                    .get(&rt_id_value)
+                    .map(|rt| rt.name.clone())
+                    .unwrap_or_else(|| format!("RT-{}", rt_id_value));
+                NestedRouteTarget {
+                    id: rt_id_value,
+                    url: format!("{}/api/ipam/route-targets/{}/", client.base_url, rt_id_value),
+                    display: rt_name.clone(),
+                    name: rt_name,
+                }
+            }).collect()
+        }).unwrap_or_default();
+    }
+    if tags.is_some() {
+        vrf.tags = tags
+            .unwrap_or_default()
+            .iter()
+            .map(|tag_id| {
+                let tag_id_num = tag_id.parse::<u64>().unwrap_or(0);
+                NestedTag {
+                    id: tag_id_num,
+                    url: format!("{}/api/extras/tags/{}/", client.base_url, tag_id_num),
+                    display: tag_id.clone(),
+                    name: tag_id.clone(),
+                    slug: tag_id.to_lowercase().replace(' ', "-"),
+                }
+            })
+            .collect();
+    }
+    
+    vrf.last_updated = chrono::Utc::now().to_rfc3339();
+    Ok(vrf.clone())
+}
+
+pub async fn delete_vrf(client: &MockNetBoxClient, id: VrfId) -> Result<(), NetBoxError> {
+    let id_value: u64 = id.into();
+    let mut vrfs = client.vrfs.lock().unwrap();
+    vrfs.remove(&id_value)
+        .ok_or_else(|| NetBoxError::NotFound(format!("VRF {} not found", id_value)))?;
+    Ok(())
+}
+
+// ============================================================================
+// Route Target Operations
+// ============================================================================
+
+pub async fn query_route_targets(client: &MockNetBoxClient, filters: &[(&str, &str)], _fetch_all: bool) -> Result<Vec<RouteTarget>, NetBoxError> {
+    let route_targets = client.route_targets.lock().unwrap();
+    let mut results: Vec<RouteTarget> = route_targets.values().cloned().collect();
+    
+    // Apply filters
+    for (key, value) in filters {
+        results.retain(|rt| {
+            match *key {
+                "name" => rt.name == *value,
+                _ => true, // Ignore unknown filters
+            }
+        });
+    }
+    
+    Ok(results)
+}
+
+pub async fn get_route_target(client: &MockNetBoxClient, id: RouteTargetId) -> Result<RouteTarget, NetBoxError> {
+    let id_value: u64 = id.into();
+    client.route_targets
+        .lock()
+        .unwrap()
+        .get(&id_value)
+        .cloned()
+        .ok_or_else(|| NetBoxError::NotFound(format!("Route Target {} not found", id_value)))
+}
+
+pub async fn get_route_target_by_name(client: &MockNetBoxClient, name: &str) -> Result<Option<RouteTarget>, NetBoxError> {
+    let route_targets = client.route_targets.lock().unwrap();
+    Ok(route_targets.values().find(|rt| rt.name == name).cloned())
+}
+
+pub async fn create_route_target(
+    client: &MockNetBoxClient,
+    name: &str,
+    tenant_id: Option<TenantId>,
+    description: Option<String>,
+    comments: Option<String>,
+    tags: Option<Vec<String>>,
+) -> Result<RouteTarget, NetBoxError> {
+    let id = client.next_id();
+    
+    let route_target = RouteTarget {
+        id,
+        url: format!("{}/api/ipam/route-targets/{}/", client.base_url, id),
+        display: name.to_string(),
+        name: name.to_string(),
+        tenant: tenant_id.map(|tid| client.helpers().create_nested_tenant(tid.into(), None)),
+        description: description.unwrap_or_default(),
+        comments: comments.unwrap_or_default(),
+        tags: tags
+            .unwrap_or_default()
+            .iter()
+            .map(|tag_id| {
+                let tag_id_num = tag_id.parse::<u64>().unwrap_or(0);
+                NestedTag {
+                    id: tag_id_num,
+                    url: format!("{}/api/extras/tags/{}/", client.base_url, tag_id_num),
+                    display: tag_id.clone(),
+                    name: tag_id.clone(),
+                    slug: tag_id.to_lowercase().replace(' ', "-"),
+                }
+            })
+            .collect(),
+        custom_fields: serde_json::json!({}),
+        created: chrono::Utc::now().to_rfc3339(),
+        last_updated: chrono::Utc::now().to_rfc3339(),
+    };
+    
+    client.route_targets.lock().unwrap().insert(id, route_target.clone());
+    Ok(route_target)
+}
+
+pub async fn update_route_target(
+    client: &MockNetBoxClient,
+    id: RouteTargetId,
+    name: Option<&str>,
+    tenant_id: Option<TenantId>,
+    description: Option<String>,
+    comments: Option<String>,
+    tags: Option<Vec<String>>,
+) -> Result<RouteTarget, NetBoxError> {
+    let id_value: u64 = id.into();
+    let mut route_targets = client.route_targets.lock().unwrap();
+    let route_target = route_targets.get_mut(&id_value)
+        .ok_or_else(|| NetBoxError::NotFound(format!("Route Target {} not found", id_value)))?;
+    
+    if let Some(name_str) = name {
+        route_target.name = name_str.to_string();
+        route_target.display = name_str.to_string();
+    }
+    if tenant_id.is_some() {
+        route_target.tenant = tenant_id.map(|tid| client.helpers().create_nested_tenant(tid.into(), None));
+    }
+    if description.is_some() {
+        route_target.description = description.unwrap_or_default();
+    }
+    if comments.is_some() {
+        route_target.comments = comments.unwrap_or_default();
+    }
+    if tags.is_some() {
+        route_target.tags = tags
+            .unwrap_or_default()
+            .iter()
+            .map(|tag_id| {
+                let tag_id_num = tag_id.parse::<u64>().unwrap_or(0);
+                NestedTag {
+                    id: tag_id_num,
+                    url: format!("{}/api/extras/tags/{}/", client.base_url, tag_id_num),
+                    display: tag_id.clone(),
+                    name: tag_id.clone(),
+                    slug: tag_id.to_lowercase().replace(' ', "-"),
+                }
+            })
+            .collect();
+    }
+    
+    route_target.last_updated = chrono::Utc::now().to_rfc3339();
+    Ok(route_target.clone())
+}
+
+pub async fn delete_route_target(client: &MockNetBoxClient, id: RouteTargetId) -> Result<(), NetBoxError> {
+    let id_value: u64 = id.into();
+    let mut route_targets = client.route_targets.lock().unwrap();
+    route_targets.remove(&id_value)
+        .ok_or_else(|| NetBoxError::NotFound(format!("Route Target {} not found", id_value)))?;
+    Ok(())
+}

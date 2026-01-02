@@ -33,6 +33,19 @@ pub mod docker_test_container;
 pub mod docker_helpers;
 
 #[cfg(test)]
+pub mod kea_helpers;
+
+#[cfg(test)]
+pub mod dhcpm_helpers;
+
+#[cfg(test)]
+pub mod netbox_helpers;
+
+#[cfg(test)]
+#[path = "test_utils/dhcp_integration_test.rs"]
+pub mod dhcp_integration_test;
+
+#[cfg(test)]
 use crate::reconciler::Reconciler;
 #[cfg(test)]
 use crds::*;

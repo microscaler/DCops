@@ -8,6 +8,8 @@
 //! - Roles (IPAM roles)
 //! - VLANs
 //! - RIRs (Regional Internet Registries)
+//! - VRFs (Virtual Routing and Forwarding)
+//! - Route Targets
 
 pub mod netbox_ip_address;
 pub mod netbox_ip_range;
@@ -16,6 +18,8 @@ pub mod netbox_aggregate;
 pub mod netbox_role;
 pub mod netbox_vlan;
 pub mod netbox_rir;
+pub mod netbox_vrf;
+pub mod netbox_route_target;
 
 pub use netbox_ip_address::*;
 pub use netbox_ip_range::*;
@@ -24,4 +28,6 @@ pub use netbox_aggregate::*;
 pub use netbox_role::*;
 pub use netbox_vlan::*;
 pub use netbox_rir::*;
+pub use netbox_vrf::*;
+pub use netbox_route_target::*;
 

@@ -10,7 +10,7 @@ use crate::reconciler::Reconciler;
 use crate::error::ControllerError;
 use crds::{
     IPClaim, IPPool, NetBoxPrefix, NetBoxTenant, NetBoxSite, NetBoxRole, NetBoxTag, NetBoxAggregate,
-    NetBoxVLAN, NetBoxRIR, NetBoxIPAddress, NetBoxIPRange, NetBoxDeviceRole, NetBoxManufacturer, NetBoxPlatform, NetBoxDeviceType,
+    NetBoxVLAN, NetBoxRIR, NetBoxIPAddress, NetBoxIPRange, NetBoxVRF, NetBoxRouteTarget, NetBoxDeviceRole, NetBoxManufacturer, NetBoxPlatform, NetBoxDeviceType,
     NetBoxDevice, NetBoxInterface, NetBoxMACAddress, NetBoxRegion, NetBoxSiteGroup, NetBoxLocation,
 };
 use kube::Api;
@@ -148,6 +148,8 @@ pub struct Watcher {
     netbox_rir_api: Api<NetBoxRIR>,
     netbox_ip_address_api: Api<NetBoxIPAddress>,
     netbox_ip_range_api: Api<NetBoxIPRange>,
+    netbox_vrf_api: Api<NetBoxVRF>,
+    netbox_route_target_api: Api<NetBoxRouteTarget>,
     // Tenancy APIs
     netbox_tenant_api: Api<NetBoxTenant>,
     // DCIM APIs
@@ -180,6 +182,8 @@ impl Watcher {
         netbox_rir_api: Api<NetBoxRIR>,
         netbox_ip_address_api: Api<NetBoxIPAddress>,
         netbox_ip_range_api: Api<NetBoxIPRange>,
+        netbox_vrf_api: Api<NetBoxVRF>,
+        netbox_route_target_api: Api<NetBoxRouteTarget>,
         // Tenancy APIs
         netbox_tenant_api: Api<NetBoxTenant>,
         // DCIM APIs
@@ -209,6 +213,8 @@ impl Watcher {
             netbox_rir_api,
             netbox_ip_address_api,
             netbox_ip_range_api,
+            netbox_vrf_api,
+            netbox_route_target_api,
             // Tenancy
             netbox_tenant_api,
             // DCIM
@@ -510,6 +516,40 @@ impl Watcher {
                 })
             },
             "NetBoxIPRange",
+        ).await
+    }
+    
+    /// Starts watching NetBoxVRF resources.
+    pub async fn watch_netbox_vrfs(&self) -> Result<(), ControllerError> {
+        watch_resource(
+            self.netbox_vrf_api.clone(),
+            self.reconciler.clone(),
+            |reconciler, resource| {
+                Box::pin(async move {
+                    match reconciler.reconcile_netbox_vrf(&*resource).await {
+                        Ok(()) => Ok(Action::await_change()),
+                        Err(e) => Err(e),
+                    }
+                })
+            },
+            "NetBoxVRF",
+        ).await
+    }
+    
+    /// Starts watching NetBoxRouteTarget resources.
+    pub async fn watch_netbox_route_targets(&self) -> Result<(), ControllerError> {
+        watch_resource(
+            self.netbox_route_target_api.clone(),
+            self.reconciler.clone(),
+            |reconciler, resource| {
+                Box::pin(async move {
+                    match reconciler.reconcile_netbox_route_target(&*resource).await {
+                        Ok(()) => Ok(Action::await_change()),
+                        Err(e) => Err(e),
+                    }
+                })
+            },
+            "NetBoxRouteTarget",
         ).await
     }
     

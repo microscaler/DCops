@@ -114,6 +114,16 @@ pub struct TenantGroupId(pub u64);
 #[serde(transparent)]
 pub struct IPRangeId(pub u64);
 
+/// VRF ID
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct VrfId(pub u64);
+
+/// Route Target ID
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct RouteTargetId(pub u64);
+
 // ============================================================================
 // Conversion traits for convenience
 // ============================================================================
@@ -374,6 +384,32 @@ impl From<u64> for IPRangeId {
 
 impl From<IPRangeId> for u64 {
     fn from(id: IPRangeId) -> Self {
+        id.0
+    }
+}
+
+// VrfId conversions
+impl From<u64> for VrfId {
+    fn from(id: u64) -> Self {
+        VrfId(id)
+    }
+}
+
+impl From<VrfId> for u64 {
+    fn from(id: VrfId) -> Self {
+        id.0
+    }
+}
+
+// RouteTargetId conversions
+impl From<u64> for RouteTargetId {
+    fn from(id: u64) -> Self {
+        RouteTargetId(id)
+    }
+}
+
+impl From<RouteTargetId> for u64 {
+    fn from(id: RouteTargetId) -> Self {
         id.0
     }
 }

@@ -60,6 +60,22 @@ pub trait NetBoxClientTrait: Send + Sync {
     async fn update_vlan(&self, id: VlanId, vid: Option<u16>, name: Option<&str>, site_id: Option<SiteId>, group_id: Option<VlanGroupId>, tenant_id: Option<TenantId>, role_id: Option<RoleId>, status: Option<&str>, description: Option<String>, comments: Option<String>, tags: Option<Vec<String>>) -> Result<Vlan, NetBoxError>;
     async fn query_vlans(&self, filters: &[(&str, &str)], fetch_all: bool) -> Result<Vec<Vlan>, NetBoxError>;
     async fn get_vlan(&self, id: VlanId) -> Result<Vlan, NetBoxError>;
+    
+    // VRF operations
+    async fn query_vrfs(&self, filters: &[(&str, &str)], fetch_all: bool) -> Result<Vec<Vrf>, NetBoxError>;
+    async fn get_vrf(&self, id: VrfId) -> Result<Vrf, NetBoxError>;
+    async fn get_vrf_by_name(&self, name: &str) -> Result<Option<Vrf>, NetBoxError>;
+    async fn create_vrf(&self, name: &str, rd: Option<&str>, enforce_unique: Option<bool>, tenant_id: Option<TenantId>, description: Option<String>, comments: Option<String>, import_targets: Option<Vec<RouteTargetId>>, export_targets: Option<Vec<RouteTargetId>>, tags: Option<Vec<String>>) -> Result<Vrf, NetBoxError>;
+    async fn update_vrf(&self, id: VrfId, name: Option<&str>, rd: Option<&str>, enforce_unique: Option<bool>, tenant_id: Option<TenantId>, description: Option<String>, comments: Option<String>, import_targets: Option<Vec<RouteTargetId>>, export_targets: Option<Vec<RouteTargetId>>, tags: Option<Vec<String>>) -> Result<Vrf, NetBoxError>;
+    async fn delete_vrf(&self, id: VrfId) -> Result<(), NetBoxError>;
+    
+    // Route Target operations
+    async fn query_route_targets(&self, filters: &[(&str, &str)], fetch_all: bool) -> Result<Vec<RouteTarget>, NetBoxError>;
+    async fn get_route_target(&self, id: RouteTargetId) -> Result<RouteTarget, NetBoxError>;
+    async fn get_route_target_by_name(&self, name: &str) -> Result<Option<RouteTarget>, NetBoxError>;
+    async fn create_route_target(&self, name: &str, tenant_id: Option<TenantId>, description: Option<String>, comments: Option<String>, tags: Option<Vec<String>>) -> Result<RouteTarget, NetBoxError>;
+    async fn update_route_target(&self, id: RouteTargetId, name: Option<&str>, tenant_id: Option<TenantId>, description: Option<String>, comments: Option<String>, tags: Option<Vec<String>>) -> Result<RouteTarget, NetBoxError>;
+    async fn delete_route_target(&self, id: RouteTargetId) -> Result<(), NetBoxError>;
 
     // DCIM Operations
     async fn query_devices(&self, filters: &[(&str, &str)], fetch_all: bool) -> Result<Vec<Device>, NetBoxError>;

@@ -38,6 +38,8 @@ pub struct MockNetBoxClient {
     pub(crate) aggregates: Arc<Mutex<HashMap<u64, Aggregate>>>,
     pub(crate) rirs: Arc<Mutex<HashMap<String, Rir>>>,
     pub(crate) vlans: Arc<Mutex<HashMap<u64, Vlan>>>,
+    pub(crate) vrfs: Arc<Mutex<HashMap<u64, Vrf>>>,
+    pub(crate) route_targets: Arc<Mutex<HashMap<u64, RouteTarget>>>,
     pub(crate) sites: Arc<Mutex<HashMap<u64, Site>>>,
     pub(crate) regions: Arc<Mutex<HashMap<u64, Region>>>,
     pub(crate) site_groups: Arc<Mutex<HashMap<u64, SiteGroup>>>,
@@ -69,6 +71,8 @@ impl MockNetBoxClient {
             aggregates: Arc::new(Mutex::new(HashMap::new())),
             rirs: Arc::new(Mutex::new(HashMap::new())),
             vlans: Arc::new(Mutex::new(HashMap::new())),
+            vrfs: Arc::new(Mutex::new(HashMap::new())),
+            route_targets: Arc::new(Mutex::new(HashMap::new())),
             sites: Arc::new(Mutex::new(HashMap::new())),
             regions: Arc::new(Mutex::new(HashMap::new())),
             site_groups: Arc::new(Mutex::new(HashMap::new())),
@@ -333,6 +337,56 @@ impl NetBoxClientTrait for MockNetBoxClient {
 
     async fn get_vlan(&self, id: VlanId) -> Result<Vlan, NetBoxError> {
         ipam::get_vlan(self, id).await
+    }
+
+    // VRF operations
+    async fn query_vrfs(&self, filters: &[(&str, &str)], fetch_all: bool) -> Result<Vec<Vrf>, NetBoxError> {
+        ipam::query_vrfs(self, filters, fetch_all).await
+    }
+
+    async fn get_vrf(&self, id: VrfId) -> Result<Vrf, NetBoxError> {
+        ipam::get_vrf(self, id).await
+    }
+
+    async fn get_vrf_by_name(&self, name: &str) -> Result<Option<Vrf>, NetBoxError> {
+        ipam::get_vrf_by_name(self, name).await
+    }
+
+    async fn create_vrf(&self, name: &str, rd: Option<&str>, enforce_unique: Option<bool>, tenant_id: Option<TenantId>, description: Option<String>, comments: Option<String>, import_targets: Option<Vec<RouteTargetId>>, export_targets: Option<Vec<RouteTargetId>>, tags: Option<Vec<String>>) -> Result<Vrf, NetBoxError> {
+        ipam::create_vrf(self, name, rd, enforce_unique, tenant_id, description, comments, import_targets, export_targets, tags).await
+    }
+
+    async fn update_vrf(&self, id: VrfId, name: Option<&str>, rd: Option<&str>, enforce_unique: Option<bool>, tenant_id: Option<TenantId>, description: Option<String>, comments: Option<String>, import_targets: Option<Vec<RouteTargetId>>, export_targets: Option<Vec<RouteTargetId>>, tags: Option<Vec<String>>) -> Result<Vrf, NetBoxError> {
+        ipam::update_vrf(self, id, name, rd, enforce_unique, tenant_id, description, comments, import_targets, export_targets, tags).await
+    }
+
+    async fn delete_vrf(&self, id: VrfId) -> Result<(), NetBoxError> {
+        ipam::delete_vrf(self, id).await
+    }
+
+    // Route Target operations
+    async fn query_route_targets(&self, filters: &[(&str, &str)], fetch_all: bool) -> Result<Vec<RouteTarget>, NetBoxError> {
+        ipam::query_route_targets(self, filters, fetch_all).await
+    }
+
+    async fn get_route_target(&self, id: RouteTargetId) -> Result<RouteTarget, NetBoxError> {
+        ipam::get_route_target(self, id).await
+    }
+
+    async fn get_route_target_by_name(&self, name: &str) -> Result<Option<RouteTarget>, NetBoxError> {
+        ipam::get_route_target_by_name(self, name).await
+    }
+
+    async fn create_route_target(&self, name: &str, tenant_id: Option<TenantId>, description: Option<String>, comments: Option<String>, tags: Option<Vec<String>>) -> Result<RouteTarget, NetBoxError> {
+        ipam::create_route_target(self, name, tenant_id, description, comments, tags).await
+    }
+
+    async fn update_route_target(&self, id: RouteTargetId, name: Option<&str>, tenant_id: Option<TenantId>, description: Option<String>, comments: Option<String>, tags: Option<Vec<String>>) -> Result<RouteTarget, NetBoxError> {
+        ipam::update_route_target(self, id, name, tenant_id, description, comments, tags).await
+    }
+
+    async fn delete_route_target(&self, id: RouteTargetId) -> Result<(), NetBoxError> {
+        ipam::delete_route_target(self, id).await
     }
 
     // DCIM Operations - delegated to dcim module

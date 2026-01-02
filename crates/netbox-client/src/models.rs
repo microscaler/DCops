@@ -198,6 +198,57 @@ pub enum IPRangeStatus {
     Deprecated,
 }
 
+/// VRF (Virtual Routing and Forwarding) model (from IPAM API)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub struct Vrf {
+    pub id: u64,
+    pub url: String,
+    pub display: String,
+    pub name: String,
+    pub rd: Option<String>, // Route Distinguisher (RFC 4364 format, e.g., "65000:1")
+    pub enforce_unique: bool, // Whether to enforce unique IP space within this VRF
+    pub tenant: Option<NestedTenant>,
+    pub description: String,
+    pub comments: String,
+    pub import_targets: Vec<NestedRouteTarget>, // Route targets for importing routes
+    pub export_targets: Vec<NestedRouteTarget>, // Route targets for exporting routes
+    pub tags: Vec<NestedTag>,
+    pub custom_fields: serde_json::Value,
+    pub created: String, // ISO 8601 datetime
+    pub last_updated: String, // ISO 8601 datetime
+    pub ipaddress_count: u64,
+    pub prefix_count: u64,
+}
+
+/// Route Target model (from IPAM API)
+/// Route targets are extended BGP communities used to manage route redistribution among VRF tables
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub struct RouteTarget {
+    pub id: u64,
+    pub url: String,
+    pub display: String,
+    pub name: String, // RFC 4360 format (e.g., "65000:1")
+    pub tenant: Option<NestedTenant>,
+    pub description: String,
+    pub comments: String,
+    pub tags: Vec<NestedTag>,
+    pub custom_fields: serde_json::Value,
+    pub created: String, // ISO 8601 datetime
+    pub last_updated: String, // ISO 8601 datetime
+}
+
+/// Nested Route Target (for references in VRF import/export targets)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub struct NestedRouteTarget {
+    pub id: u64,
+    pub url: String,
+    pub display: String,
+    pub name: String,
+}
+
 fn deserialize_ip_range_status<'de, D>(deserializer: D) -> Result<IPRangeStatus, D::Error>
 where
     D: serde::Deserializer<'de>,

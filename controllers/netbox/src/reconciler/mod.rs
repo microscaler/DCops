@@ -29,7 +29,7 @@ use crds::{
     IPClaim, IPPool, NetBoxPrefix, NetBoxTenant, NetBoxSite, NetBoxRole, NetBoxTag, NetBoxAggregate,
     NetBoxDeviceRole, NetBoxManufacturer, NetBoxPlatform, NetBoxDeviceType, NetBoxDevice,
     NetBoxInterface, NetBoxMACAddress, NetBoxVLAN, NetBoxRegion, NetBoxSiteGroup, NetBoxLocation,
-    NetBoxRIR, NetBoxIPAddress, NetBoxIPRange, PrefixState, ResourceState,
+    NetBoxRIR, NetBoxIPAddress, NetBoxIPRange, NetBoxVRF, NetBoxRouteTarget, PrefixState, ResourceState,
 };
 use tracing::{info, error, debug, warn};
 use std::collections::HashMap;
@@ -74,6 +74,8 @@ pub struct Reconciler {
     pub(crate) netbox_rir_api: Box<dyn KubeApiTrait<NetBoxRIR> + Send + Sync>,
     pub(crate) netbox_ip_address_api: Box<dyn KubeApiTrait<NetBoxIPAddress> + Send + Sync>,
     pub(crate) netbox_ip_range_api: Box<dyn KubeApiTrait<NetBoxIPRange> + Send + Sync>,
+    pub(crate) netbox_vrf_api: Box<dyn KubeApiTrait<NetBoxVRF> + Send + Sync>,
+    pub(crate) netbox_route_target_api: Box<dyn KubeApiTrait<NetBoxRouteTarget> + Send + Sync>,
     // Tenancy APIs
     pub(crate) netbox_tenant_api: Box<dyn KubeApiTrait<NetBoxTenant> + Send + Sync>,
     // DCIM APIs
@@ -406,6 +408,8 @@ impl Reconciler {
         netbox_rir_api: impl KubeApiTrait<NetBoxRIR> + Send + Sync + 'static,
         netbox_ip_address_api: impl KubeApiTrait<NetBoxIPAddress> + Send + Sync + 'static,
         netbox_ip_range_api: impl KubeApiTrait<NetBoxIPRange> + Send + Sync + 'static,
+        netbox_vrf_api: impl KubeApiTrait<NetBoxVRF> + Send + Sync + 'static,
+        netbox_route_target_api: impl KubeApiTrait<NetBoxRouteTarget> + Send + Sync + 'static,
         // Tenancy APIs
         netbox_tenant_api: impl KubeApiTrait<NetBoxTenant> + Send + Sync + 'static,
         // DCIM APIs
@@ -437,6 +441,8 @@ impl Reconciler {
             netbox_rir_api: Box::new(netbox_rir_api),
             netbox_ip_address_api: Box::new(netbox_ip_address_api),
             netbox_ip_range_api: Box::new(netbox_ip_range_api),
+            netbox_vrf_api: Box::new(netbox_vrf_api),
+            netbox_route_target_api: Box::new(netbox_route_target_api),
             // Tenancy
             netbox_tenant_api: Box::new(netbox_tenant_api),
             // DCIM

@@ -2,7 +2,7 @@
 
 use super::super::Reconciler;
 use crate::error::ControllerError;
-use crate::reconcile_helpers::{extract_name_and_namespace, validate_status_and_drift, DriftCheckResult, status_needs_update, update_resource_status, resolve_required_dependency_id, resolve_optional_dependency_id, validate_reference_kind, is_conflict_error};
+use crate::reconcile_helpers::{extract_name_and_namespace, validate_status_and_drift, DriftCheckResult, update_resource_status, resolve_required_dependency_id, resolve_optional_dependency_id, validate_reference_kind, is_conflict_error};
 use crate::kube_api_trait::KubeApiTrait;
 use tracing::{info, error, debug, warn};
 use crds::{NetBoxIPRange, ResourceState};
@@ -17,11 +17,27 @@ impl Reconciler {
         existing: &netbox_client::IPRange,
         desired_tenant_id: u64,
         desired_status: &str,
+        desired_role_id: Option<u64>,
+        desired_vrf_id: Option<u64>,
     ) -> bool {
         // Compare tenant
         let existing_tenant_id = existing.tenant.as_ref().map(|t| t.id);
         if Some(desired_tenant_id) != existing_tenant_id {
             debug!("IP range tenant changed: {:?} -> {}", existing_tenant_id, desired_tenant_id);
+            return true;
+        }
+        
+        // Compare role
+        let existing_role_id = existing.role.as_ref().map(|r| r.id);
+        if desired_role_id != existing_role_id {
+            debug!("IP range role changed: {:?} -> {:?}", existing_role_id, desired_role_id);
+            return true;
+        }
+        
+        // Compare VRF
+        let existing_vrf_id = existing.vrf.as_ref().map(|v| v.id);
+        if desired_vrf_id != existing_vrf_id {
+            debug!("IP range VRF changed: {:?} -> {:?}", existing_vrf_id, desired_vrf_id);
             return true;
         }
         
@@ -157,6 +173,21 @@ impl Reconciler {
                     None
                 };
                 
+                // Resolve VRF if specified
+                let vrf_id: Option<u64> = if let Some(vrf_ref) = &ip_range_crd.spec.vrf {
+                    validate_reference_kind(vrf_ref, "NetBoxVRF", "vrf", name)?;
+                    Some(resolve_optional_dependency_id(
+                        &*self.netbox_vrf_api,
+                        Some(vrf_ref),
+                        "NetBoxVRF",
+                        "vrf",
+                        name,
+                        |crd| crd.status.as_ref(),
+                    ).await.ok_or_else(|| ControllerError::InvalidConfig(format!("VRF '{}' not found", vrf_ref.name)))?)
+                } else {
+                    None
+                };
+                
                 // Convert status enum to string
                 let status_str = match ip_range_crd.spec.status {
                     crds::IPRangeStatus::Active => "active",
@@ -190,11 +221,14 @@ impl Reconciler {
                 });
                 
                 // Check if any field changed (including tags)
+                let role_id_value = role_id.map(|id| id.0);
                 if Self::ip_range_needs_update(
                     &ip_range_crd.spec,
                     &existing_range,
                     tenant_id,
                     status_str,
+                    role_id_value,
+                    vrf_id,
                 ) {
                     // Update the IP range
                     let status_enum = match ip_range_crd.spec.status {
@@ -209,7 +243,7 @@ impl Reconciler {
                         IPRangeId(existing_range.id),
                         Some(&start_ip_net),
                         Some(&end_ip_net),
-                        None, // VRF not yet supported
+                        vrf_id, // VRF support (currently None, will be resolved when NetBoxVRF CRD exists)
                         Some(netbox_client::TenantId(tenant_id)),
                         role_id,
                         status_enum,
@@ -320,6 +354,21 @@ impl Reconciler {
             None
         };
         
+        // Resolve VRF if specified
+        let vrf_id: Option<u64> = if let Some(vrf_ref) = &ip_range_crd.spec.vrf {
+            validate_reference_kind(vrf_ref, "NetBoxVRF", "vrf", name)?;
+            Some(resolve_optional_dependency_id(
+                &*self.netbox_vrf_api,
+                Some(vrf_ref),
+                "NetBoxVRF",
+                "vrf",
+                name,
+                |crd| crd.status.as_ref(),
+            ).await.ok_or_else(|| ControllerError::InvalidConfig(format!("VRF '{}' not found", vrf_ref.name)))?)
+        } else {
+            None
+        };
+        
         // Convert status enum
         let status_enum = match ip_range_crd.spec.status {
             crds::IPRangeStatus::Active => Some(IPRangeStatus::Active),
@@ -383,7 +432,7 @@ impl Reconciler {
             match netbox_client.create_ip_range(
                 &start_ip_net,
                 &end_ip_net,
-                None, // VRF not yet supported
+                vrf_id, // VRF support (currently None, will be resolved when NetBoxVRF CRD exists)
                 Some(netbox_client::TenantId(tenant_id)),
                 role_id,
                 status_enum,

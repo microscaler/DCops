@@ -616,6 +616,34 @@ impl NetBoxStatusCheck for crds::NetBoxRIRStatus {
     fn error(&self) -> Option<&str> { self.error.as_deref() }
 }
 
+impl NetBoxStatusCheck for crds::NetBoxVRFStatus {
+    fn netbox_id(&self) -> Option<u64> { self.netbox_id }
+    fn netbox_url(&self) -> Option<&str> { self.netbox_url.as_deref() }
+    fn state_str(&self) -> &str {
+        match self.state {
+            crds::ResourceState::Pending => "Pending",
+            crds::ResourceState::Created => "Created",
+            crds::ResourceState::Updated => "Updated",
+            crds::ResourceState::Failed => "Failed",
+        }
+    }
+    fn error(&self) -> Option<&str> { self.error.as_deref() }
+}
+
+impl NetBoxStatusCheck for crds::NetBoxRouteTargetStatus {
+    fn netbox_id(&self) -> Option<u64> { self.netbox_id }
+    fn netbox_url(&self) -> Option<&str> { self.netbox_url.as_deref() }
+    fn state_str(&self) -> &str {
+        match self.state {
+            crds::ResourceState::Pending => "Pending",
+            crds::ResourceState::Created => "Created",
+            crds::ResourceState::Updated => "Updated",
+            crds::ResourceState::Failed => "Failed",
+        }
+    }
+    fn error(&self) -> Option<&str> { self.error.as_deref() }
+}
+
 /// Check if status needs updating by comparing current status with desired values
 /// 
 /// Returns true if status should be updated (values changed), false if status is already correct.

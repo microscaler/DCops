@@ -174,6 +174,56 @@ impl NetBoxClientTrait for NetBoxClient {
         ipam::update_vlan(&self.core, <VlanId as Into<u32>>::into(id) as u64, vid, name, site_id.map(|id| id.into()), group_id.map(|id| id.into()), tenant_id.map(|id| id.into()), role_id.map(|id| id.into()), status, description, comments, tags).await
     }
 
+    // VRF operations
+    async fn query_vrfs(&self, filters: &[(&str, &str)], fetch_all: bool) -> Result<Vec<Vrf>, NetBoxError> {
+        ipam::query_vrfs(&self.core, filters, fetch_all).await
+    }
+
+    async fn get_vrf(&self, id: VrfId) -> Result<Vrf, NetBoxError> {
+        ipam::get_vrf(&self.core, id).await
+    }
+
+    async fn get_vrf_by_name(&self, name: &str) -> Result<Option<Vrf>, NetBoxError> {
+        ipam::get_vrf_by_name(&self.core, name).await
+    }
+
+    async fn create_vrf(&self, name: &str, rd: Option<&str>, enforce_unique: Option<bool>, tenant_id: Option<TenantId>, description: Option<String>, comments: Option<String>, import_targets: Option<Vec<RouteTargetId>>, export_targets: Option<Vec<RouteTargetId>>, tags: Option<Vec<String>>) -> Result<Vrf, NetBoxError> {
+        ipam::create_vrf(&self.core, name, rd, enforce_unique, tenant_id, description, comments, import_targets, export_targets, tags).await
+    }
+
+    async fn update_vrf(&self, id: VrfId, name: Option<&str>, rd: Option<&str>, enforce_unique: Option<bool>, tenant_id: Option<TenantId>, description: Option<String>, comments: Option<String>, import_targets: Option<Vec<RouteTargetId>>, export_targets: Option<Vec<RouteTargetId>>, tags: Option<Vec<String>>) -> Result<Vrf, NetBoxError> {
+        ipam::update_vrf(&self.core, id, name, rd, enforce_unique, tenant_id, description, comments, import_targets, export_targets, tags).await
+    }
+
+    async fn delete_vrf(&self, id: VrfId) -> Result<(), NetBoxError> {
+        ipam::delete_vrf(&self.core, id).await
+    }
+
+    // Route Target operations
+    async fn query_route_targets(&self, filters: &[(&str, &str)], fetch_all: bool) -> Result<Vec<RouteTarget>, NetBoxError> {
+        ipam::query_route_targets(&self.core, filters, fetch_all).await
+    }
+
+    async fn get_route_target(&self, id: RouteTargetId) -> Result<RouteTarget, NetBoxError> {
+        ipam::get_route_target(&self.core, id).await
+    }
+
+    async fn get_route_target_by_name(&self, name: &str) -> Result<Option<RouteTarget>, NetBoxError> {
+        ipam::get_route_target_by_name(&self.core, name).await
+    }
+
+    async fn create_route_target(&self, name: &str, tenant_id: Option<TenantId>, description: Option<String>, comments: Option<String>, tags: Option<Vec<String>>) -> Result<RouteTarget, NetBoxError> {
+        ipam::create_route_target(&self.core, name, tenant_id, description, comments, tags).await
+    }
+
+    async fn update_route_target(&self, id: RouteTargetId, name: Option<&str>, tenant_id: Option<TenantId>, description: Option<String>, comments: Option<String>, tags: Option<Vec<String>>) -> Result<RouteTarget, NetBoxError> {
+        ipam::update_route_target(&self.core, id, name, tenant_id, description, comments, tags).await
+    }
+
+    async fn delete_route_target(&self, id: RouteTargetId) -> Result<(), NetBoxError> {
+        ipam::delete_route_target(&self.core, id).await
+    }
+
     // DCIM Operations
     async fn query_devices(&self, filters: &[(&str, &str)], fetch_all: bool) -> Result<Vec<Device>, NetBoxError> {
         dcim::query_devices(&self.core, filters, fetch_all).await

@@ -69,12 +69,17 @@ pub async fn create_container_with_ports(
     // Create container configuration using bollard 0.19 API
     // Note: Port bindings are complex - for DHCP testing, we'll use docker networks
     // or host networking mode instead of explicit port bindings
+    use bollard::models::HostConfig;
+    
+    let mut host_config = HostConfig::default();
+    // For DHCP testing, we can use host networking mode
+    // host_config.network_mode = Some("host".to_string());
+    
     let config = ContainerConfig {
         image: Some(image.to_string()),
         cmd: Some(cmd.unwrap_or_else(|| vec!["sleep", "3600"]).iter().map(|s| s.to_string()).collect()),
         exposed_ports: if exposed_ports.is_empty() { None } else { Some(exposed_ports) },
-        // HostConfig with port bindings omitted for now - can be added later if needed
-        host_config: None,
+        host_config: Some(host_config),
         ..Default::default()
     };
     
@@ -171,7 +176,7 @@ pub async fn exec_in_container(
     
     // Handle the stream based on the result type
     match stream_result {
-        bollard::exec::StartExecResults::Attached { mut output: output_stream, .. } => {
+        bollard::exec::StartExecResults::Attached { output: mut output_stream, .. } => {
             while let Some(item) = output_stream.next().await {
                 match item {
                     Ok(bytes) => {

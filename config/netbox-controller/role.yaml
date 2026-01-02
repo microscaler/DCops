@@ -17,6 +17,8 @@ rules:
   - netboxrirs
   - netboxipaddresses
   - netboxipranges
+  - netboxvrfs
+  - netboxroutetargets
   # Tenancy resources
   - netboxtenants
   # DCIM resources - Sites
@@ -55,6 +57,8 @@ rules:
   - netboxrirs/status
   - netboxipaddresses/status
   - netboxipranges/status
+  - netboxvrfs/status
+  - netboxroutetargets/status
   # Tenancy resources
   - netboxtenants/status
   # DCIM resources - Sites

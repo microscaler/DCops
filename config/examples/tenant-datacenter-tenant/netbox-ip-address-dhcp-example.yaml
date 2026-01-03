@@ -4,80 +4,36 @@ metadata:
   name: dhcp-client-ip-static
   namespace: default
 spec:
-  # Static DHCP reservation: specific IP assigned to device with MAC address
-  # This represents a DHCP reservation where a specific IP is always assigned
-  # to a device with a particular MAC address
-  address: "192.168.1.100/24"
-  
-  # MAC address of the interface (required for static DHCP reservations)
-  # The reconciler will query NetBox to find the interface with this MAC
-  # and assign the IP to that interface
-  # Accepts formats: "aa:bb:cc:dd:ee:ff" or "aa-bb-cc-dd-ee-ff"
-  macAddress: "aa:bb:cc:dd:ee:ff"
-  
-  # Alternative: You can directly reference the interface instead of MAC
-  # If both macAddress and interface are specified, interface takes precedence
-  # interface:
-  #   apiGroup: dcops.microscaler.io
-  #   kind: NetBoxInterface
-  #   name: eth0
-  #   namespace: default
-  
-  # IP range reference (optional, for validation)
-  # If specified, the address must be within this range
+  address: 192.168.1.101/24
+  macAddress: aa:bb:cc:dd:ee:ff
   ipRange:
     apiGroup: dcops.microscaler.io
     kind: NetBoxIPRange
     name: dhcp-pool-range
     namespace: default
-  
-  # Tenant reference (required)
   tenant:
     apiGroup: dcops.microscaler.io
     kind: NetBoxTenant
     name: datacenter-tenant
     namespace: default
-  
-  # VLAN reference (optional)
   vlan:
     apiGroup: dcops.microscaler.io
     kind: NetBoxVLAN
     name: client-vlan
     namespace: default
-  
-  # IP address status: dhcp (for DHCP-assigned addresses)
-  # This indicates the IP was assigned via DHCP, not statically configured
-  # Options: active, reserved, deprecated, dhcp, slaac
   status: dhcp
-  
-  # IP address role (optional)
-  # Options: loopback, secondary, anycast, vip, vrrp, hsrp, glbp, carp
-  # DHCP addresses typically don't have a role
-  
-  # DNS name (optional)
-  dnsName: "dhcp-client.example.com"
-  
-  # Description (optional)
-  description: "Static DHCP reservation for client device - IP always assigned to this MAC"
-  
-  # Tag references (optional)
+  dnsName: dhcp-client.example.com
+  description: Static DHCP reservation for client device - IP always assigned to this
+    MAC
   tags:
-    - apiGroup: dcops.microscaler.io
-      kind: NetBoxTag
-      name: dhcp-managed
-      namespace: default
-    - apiGroup: dcops.microscaler.io
-      kind: NetBoxTag
-      name: client-device
-      namespace: default
-  
-  # Comments (optional)
-  comments: "IP is statically reserved in DHCP server for this MAC address. This CR tracks the reservation in NetBox."
-
-  # NOTE: For static DHCP reservations:
-  # - Specify both address and macAddress (or interface)
-  # - The reconciler will assign the IP to the interface in NetBox
-  # - The IP will be linked to the interface via assigned_object_type/assigned_object_id
-  #
-  # For random DHCP allocation (IP assigned from pool), see:
-  # netbox-ip-address-dhcp-random-example.yaml
+  - apiGroup: dcops.microscaler.io
+    kind: NetBoxTag
+    name: dhcp-managed
+    namespace: default
+  - apiGroup: dcops.microscaler.io
+    kind: NetBoxTag
+    name: client-device
+    namespace: default
+  comments: IP is statically reserved in DHCP server for this MAC address. This CR
+    tracks the reservation in NetBox.
+  driftDetection: true

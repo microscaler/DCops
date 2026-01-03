@@ -4,94 +4,73 @@ metadata:
   name: production-vrf
   namespace: default
 spec:
-  # VRF name (required)
-  # Administrative name for the VRF
-  name: "Production VRF"
-
-  # Route Distinguisher (optional)
-  # RFC 4364 format (e.g., "65000:1" or "192.168.1.1:1")
-  # Used to distinguish routes within the VRF
-  # If not specified, NetBox will auto-generate one
-  rd: "65000:1"
-
-  # Enforce unique IP space (optional, default: false)
-  # When true, prevents duplicate prefixes/IPs within this VRF
-  # Useful for ensuring IP address uniqueness across overlapping address spaces
+  name: Production VRF
+  rd: '65000:1'
   enforceUnique: true
-
-  # Tenant reference (optional)
-  # VRFs can be scoped to a tenant for multi-tenancy
   tenant:
     apiGroup: dcops.microscaler.io
     kind: NetBoxTenant
     name: datacenter-tenant
     namespace: default
+  description: Production VRF for customer-facing services and infrastructure
+  comments: 'This VRF is used for:
 
-  # Description (optional)
-  # Human-readable description of the VRF's purpose
-  description: "Production VRF for customer-facing services and infrastructure"
-
-  # Comments (optional)
-  # Additional notes or documentation about this VRF
-  comments: |
-    This VRF is used for:
     - Customer-facing production services
+
     - Core infrastructure routing
+
     - Inter-site connectivity via MPLS/BGP
-    
+
+
     Network topology:
+
     - Connected to 3 datacenters
+
     - 50+ prefixes managed
+
     - 200+ IP addresses allocated
-    
+
+
     Managed by DCops automation system.
+
     Last updated: 2024-01-15
+
     Contact: network-team@example.com
 
-  # Import Route Targets (optional)
-  # List of Route Target references for importing routes into this VRF
-  # Routes with these route targets will be imported into this VRF
+    '
+  driftDetection: true
   importTargets:
-    - apiGroup: dcops.microscaler.io
-      kind: NetBoxRouteTarget
-      name: production-rt-65000-100
-      namespace: default
-    - apiGroup: dcops.microscaler.io
-      kind: NetBoxRouteTarget
-      name: shared-services-rt-65000-200
-      namespace: default
-
-  # Export Route Targets (optional)
-  # List of Route Target references for exporting routes from this VRF
-  # Routes from this VRF will be tagged with these route targets for export
+  - apiGroup: dcops.microscaler.io
+    kind: NetBoxRouteTarget
+    name: production-rt-65000-100
+    namespace: default
+  - apiGroup: dcops.microscaler.io
+    kind: NetBoxRouteTarget
+    name: shared-services-rt-65000-200
+    namespace: default
   exportTargets:
-    - apiGroup: dcops.microscaler.io
-      kind: NetBoxRouteTarget
-      name: production-rt-65000-100
-      namespace: default
-
-  # Tag references (optional)
-  # Tags must exist in NetBox before they can be referenced
-  # See netbox-tag-example.yaml for creating tags
+  - apiGroup: dcops.microscaler.io
+    kind: NetBoxRouteTarget
+    name: production-rt-65000-100
+    namespace: default
   tags:
-    - apiGroup: dcops.microscaler.io
-      kind: NetBoxTag
-      name: managed-by-dcops
-      namespace: default
-    - apiGroup: dcops.microscaler.io
-      kind: NetBoxTag
-      name: production
-      namespace: default
-    - apiGroup: dcops.microscaler.io
-      kind: NetBoxTag
-      name: vrf
-      namespace: default
-    - apiGroup: dcops.microscaler.io
-      kind: NetBoxTag
-      name: mpls-enabled
-      namespace: default
-    - apiGroup: dcops.microscaler.io
-      kind: NetBoxTag
-      name: bgp-evpn
-      namespace: default
-
+  - apiGroup: dcops.microscaler.io
+    kind: NetBoxTag
+    name: managed-by-dcops
+    namespace: default
+  - apiGroup: dcops.microscaler.io
+    kind: NetBoxTag
+    name: production
+    namespace: default
+  - apiGroup: dcops.microscaler.io
+    kind: NetBoxTag
+    name: vrf
+    namespace: default
+  - apiGroup: dcops.microscaler.io
+    kind: NetBoxTag
+    name: mpls-enabled
+    namespace: default
+  - apiGroup: dcops.microscaler.io
+    kind: NetBoxTag
+    name: bgp-evpn
+    namespace: default

@@ -20,63 +20,36 @@ impl Reconciler {
         desired_role_id: Option<u64>,
         desired_vrf_id: Option<u64>,
     ) -> bool {
-        // Compare tenant
+        use crate::reconcile_helpers::{
+            compare_required_dependency_id,
+            compare_optional_dependency_id,
+            compare_string_field,
+            compare_optional_string_field,
+        };
+        
         let existing_tenant_id = existing.tenant.as_ref().map(|t| t.id);
-        if Some(desired_tenant_id) != existing_tenant_id {
-            debug!("IP range tenant changed: {:?} -> {}", existing_tenant_id, desired_tenant_id);
-            return true;
-        }
-        
-        // Compare role
         let existing_role_id = existing.role.as_ref().map(|r| r.id);
-        if desired_role_id != existing_role_id {
-            debug!("IP range role changed: {:?} -> {:?}", existing_role_id, desired_role_id);
-            return true;
-        }
-        
-        // Compare VRF
         let existing_vrf_id = existing.vrf.as_ref().map(|v| v.id);
-        if desired_vrf_id != existing_vrf_id {
-            debug!("IP range VRF changed: {:?} -> {:?}", existing_vrf_id, desired_vrf_id);
-            return true;
-        }
         
-        // Compare status
+        // Convert existing status enum to string for comparison
         let existing_status = match existing.status {
             netbox_client::IPRangeStatus::Active => "active",
             netbox_client::IPRangeStatus::Reserved => "reserved",
             netbox_client::IPRangeStatus::Deprecated => "deprecated",
         };
-        if desired_status != existing_status {
-            debug!("IP range status changed: '{}' -> '{}'", existing_status, desired_status);
-            return true;
-        }
         
-        // Compare description
-        let spec_desc = spec.description.as_deref().unwrap_or("");
-        if spec_desc != existing.description {
-            debug!("IP range description changed: '{}' -> '{}'", existing.description, spec_desc);
-            return true;
-        }
+        // IPRange model has description as String (not Option<String>), comments as Option<String>
+        let spec_description = spec.description.as_deref().unwrap_or("");
         
-        // Compare mark_utilized
-        if spec.mark_utilized != existing.mark_utilized {
-            debug!("IP range mark_utilized changed: {} -> {}", existing.mark_utilized, spec.mark_utilized);
-            return true;
-        }
-        
-        // Compare mark_populated
-        if spec.mark_populated != existing.mark_populated {
-            debug!("IP range mark_populated changed: {} -> {}", existing.mark_populated, spec.mark_populated);
-            return true;
-        }
-        
-        // Compare tags using helper function
-        if crate::reconcile_helpers::tags_differ(&existing.tags, &spec.tags) {
-            return true;
-        }
-        
-        false // No changes needed
+        compare_required_dependency_id(desired_tenant_id, existing_tenant_id)
+            || compare_optional_dependency_id(desired_role_id, existing_role_id)
+            || compare_optional_dependency_id(desired_vrf_id, existing_vrf_id)
+            || compare_string_field(desired_status, existing_status)
+            || compare_string_field(spec_description, &existing.description)
+            || compare_optional_string_field(&spec.comments, &existing.comments)
+            || spec.mark_utilized != existing.mark_utilized
+            || spec.mark_populated != existing.mark_populated
+        // Tags are handled separately using tags_differ helper
     }
 
     pub async fn reconcile_netbox_ip_range(&self, ip_range_crd: &NetBoxIPRange) -> Result<(), ControllerError> {
@@ -201,6 +174,7 @@ impl Reconciler {
                     &ip_range_crd.spec.tags,
                     namespace,
                     name,
+                None,
                 ).await;
                 
                 // Convert resolved tags from Vec<serde_json::Value> to Vec<String>
@@ -404,7 +378,8 @@ impl Reconciler {
             &ip_range_crd.spec.tags,
             namespace,
             name,
-        ).await;
+        None,
+                ).await;
         
         // Convert resolved tags from Vec<serde_json::Value> to Vec<String>
         // IPRange client expects Vec<String> (tag IDs as strings)

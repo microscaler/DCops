@@ -19,39 +19,23 @@ impl Reconciler {
         existing: &netbox_client::RouteTarget,
         desired_tenant_id: Option<u64>,
     ) -> bool {
-        // Compare name
-        if spec.name != existing.name {
-            debug!("Route Target name changed: '{}' -> '{}'", existing.name, spec.name);
-            return true;
-        }
+        use crate::reconcile_helpers::{
+            compare_string_field,
+            compare_optional_dependency_id,
+        };
         
-        // Compare tenant
-        let existing_tenant_id = existing.tenant.as_ref().map(|t| t.id);
-        if desired_tenant_id != existing_tenant_id {
-            debug!("Route Target tenant changed: {:?} -> {:?}", existing_tenant_id, desired_tenant_id);
-            return true;
-        }
-        
-        // Compare description
-        let spec_desc = spec.description.as_deref().unwrap_or("");
-        if spec_desc != existing.description {
-            debug!("Route Target description changed: '{}' -> '{}'", existing.description, spec_desc);
-            return true;
-        }
-        
-        // Compare comments
+        // RouteTarget model has description and comments as String (not Option<String>)
+        // So we need to handle the conversion from Option<String> to String
+        let spec_description = spec.description.as_deref().unwrap_or("");
         let spec_comments = spec.comments.as_deref().unwrap_or("");
-        if spec_comments != existing.comments {
-            debug!("Route Target comments changed: '{}' -> '{}'", existing.comments, spec_comments);
-            return true;
-        }
         
-        // Compare tags using helper function
-        if crate::reconcile_helpers::tags_differ(&existing.tags, &spec.tags) {
-            return true;
-        }
+        let existing_tenant_id = existing.tenant.as_ref().map(|t| t.id);
         
-        false // No changes needed
+        compare_string_field(&spec.name, &existing.name)
+            || compare_optional_dependency_id(desired_tenant_id, existing_tenant_id)
+            || compare_string_field(spec_description, &existing.description)
+            || compare_string_field(spec_comments, &existing.comments)
+        // Tags are handled separately using tags_differ helper
     }
 
     pub async fn reconcile_netbox_route_target(&self, route_target_crd: &NetBoxRouteTarget) -> Result<(), ControllerError> {
@@ -141,6 +125,7 @@ impl Reconciler {
                     &route_target_crd.spec.tags,
                     namespace,
                     name,
+                None,
                 ).await;
                 
                 // Convert resolved tags from Vec<serde_json::Value> to Vec<String>
@@ -288,7 +273,8 @@ impl Reconciler {
             &route_target_crd.spec.tags,
             namespace,
             name,
-        ).await;
+        None,
+                ).await;
         
         // Convert resolved tags from Vec<serde_json::Value> to Vec<String>
         let resolved_tags: Option<Vec<String>> = resolved_tags_json.map(|tags| {

@@ -7,212 +7,6 @@
 apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
-  name: ipclaims.dcops.microscaler.io
-spec:
-  group: dcops.microscaler.io
-  names:
-    categories: []
-    kind: IPClaim
-    plural: ipclaims
-    shortNames: []
-    singular: ipclaim
-  scope: Namespaced
-  versions:
-  - additionalPrinterColumns: []
-    name: v1alpha1
-    schema:
-      openAPIV3Schema:
-        description: Auto-generated derived type for IPClaimSpec via `CustomResource`
-        properties:
-          spec:
-            properties:
-              deviceRef:
-                description: Device/interface reference
-                properties:
-                  interface:
-                    description: Interface name (optional)
-                    nullable: true
-                    type: string
-                  name:
-                    description: Device name or identifier
-                    type: string
-                required:
-                - name
-                type: object
-              poolRef:
-                description: Reference to IPPool
-                properties:
-                  name:
-                    description: Name of the IPPool
-                    type: string
-                  namespace:
-                    description: Namespace (defaults to same namespace as IPClaim)
-                    nullable: true
-                    type: string
-                required:
-                - name
-                type: object
-              preferredIp:
-                description: |-
-                  Preferred IP (hint, not guarantee)
-                  Must be a valid CIDR notation (IP address with prefix length, e.g., "192.168.1.10/24")
-                nullable: true
-                pattern: ^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)/(?:[0-9]|[12][0-9]|3[0-2])$|^(?:[0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}/(?:[0-9]|[1-9][0-9]|1[0-2][0-8])$
-                type: string
-            required:
-            - deviceRef
-            - poolRef
-            type: object
-          status:
-            nullable: true
-            properties:
-              error:
-                description: Error message if allocation failed
-                nullable: true
-                type: string
-              ip:
-                description: Allocated IP address
-                nullable: true
-                type: string
-              lastReconciled:
-                description: Last reconciliation timestamp
-                format: date-time
-                nullable: true
-                type: string
-              netboxIpRef:
-                description: NetBox IPAddress object reference
-                nullable: true
-                type: string
-              state:
-                description: Allocation state
-                enum:
-                - Pending
-                - Allocated
-                - Failed
-                type: string
-            required:
-            - state
-            type: object
-        required:
-        - spec
-        title: IPClaim
-        type: object
-    served: true
-    storage: true
-    subresources:
-      status: {}
----
-apiVersion: apiextensions.k8s.io/v1
-kind: CustomResourceDefinition
-metadata:
-  name: ippools.dcops.microscaler.io
-spec:
-  group: dcops.microscaler.io
-  names:
-    categories: []
-    kind: IPPool
-    plural: ippools
-    shortNames: []
-    singular: ippool
-  scope: Namespaced
-  versions:
-  - additionalPrinterColumns: []
-    name: v1alpha1
-    schema:
-      openAPIV3Schema:
-        description: Auto-generated derived type for IPPoolSpec via `CustomResource`
-        properties:
-          spec:
-            properties:
-              allocationStrategy:
-                default: sequential
-                description: Allocation strategy
-                enum:
-                - sequential
-                - random
-                type: string
-              netboxPrefixRef:
-                description: |-
-                  NetBox prefix reference (references NetBoxPrefix CRD)
-                  This is a stable, GitOps-friendly reference that resolves to the NetBox prefix ID
-                properties:
-                  apiGroup:
-                    description: API group of the referenced resource (e.g., "dcops.microscaler.io")
-                    type: string
-                  kind:
-                    description: Kind of the referenced resource (e.g., "NetBoxSite", "NetBoxTenant")
-                    type: string
-                  name:
-                    description: Name of the referenced NetBox CRD resource
-                    type: string
-                  namespace:
-                    description: Namespace of the referenced resource (defaults to same namespace as the referencing resource)
-                    nullable: true
-                    type: string
-                required:
-                - apiGroup
-                - kind
-                - name
-                type: object
-              role:
-                default: ''
-                description: Pool scope/role (e.g., "control-plane", "worker", "management")
-                type: string
-            required:
-            - netboxPrefixRef
-            type: object
-          status:
-            nullable: true
-            properties:
-              allocatedIps:
-                description: Allocated IPs
-                format: uint32
-                minimum: 0.0
-                type: integer
-              availableIps:
-                description: Available IPs
-                format: uint32
-                minimum: 0.0
-                type: integer
-              lastReconciled:
-                description: Last reconciliation timestamp
-                format: date-time
-                nullable: true
-                type: string
-              netboxPrefixId:
-                description: |-
-                  Resolved NetBox prefix ID (observed state)
-                  This is set by the controller after resolving the NetBoxPrefix CRD reference
-                format: uint64
-                minimum: 0.0
-                nullable: true
-                type: integer
-              netboxPrefixUrl:
-                description: NetBox prefix URL
-                nullable: true
-                type: string
-              totalIps:
-                description: Total available IPs in pool
-                format: uint32
-                minimum: 0.0
-                type: integer
-            required:
-            - allocatedIps
-            - availableIps
-            - totalIps
-            type: object
-        required:
-        - spec
-        title: IPPool
-        type: object
-    served: true
-    storage: true
-    subresources:
-      status: {}
----
-apiVersion: apiextensions.k8s.io/v1
-kind: CustomResourceDefinition
-metadata:
   name: netboxprefixes.dcops.microscaler.io
 spec:
   group: dcops.microscaler.io
@@ -263,6 +57,16 @@ spec:
                 description: Description of the prefix
                 nullable: true
                 type: string
+              driftDetection:
+                default: true
+                description: |-
+                  Enable drift detection (default: true)
+
+                  When enabled, the reconciler will detect and correct any changes made to the resource
+                  in the NetBox UI that differ from the CRD spec. Git is the source of truth.
+                  Set to false to disable drift detection (not recommended for GitOps workflows).
+                nullable: true
+                type: boolean
               prefix:
                 description: |-
                   Prefix CIDR (e.g., "192.168.1.0/24" or "2001:db8::/64")
@@ -480,6 +284,16 @@ spec:
                 description: Description of the tenant
                 nullable: true
                 type: string
+              driftDetection:
+                default: true
+                description: |-
+                  Enable drift detection (default: true)
+
+                  When enabled, the reconciler will detect and correct any changes made to the resource
+                  in the NetBox UI that differ from the CRD spec. Git is the source of truth.
+                  Set to false to disable drift detection (not recommended for GitOps workflows).
+                nullable: true
+                type: boolean
               group:
                 description: Tenant group reference (references NetBoxTenantGroup CRD, optional)
                 nullable: true
@@ -627,6 +441,156 @@ spec:
 apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
+  name: netboxtenantgroups.dcops.microscaler.io
+spec:
+  group: dcops.microscaler.io
+  names:
+    categories: []
+    kind: NetBoxTenantGroup
+    plural: netboxtenantgroups
+    shortNames: []
+    singular: netboxtenantgroup
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns: []
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: Auto-generated derived type for NetBoxTenantGroupSpec via `CustomResource`
+        properties:
+          spec:
+            description: NetBoxTenantGroupSpec defines the desired state of a NetBox tenant group
+            properties:
+              comments:
+                description: Comments
+                nullable: true
+                type: string
+              description:
+                description: Description of the tenant group
+                nullable: true
+                type: string
+              driftDetection:
+                default: true
+                description: |-
+                  Enable drift detection (default: true)
+
+                  When enabled, the reconciler will detect and correct any changes made to the resource
+                  in the NetBox UI that differ from the CRD spec. Git is the source of truth.
+                  Set to false to disable drift detection (not recommended for GitOps workflows).
+                nullable: true
+                type: boolean
+              name:
+                description: Tenant group name
+                type: string
+              parent:
+                description: Parent tenant group reference (references NetBoxTenantGroup CRD for hierarchical organization)
+                nullable: true
+                properties:
+                  apiGroup:
+                    description: API group of the referenced resource (e.g., "dcops.microscaler.io")
+                    type: string
+                  kind:
+                    description: Kind of the referenced resource (e.g., "NetBoxSite", "NetBoxTenant")
+                    type: string
+                  name:
+                    description: Name of the referenced NetBox CRD resource
+                    type: string
+                  namespace:
+                    description: Namespace of the referenced resource (defaults to same namespace as the referencing resource)
+                    nullable: true
+                    type: string
+                required:
+                - apiGroup
+                - kind
+                - name
+                type: object
+              slug:
+                description: Tenant group slug (optional, auto-generated from name if not provided)
+                nullable: true
+                type: string
+              tags:
+                description: Tag references (references NetBoxTag CRDs)
+                items:
+                  description: |-
+                    Kubernetes-compliant resource reference for NetBox CRDs
+
+                    This follows the Kubernetes `TypedLocalObjectReference` pattern, which includes:
+                    - `apiGroup`: The API group of the referenced resource (e.g., "dcops.microscaler.io")
+                    - `kind`: The kind of the referenced resource (e.g., "NetBoxSite")
+                    - `name`: The name of the referenced resource (required)
+                    - `namespace`: The namespace of the referenced resource (optional, defaults to same namespace)
+
+                    This enables Kubernetes to validate reference types and provides clear documentation
+                    of what resource type is expected.
+                  properties:
+                    apiGroup:
+                      description: API group of the referenced resource (e.g., "dcops.microscaler.io")
+                      type: string
+                    kind:
+                      description: Kind of the referenced resource (e.g., "NetBoxSite", "NetBoxTenant")
+                      type: string
+                    name:
+                      description: Name of the referenced NetBox CRD resource
+                      type: string
+                    namespace:
+                      description: Namespace of the referenced resource (defaults to same namespace as the referencing resource)
+                      nullable: true
+                      type: string
+                  required:
+                  - apiGroup
+                  - kind
+                  - name
+                  type: object
+                nullable: true
+                type: array
+            required:
+            - name
+            type: object
+          status:
+            description: NetBoxTenantGroupStatus defines the observed state of a NetBox tenant group
+            nullable: true
+            properties:
+              error:
+                description: Error message if reconciliation failed
+                nullable: true
+                type: string
+              lastReconciled:
+                description: Last reconciliation timestamp
+                nullable: true
+                type: string
+              netboxId:
+                description: NetBox ID of the tenant group
+                format: uint64
+                minimum: 0.0
+                nullable: true
+                type: integer
+              netboxUrl:
+                description: NetBox URL of the tenant group
+                nullable: true
+                type: string
+              state:
+                description: Current state of the tenant group
+                enum:
+                - Pending
+                - Created
+                - Updated
+                - Failed
+                type: string
+            required:
+            - state
+            type: object
+        required:
+        - spec
+        title: NetBoxTenantGroup
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
   name: netboxregions.dcops.microscaler.io
 spec:
   group: dcops.microscaler.io
@@ -655,6 +619,16 @@ spec:
                 description: Description of the region
                 nullable: true
                 type: string
+              driftDetection:
+                default: true
+                description: |-
+                  Enable drift detection (default: true)
+
+                  When enabled, the reconciler will detect and correct any changes made to the resource
+                  in the NetBox UI that differ from the CRD spec. Git is the source of truth.
+                  Set to false to disable drift detection (not recommended for GitOps workflows).
+                nullable: true
+                type: boolean
               name:
                 description: Region name
                 type: string
@@ -798,6 +772,16 @@ spec:
                 description: Description of the site group
                 nullable: true
                 type: string
+              driftDetection:
+                default: true
+                description: |-
+                  Enable drift detection (default: true)
+
+                  When enabled, the reconciler will detect and correct any changes made to the resource
+                  in the NetBox UI that differ from the CRD spec. Git is the source of truth.
+                  Set to false to disable drift detection (not recommended for GitOps workflows).
+                nullable: true
+                type: boolean
               name:
                 description: Site group name
                 type: string
@@ -941,6 +925,16 @@ spec:
                 description: Description of the location
                 nullable: true
                 type: string
+              driftDetection:
+                default: true
+                description: |-
+                  Enable drift detection (default: true)
+
+                  When enabled, the reconciler will detect and correct any changes made to the resource
+                  in the NetBox UI that differ from the CRD spec. Git is the source of truth.
+                  Set to false to disable drift detection (not recommended for GitOps workflows).
+                nullable: true
+                type: boolean
               facility:
                 description: Facility identifier (optional but recommended for data center locations)
                 nullable: true
@@ -1134,6 +1128,16 @@ spec:
                 description: Description of the site
                 nullable: true
                 type: string
+              driftDetection:
+                default: true
+                description: |-
+                  Enable drift detection (default: true)
+
+                  When enabled, the reconciler will detect and correct any changes made to the resource
+                  in the NetBox UI that differ from the CRD spec. Git is the source of truth.
+                  Set to false to disable drift detection (not recommended for GitOps workflows).
+                nullable: true
+                type: boolean
               facility:
                 description: Facility
                 nullable: true
@@ -1372,6 +1376,16 @@ spec:
                 description: DNS name
                 nullable: true
                 type: string
+              driftDetection:
+                default: true
+                description: |-
+                  Enable drift detection (default: true)
+
+                  When enabled, the reconciler will detect and correct any changes made to the resource
+                  in the NetBox UI that differ from the CRD spec. Git is the source of truth.
+                  Set to false to disable drift detection (not recommended for GitOps workflows).
+                nullable: true
+                type: boolean
               interface:
                 description: |-
                   Interface reference (references NetBoxInterface CRD, optional)
@@ -1637,6 +1651,16 @@ spec:
                 description: Description
                 nullable: true
                 type: string
+              driftDetection:
+                default: true
+                description: |-
+                  Enable drift detection (default: true)
+
+                  When enabled, the reconciler will detect and correct any changes made to the resource
+                  in the NetBox UI that differ from the CRD spec. Git is the source of truth.
+                  Set to false to disable drift detection (not recommended for GitOps workflows).
+                nullable: true
+                type: boolean
               endAddress:
                 description: |-
                   End IP address with CIDR (e.g., "192.168.1.200/24" or "2001:db8::200/64")
@@ -1851,6 +1875,16 @@ spec:
                 description: Description of the role
                 nullable: true
                 type: string
+              driftDetection:
+                default: true
+                description: |-
+                  Enable drift detection (default: true)
+
+                  When enabled, the reconciler will detect and correct any changes made to the resource
+                  in the NetBox UI that differ from the CRD spec. Git is the source of truth.
+                  Set to false to disable drift detection (not recommended for GitOps workflows).
+                nullable: true
+                type: boolean
               name:
                 description: Role name
                 type: string
@@ -1981,6 +2015,16 @@ spec:
                 description: Description of the tag
                 nullable: true
                 type: string
+              driftDetection:
+                default: true
+                description: |-
+                  Enable drift detection (default: true)
+
+                  When enabled, the reconciler will detect and correct any changes made to the resource
+                  in the NetBox UI that differ from the CRD spec. Git is the source of truth.
+                  Set to false to disable drift detection (not recommended for GitOps workflows).
+                nullable: true
+                type: boolean
               name:
                 description: Tag name
                 type: string
@@ -2099,6 +2143,16 @@ spec:
                 description: Description of the aggregate
                 nullable: true
                 type: string
+              driftDetection:
+                default: true
+                description: |-
+                  Enable drift detection (default: true)
+
+                  When enabled, the reconciler will detect and correct any changes made to the resource
+                  in the NetBox UI that differ from the CRD spec. Git is the source of truth.
+                  Set to false to disable drift detection (not recommended for GitOps workflows).
+                nullable: true
+                type: boolean
               prefix:
                 description: |-
                   Aggregate prefix (e.g., "192.168.0.0/16" or "2001:db8::/32")
@@ -2221,6 +2275,16 @@ spec:
                 description: Description
                 nullable: true
                 type: string
+              driftDetection:
+                default: true
+                description: |-
+                  Enable drift detection (default: true)
+
+                  When enabled, the reconciler will detect and correct any changes made to the resource
+                  in the NetBox UI that differ from the CRD spec. Git is the source of truth.
+                  Set to false to disable drift detection (not recommended for GitOps workflows).
+                nullable: true
+                type: boolean
               group:
                 description: VLAN group reference (references NetBoxVLANGroup CRD, optional - not yet implemented)
                 nullable: true
@@ -2443,6 +2507,16 @@ spec:
                 description: Description of the RIR
                 nullable: true
                 type: string
+              driftDetection:
+                default: true
+                description: |-
+                  Enable drift detection (default: true)
+
+                  When enabled, the reconciler will detect and correct any changes made to the resource
+                  in the NetBox UI that differ from the CRD spec. Git is the source of truth.
+                  Set to false to disable drift detection (not recommended for GitOps workflows).
+                nullable: true
+                type: boolean
               isPrivate:
                 description: 'Whether this is a private RIR (default: false)'
                 nullable: true
@@ -2570,6 +2644,16 @@ spec:
                   Human-readable description of the VRF's purpose
                 nullable: true
                 type: string
+              driftDetection:
+                default: true
+                description: |-
+                  Enable drift detection (default: true)
+
+                  When enabled, the reconciler will detect and correct any changes made to the resource
+                  in the NetBox UI that differ from the CRD spec. Git is the source of truth.
+                  Set to false to disable drift detection (not recommended for GitOps workflows).
+                nullable: true
+                type: boolean
               enforceUnique:
                 default: false
                 description: |-
@@ -2806,6 +2890,16 @@ spec:
                   Human-readable description of the route target's purpose
                 nullable: true
                 type: string
+              driftDetection:
+                default: true
+                description: |-
+                  Enable drift detection (default: true)
+
+                  When enabled, the reconciler will detect and correct any changes made to the resource
+                  in the NetBox UI that differ from the CRD spec. Git is the source of truth.
+                  Set to false to disable drift detection (not recommended for GitOps workflows).
+                nullable: true
+                type: boolean
               name:
                 description: |-
                   Route Target name (required)
@@ -3108,6 +3202,16 @@ spec:
                 description: Description of the device role
                 nullable: true
                 type: string
+              driftDetection:
+                default: true
+                description: |-
+                  Enable drift detection (default: true)
+
+                  When enabled, the reconciler will detect and correct any changes made to the resource
+                  in the NetBox UI that differ from the CRD spec. Git is the source of truth.
+                  Set to false to disable drift detection (not recommended for GitOps workflows).
+                nullable: true
+                type: boolean
               name:
                 description: Device role name
                 type: string
@@ -3233,6 +3337,16 @@ spec:
                 description: Description of the manufacturer
                 nullable: true
                 type: string
+              driftDetection:
+                default: true
+                description: |-
+                  Enable drift detection (default: true)
+
+                  When enabled, the reconciler will detect and correct any changes made to the resource
+                  in the NetBox UI that differ from the CRD spec. Git is the source of truth.
+                  Set to false to disable drift detection (not recommended for GitOps workflows).
+                nullable: true
+                type: boolean
               name:
                 description: Manufacturer name
                 type: string
@@ -3352,6 +3466,16 @@ spec:
                 description: Description of the platform
                 nullable: true
                 type: string
+              driftDetection:
+                default: true
+                description: |-
+                  Enable drift detection (default: true)
+
+                  When enabled, the reconciler will detect and correct any changes made to the resource
+                  in the NetBox UI that differ from the CRD spec. Git is the source of truth.
+                  Set to false to disable drift detection (not recommended for GitOps workflows).
+                nullable: true
+                type: boolean
               manufacturer:
                 description: Manufacturer reference (references NetBoxManufacturer CRD)
                 nullable: true
@@ -3501,6 +3625,16 @@ spec:
                 description: Description of the device type
                 nullable: true
                 type: string
+              driftDetection:
+                default: true
+                description: |-
+                  Enable drift detection (default: true)
+
+                  When enabled, the reconciler will detect and correct any changes made to the resource
+                  in the NetBox UI that differ from the CRD spec. Git is the source of truth.
+                  Set to false to disable drift detection (not recommended for GitOps workflows).
+                nullable: true
+                type: boolean
               isFullDepth:
                 default: false
                 description: 'Is full depth (default: false)'
@@ -3701,6 +3835,16 @@ spec:
                 - kind
                 - name
                 type: object
+              driftDetection:
+                default: true
+                description: |-
+                  Enable drift detection (default: true)
+
+                  When enabled, the reconciler will detect and correct any changes made to the resource
+                  in the NetBox UI that differ from the CRD spec. Git is the source of truth.
+                  Set to false to disable drift detection (not recommended for GitOps workflows).
+                nullable: true
+                type: boolean
               location:
                 description: Location reference (references NetBoxLocation CRD, optional)
                 nullable: true
@@ -4015,6 +4159,16 @@ spec:
               device:
                 description: Device name (references NetBoxDevice CRD)
                 type: string
+              driftDetection:
+                default: true
+                description: |-
+                  Enable drift detection (default: true)
+
+                  When enabled, the reconciler will detect and correct any changes made to the resource
+                  in the NetBox UI that differ from the CRD spec. Git is the source of truth.
+                  Set to false to disable drift detection (not recommended for GitOps workflows).
+                nullable: true
+                type: boolean
               enabled:
                 default: true
                 description: 'Enabled (default: true)'
@@ -4150,6 +4304,16 @@ spec:
                 description: Description
                 nullable: true
                 type: string
+              driftDetection:
+                default: true
+                description: |-
+                  Enable drift detection (default: true)
+
+                  When enabled, the reconciler will detect and correct any changes made to the resource
+                  in the NetBox UI that differ from the CRD spec. Git is the source of truth.
+                  Set to false to disable drift detection (not recommended for GitOps workflows).
+                nullable: true
+                type: boolean
               interface:
                 description: |-
                   Interface name (references NetBoxInterface CRD)

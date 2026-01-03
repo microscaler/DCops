@@ -52,15 +52,15 @@ COPY crates/pxe-server/Cargo.toml ./crates/pxe-server/
 
 # Copy controller Cargo files
 COPY controllers/pxe-intent/Cargo.toml ./controllers/pxe-intent/
-COPY controllers/ip-claim/Cargo.toml ./controllers/ip-claim/
+COPY controllers/netbox/Cargo.toml ./controllers/netbox/
 COPY controllers/routeros/Cargo.toml ./controllers/routeros/
 
 # Create minimal source files so cargo can resolve dependencies
 # Cargo needs at least a lib.rs or main.rs to parse the workspace
 RUN mkdir -p crates/crds/src crates/netbox-client/src crates/routeros-client/src crates/pxe-server/src && \
-    mkdir -p controllers/pxe-intent/src controllers/ip-claim/src controllers/routeros/src && \
+    mkdir -p controllers/pxe-intent/src controllers/netbox/src controllers/routeros/src && \
     echo 'fn main() {}' > controllers/pxe-intent/src/main.rs && \
-    echo 'fn main() {}' > controllers/ip-claim/src/main.rs && \
+    echo 'fn main() {}' > controllers/netbox/src/main.rs && \
     echo 'fn main() {}' > controllers/routeros/src/main.rs && \
     echo '' > crates/crds/src/lib.rs && \
     echo '' > crates/netbox-client/src/lib.rs && \

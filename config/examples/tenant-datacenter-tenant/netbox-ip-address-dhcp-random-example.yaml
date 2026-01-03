@@ -61,7 +61,8 @@ spec:
   
   # Comments (optional)
   comments: "IP will be randomly allocated from the DHCP pool range. The allocated IP will be stored in status.address after reconciliation."
-
+  driftDetection: true
+  driftDetection: true
 # NOTE: After reconciliation, status.address will contain the allocated IP
 # Example status after reconciliation:
 # status:

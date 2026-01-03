@@ -599,6 +599,10 @@ impl NetBoxClientTrait for MockNetBoxClient {
         tenancy::query_tenant_groups(self, filters, fetch_all).await
     }
 
+    async fn get_tenant_group(&self, id: TenantGroupId) -> Result<TenantGroup, NetBoxError> {
+        tenancy::get_tenant_group(self, id.into()).await
+    }
+
     async fn get_tenant_group_by_name(&self, name: &str) -> Result<Option<TenantGroup>, NetBoxError> {
         tenancy::get_tenant_group_by_name(self, name).await
     }

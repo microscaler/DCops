@@ -517,41 +517,15 @@ mod tests {
             device_type_api,
             device_role_api,
             device_api,
-            ip_claim_api,
             ..
         } = apis;
         
-        // Setup: Create IPClaim with status (for primary IP reference)
-        let ip_claim = create_test_ip_claim(
-            "test-ip-claim",
-            "default",
-            "test-ip-pool",
-            None,
-            "test-device",
-            None,
-            Some("192.168.1.10/32"),
-        );
-        let mut ip_claim_with_status = ip_claim.clone();
-        ip_claim_with_status.status = Some(crds::IPClaimStatus {
-            ip: Some("192.168.1.10/32".to_string()),
-            state: crds::AllocationState::Allocated,
-            netbox_ip_ref: Some(format!("{}/api/ipam/ip-addresses/100/", netbox_url)),
-            last_reconciled: None,
-            error: None,
-        });
-        ip_claim_api.store("test-ip-claim".to_string(), ip_claim_with_status);
-        
-        // Setup: Create test device with primary IP reference
+        // Setup: Create test device with primary IP reference (using direct IP address)
         let (mut device, tenant, site, device_type, device_role) = setup_device_test_data();
         device.status = None; // Clear status to test create path
         device.spec.primary_ip4 = Some(crds::PrimaryIPReference {
-            ip_claim_ref: Some(crds::NetBoxResourceReference {
-                api_group: "dcops.microscaler.io".to_string(),
-                kind: "IPClaim".to_string(),
-                name: "test-ip-claim".to_string(),
-                namespace: Some("default".to_string()),
-            }),
-            ip_address: None,
+            ip_claim_ref: None,
+            ip_address: Some("192.168.1.10/24".to_string()),
         });
         
         // Store dependencies in mock APIs
@@ -575,9 +549,7 @@ mod tests {
         assert_eq!(status.state, ResourceState::Created, "State should be Created");
         
         // Assert: Device should have primary IP assigned (verify via mock client query)
-        // The device should be created with primary_ip4_id = 100
-        // We verify this by checking that reconciliation succeeded, which means the device
-        // was created with the primary IP reference resolved from the IPClaim
+        // The device should be created with primary_ip4_id resolved from the IP address
         let device_id = status.netbox_id.unwrap();
         use netbox_client::NetBoxClientTrait;
         let netbox_client = reconciler.token_resolver

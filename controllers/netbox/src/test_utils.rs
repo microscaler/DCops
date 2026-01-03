@@ -60,34 +60,6 @@ use netbox_client::{MockNetBoxClient, NetBoxClientTrait};
 #[cfg(test)]
 use std::collections::HashMap;
 
-/// Helper to create test IPPool CRD
-#[cfg(test)]
-pub fn create_test_ip_pool(
-    name: &str,
-    namespace: &str,
-    prefix_ref_name: &str,
-    prefix_ref_namespace: Option<&str>,
-) -> IPPool {
-    IPPool {
-        metadata: ObjectMeta {
-            name: Some(name.to_string()),
-            namespace: Some(namespace.to_string()),
-            ..Default::default()
-        },
-        spec: crds::IPPoolSpec {
-            netbox_prefix_ref: crds::NetBoxResourceReference {
-                api_group: "dcops.microscaler.io".to_string(),
-                kind: "NetBoxPrefix".to_string(),
-                name: prefix_ref_name.to_string(),
-                namespace: prefix_ref_namespace.map(|s| s.to_string()),
-            },
-            role: String::new(),
-            allocation_strategy: crds::AllocationStrategy::Sequential,
-        },
-        status: None,
-    }
-}
-
 /// Helper to create test NetBoxPrefix CRD with status
 #[cfg(test)]
 pub fn create_test_netbox_prefix(
@@ -178,9 +150,6 @@ pub fn create_test_reconciler(
         MockKubeApi::new(), // netbox_region_api
         MockKubeApi::new(), // netbox_site_group_api
         MockKubeApi::new(), // netbox_location_api
-        // Custom CRDs
-        MockKubeApi::new(), // ip_pool_api
-        MockKubeApi::new(), // ip_claim_api
     )
 }
 
@@ -305,46 +274,6 @@ pub fn create_test_nested_tag(
         display: name.to_string(),
         name: name.to_string(),
         slug: name.to_string(),
-    }
-}
-
-/// Helper to create test IPClaim CRD
-#[cfg(test)]
-pub fn create_test_ip_claim(
-    name: &str,
-    namespace: &str,
-    pool_ref_name: &str,
-    pool_ref_namespace: Option<&str>,
-    device_name: &str,
-    interface: Option<&str>,
-    preferred_ip: Option<&str>,
-) -> IPClaim {
-    // Validate preferred_ip format if provided
-    if let Some(ref ip) = preferred_ip {
-        use std::str::FromStr;
-        use ipnet::IpNet;
-        IpNet::from_str(ip)
-            .unwrap_or_else(|e| panic!("Invalid preferred IP format '{}' in test: {}. Expected CIDR notation (e.g., '192.168.1.10/24')", ip, e));
-    }
-    
-    IPClaim {
-        metadata: ObjectMeta {
-            name: Some(name.to_string()),
-            namespace: Some(namespace.to_string()),
-            ..Default::default()
-        },
-        spec: crds::IPClaimSpec {
-            pool_ref: crds::IPPoolRef {
-                name: pool_ref_name.to_string(),
-                namespace: pool_ref_namespace.map(|s| s.to_string()),
-            },
-            device_ref: crds::DeviceRef {
-                name: device_name.to_string(),
-                interface: interface.map(|s| s.to_string()),
-            },
-            preferred_ip: preferred_ip.map(|s| s.to_string()),
-        },
-        status: None,
     }
 }
 

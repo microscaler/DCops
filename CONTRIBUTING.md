@@ -751,63 +751,265 @@ cargo llvm-cov --package netbox-controller --bin netbox-controller --html --outp
 
 ## Adding New Reconcilers
 
-When adding a new NetBox CRD reconciler, follow this complete checklist:
+When adding a new NetBox CRD reconciler, follow this **complete** checklist. **Check off each item as you complete it** to avoid missing steps.
+
+**⚠️ CRITICAL GITOPS PRINCIPLE: Complete Field Reconciliation**
+
+> **MANDATORY:** Every reconciler MUST check EVERY field in the CRD spec that maps to a NetBox field. This is the core principle of GitOps - Git is the source of truth, and ALL fields must be reconciled in every reconciliation sweep. Do NOT skip fields, do NOT assume fields "rarely change", do NOT implement partial drift detection. **EVERY field must be checked, EVERY time.**
+
+**📋 Implementation Checklists**
+
+> **MANDATORY:** For each CRD, create and maintain an implementation checklist in `docs/implementationChecklists/<CRD>.md`. This checklist ensures:
+> - All fields are documented and checked
+> - Reusable helpers are used (DRY principle)
+> - No fields are skipped
+> - See `docs/implementationChecklists/README.md` for details and `docs/implementationChecklists/TEMPLATE.md` for the template.
 
 ### 1. CRD Definition (`crates/crds/src/`)
 
 - [ ] Create file in appropriate module directory (`dcim/`, `ipam/`, `tenancy/`, `extras/`)
 - [ ] Define `NetBox<Resource>Spec` struct with `#[derive(CustomResource, ...)]`
-- [ ] Define `NetBox<Resource>Status` struct
-- [ ] Update module file (`mod.rs`) to export the new CRD
-- [ ] Add to `crates/crds/src/bin/crdgen.rs` for CRD generation
+- [ ] Add `driftDetection: Option<bool>` field to spec (defaults to `true`)
+- [ ] Add `comments: Option<String>` field to spec (if NetBox API supports it)
+- [ ] Define `NetBox<Resource>Status` struct with required fields:
+  - [ ] `netbox_id: Option<u64>`
+  - [ ] `netbox_url: Option<String>`
+  - [ ] `state: ResourceState`
+  - [ ] `error: Option<String>`
+  - [ ] `last_reconciled: Option<chrono::DateTime<chrono::Utc>>`
+- [ ] Update module file (`<module>/mod.rs`) to export the new CRD:
+  - [ ] Add `pub mod netbox_<resource>;`
+  - [ ] Add `pub use netbox_<resource>::*;`
+- [ ] Add to `crates/crds/src/bin/crdgen.rs`:
+  - [ ] Add `use crds::NetBox<Resource>;` import
+  - [ ] Add `crds.push(NetBox<Resource>::crd());` in the `main()` function
 
 **⚠️ Important:** CRDs in `config/crd/all-crds.yaml` are **ephemeral** and automatically generated. Never edit them manually - they will be overwritten.
 
-### 2. NetBox Client Models (`crates/netbox-client/src/models.rs`)
+### 2. NetBox Client Models (`crates/netbox-client/src/`)
 
-- [ ] Add NetBox API model struct
+- [ ] Add NetBox API model struct in appropriate module (`dcim/`, `ipam/`, `tenancy/`, `extras/`)
 - [ ] Include all fields from NetBox API response
 - [ ] Add nested reference types if needed
+- [ ] Update module `mod.rs` to export the model
 
-### 3. NetBox Client Methods (`crates/netbox-client/src/client.rs`)
+### 3. NetBox Client Methods (`crates/netbox-client/src/`)
 
-- [ ] Add `query_<resources>()` method
-- [ ] Add `get_<resource>()` method
-- [ ] Add `get_<resource>_by_name()` method
-- [ ] Add `create_<resource>()` method
-- [ ] Add `update_<resource>()` method (if needed)
+- [ ] Add `query_<resources>()` method in appropriate module
+- [ ] Add `get_<resource>(id: <Resource>Id)` method
+- [ ] Add `get_<resource>_by_name(name: &str)` method (if applicable)
+- [ ] Add `create_<resource>(request: Create<Resource>Request)` method
+- [ ] Add `update_<resource>(id: <Resource>Id, request: Update<Resource>Request)` method
 - [ ] Handle pagination in query methods
+- [ ] Add methods to `NetBoxClientTrait` in `crates/netbox-client/src/trait.rs`
+- [ ] Implement methods in `crates/netbox-client/src/client.rs` (delegate to module)
+- [ ] Add mock implementations in `crates/netbox-client/src/mock/mod.rs`
+- [ ] Add mock implementations in `crates/netbox-client/src/mock/<module>.rs`
 
 ### 4. Reconciliation Logic (`controllers/netbox/src/reconciler/`)
 
-- [ ] Add API client to `Reconciler` struct
-- [ ] Update `Reconciler::new()` to accept and store the API client
-- [ ] Create `reconcile_netbox_<resource>()` method
-- [ ] Implement dependency resolution
-- [ ] Implement drift detection
-- [ ] Implement create/update/delete logic
-- [ ] Add status update helpers
-- [ ] Add event emission
-- [ ] Update `startup_reconciliation()` to map existing resources
+#### 4.1. Module Organization
+
+- [ ] Determine if reconciler goes in existing module or new module directory
+- [ ] If new module: Create `<module>/mod.rs` and update parent `mod.rs`
+- [ ] Create `<module>/<resource>.rs` file for reconciler implementation
+- [ ] Update `<module>/mod.rs` to export:
+  - [ ] `pub mod <resource>;`
+  - [ ] `pub use <resource>::*;`
+
+#### 4.2. Reconciler Struct Updates (`controllers/netbox/src/reconciler/mod.rs`)
+
+- [ ] Add `use crds::NetBox<Resource>;` to imports
+- [ ] Add `pub(crate) netbox_<resource>_api: Box<dyn KubeApiTrait<NetBox<Resource>> + Send + Sync>,` to `Reconciler` struct
+- [ ] Update `Reconciler::new()` signature to accept `netbox_<resource>_api` parameter
+- [ ] Store API client in `Reconciler::new()`: `Box::new(netbox_<resource>_api)`
+- [ ] Add `create_typed_<resource>_status_patch()` helper function (see existing examples)
+- [ ] Add `update_<resource>_status()` helper function (if needed)
+
+#### 4.3. Reconciler Implementation (`controllers/netbox/src/reconciler/<module>/<resource>.rs`)
+
+- [ ] Create `reconcile_netbox_<resource>()` method signature
+- [ ] Implement dependency resolution (required and optional dependencies)
+- [ ] Implement token resolution via `token_resolver.resolve_token_for_tenant()`
+- [ ] Implement drift detection using `validate_status_and_drift()` helper
+- [ ] Implement create logic with GitOps conflict handling
+- [ ] **⚠️ CRITICAL: Implement COMPLETE field-level drift detection** (if `driftDetection` is enabled):
+  - [ ] Create `<resource>_needs_update()` helper function
+  - [ ] **MANDATORY: Check EVERY field in the CRD spec that maps to a NetBox field**
+  - [ ] **MANDATORY: Compare ALL CRD spec fields with ALL NetBox resource fields**
+  - [ ] **MANDATORY: Include ALL dependency fields (tenant, region, group, etc.) in comparison**
+  - [ ] **MANDATORY: Do NOT skip any fields - GitOps requires complete reconciliation**
+  - [ ] **MANDATORY: Fields to check (verify against CRD spec and NetBox model):**
+    - [ ] `name` (if applicable)
+    - [ ] `slug` (if applicable)
+    - [ ] `description` (if applicable)
+    - [ ] `comments` (if applicable)
+    - [ ] ALL dependency references (tenant, region, site, group, manufacturer, etc.)
+    - [ ] ALL enum fields (status, role, type, etc.)
+    - [ ] ALL optional fields (latitude, longitude, physical_address, etc.)
+    - [ ] ALL custom fields specific to the resource type
+  - [ ] **Fields to EXCLUDE from drift detection (controller config only):**
+    - [ ] `drift_detection` (controller config, not a NetBox field)
+    - [ ] `reconcile_interval` (controller config, not a NetBox field)
+    - [ ] `token_secret` (controller config, not a NetBox field)
+    - [ ] `tags` (handled separately via `update_tags_if_differ()`)
+  - [ ] Call `update_<resource>()` if drift detected
+  - [ ] Emit `DRIFT_DETECTED` event
+- [ ] Implement tag reconciliation using `update_tags_if_differ()` helper
+- [ ] Add status update calls after create/update operations
+- [ ] Add event emission for create/update/drift operations
+- [ ] Handle errors and update status with error messages
+
+**⚠️ CRITICAL GITOPS REQUIREMENT: Complete Field Reconciliation**
+
+> **MANDATORY:** Every reconciler MUST check EVERY field in the CRD spec that maps to a NetBox field. This is the core principle of GitOps - Git is the source of truth, and ALL fields must be reconciled.
+
+**Verification Checklist:**
+1. [ ] List ALL fields in the CRD spec (from `crates/crds/src/<module>/netbox_<resource>.rs`)
+2. [ ] List ALL fields in the NetBox model (from `crates/netbox-client/src/models.rs`)
+3. [ ] For each CRD spec field, verify it's checked in `*_needs_update()`:
+   - [ ] If it maps to a NetBox field → MUST be checked
+   - [ ] If it's controller config (drift_detection, reconcile_interval, token_secret) → OK to skip
+   - [ ] If it's tags → MUST be handled via `update_tags_if_differ()`
+4. [ ] For each NetBox model field, verify it's checked:
+   - [ ] If it's in the CRD spec → MUST be checked
+   - [ ] If it's read-only (id, url, display, created, last_updated, *_count) → OK to skip
+   - [ ] If it's computed (display) → OK to skip
+5. [ ] Test that changing ANY field in NetBox UI triggers drift detection
+6. [ ] Test that changing ANY field in CRD spec updates NetBox
+
+**Example: Complete Field Check Pattern**
+```rust
+fn resource_needs_update(
+    spec: &NetBoxResourceSpec,
+    existing: &netbox_client::Resource,
+    resolved_dependency_ids: ResolvedDependencies,
+) -> bool {
+    // 1. Check name (if applicable)
+    let name_changed = spec.name != existing.name;
+    
+    // 2. Check slug (if applicable)
+    let slug_changed = /* ... */;
+    
+    // 3. Check description (if applicable)
+    let description_changed = spec.description.as_deref() != existing.description.as_deref();
+    
+    // 4. Check comments (if applicable)
+    let comments_changed = spec.comments.as_deref() != existing.comments.as_deref();
+    
+    // 5. Check ALL dependencies (tenant, region, group, etc.)
+    let tenant_changed = resolved_dependency_ids.tenant_id != existing.tenant.as_ref().map(|t| t.id);
+    let region_changed = resolved_dependency_ids.region_id != existing.region.as_ref().map(|r| r.id);
+    // ... check ALL dependencies
+    
+    // 6. Check ALL enum fields (status, role, type, etc.)
+    let status_changed = /* ... */;
+    
+    // 7. Check ALL optional fields
+    let latitude_changed = spec.latitude != existing.latitude;
+    let longitude_changed = spec.longitude != existing.longitude;
+    // ... check ALL optional fields
+    
+    // 8. Check ALL resource-specific fields
+    // ... check ALL fields specific to this resource type
+    
+    // Tags are handled separately via update_tags_if_differ()
+    
+    // Return true if ANY field changed
+    name_changed || slug_changed || description_changed || comments_changed
+        || tenant_changed || region_changed || status_changed
+        || latitude_changed || longitude_changed
+        || /* ... all other fields ... */
+}
+```
+
+**Common Mistakes to Avoid:**
+- ❌ **Skipping optional fields** - Even optional fields must be checked (None vs Some(value))
+- ❌ **Skipping dependency fields** - All dependencies must be compared
+- ❌ **Assuming fields "rarely change"** - Check EVERY field, always
+- ❌ **Only checking "important" fields** - GitOps requires ALL fields
+- ❌ **Forgetting to handle None vs Some()** - Optional fields need special comparison logic
+
+#### 4.4. Trait Implementations (`controllers/netbox/src/reconcile_helpers.rs`)
+
+- [ ] Implement `NetBoxStatusCheck` trait for `crds::NetBox<Resource>Status`:
+  ```rust
+  impl NetBoxStatusCheck for crds::NetBox<Resource>Status {
+      fn netbox_id(&self) -> Option<u64> { self.netbox_id }
+      fn netbox_url(&self) -> Option<&str> { self.netbox_url.as_deref() }
+  }
+  ```
+- [ ] If resource has tags: Implement `HasTags` trait for `netbox_client::<Resource>`:
+  ```rust
+  impl HasTags for netbox_client::<Resource> {
+      fn tags(&self) -> &[netbox_client::NestedTag] { &self.tags }
+  }
+  ```
 
 ### 5. Watcher Setup (`controllers/netbox/src/watcher.rs`)
 
-- [ ] Add API client to `Watcher` struct
-- [ ] Update `Watcher::new()` to accept the API client
-- [ ] Create `watch_netbox_<resources>()` method
-- [ ] Use `watch_resource()` helper with reconcile function
+- [ ] Add `use crds::NetBox<Resource>;` to imports
+- [ ] Add `netbox_<resource>_api: Api<NetBox<Resource>>` to `Watcher` struct
+- [ ] Update `Watcher::new()` to accept `netbox_<resource>_api` parameter
+- [ ] Store API client in `Watcher::new()`
+- [ ] Create `watch_netbox_<resources>()` method:
+  ```rust
+  pub async fn watch_netbox_<resources>(&self) -> Result<(), ControllerError> {
+      watch_resource(
+          self.netbox_<resource>_api.clone(),
+          self.reconciler.clone(),
+          |reconciler, resource| {
+              Box::pin(async move {
+                  match reconciler.reconcile_netbox_<resource>(&*resource).await {
+                      Ok(()) => Ok(Action::await_change()),
+                      Err(e) => Err(e),
+                  }
+              })
+          },
+          "NetBox<Resource>",
+      ).await
+  }
+  ```
 
 ### 6. Controller Integration (`controllers/netbox/src/controller.rs`)
 
-- [ ] Add API client to `Controller::new()`
-- [ ] Add watcher `JoinHandle` to `Controller` struct
-- [ ] Spawn watcher task in `Controller::new()`
-- [ ] Add branch to `tokio::select!` in `Controller::run()`
+- [ ] Add `use crds::NetBox<Resource>;` to imports
+- [ ] Create API client in `Controller::new()`:
+  ```rust
+  let netbox_<resource>_api: Api<NetBox<Resource>> = Api::namespaced(kube_client.clone(), ns);
+  ```
+- [ ] Pass API client to `Reconciler::new()`: `KubeApiWrapper::new(netbox_<resource>_api.clone())`
+- [ ] Pass API client to `Watcher::new()`: `netbox_<resource>_api.clone()`
+- [ ] Add `netbox_<resource>_watcher: JoinHandle<Result<(), ControllerError>>` to `Controller` struct
+- [ ] Spawn watcher task in `Controller::new()`:
+  ```rust
+  let netbox_<resource>_watcher = {
+      let watcher = watcher_instance.clone();
+      tokio::spawn(async move {
+          watcher.watch_netbox_<resources>().await
+      })
+  };
+  ```
+- [ ] Store watcher in `Controller` struct initialization
+- [ ] Add branch to `tokio::select!` in `Controller::run()`:
+  ```rust
+  result = &mut self.netbox_<resource>_watcher => {
+      result.map_err(|e| ControllerError::Watch(format!("NetBox<Resource> watcher panicked: {}", e)))?
+          .map_err(|e| ControllerError::Watch(format!("NetBox<Resource> watcher error: {}", e)))?;
+  }
+  ```
 
 ### 7. RBAC (`config/netbox-controller/role.yaml`)
 
-- [ ] Add permissions for the CRD (get, list, watch, create, update, patch, delete)
-- [ ] Add permissions for status subresource (get, patch, update)
+- [ ] Add CRD resource name to main resources list (lowercase, plural):
+  - [ ] Add `- netbox<resources>` (e.g., `- netboxtenantgroups`)
+- [ ] Add status subresource to status resources list:
+  - [ ] Add `- netbox<resources>/status` (e.g., `- netboxtenantgroups/status`)
+- [ ] Verify verbs are correct:
+  - [ ] Main resources: `get`, `list`, `watch`, `update`, `patch`, `create`, `delete`
+  - [ ] Status resources: `get`, `update`, `patch`
+
+**⚠️ Critical:** RBAC must be updated or the controller will fail with 403 Forbidden errors when trying to watch resources.
 
 ### 8. Example CR (`config/examples/`)
 
@@ -818,27 +1020,248 @@ Example CRs are organized in subdirectories:
 Example files follow the pattern: `netbox-<resource>-example.yaml` or `<resource>-example.yaml`
 
 - [ ] Create example CR file with complete `spec`
-- [ ] Include realistic values
+- [ ] Include `driftDetection: true` in spec
+- [ ] Include `comments` field if supported
+- [ ] Include all required fields with realistic values
+- [ ] Include optional fields with examples
 - [ ] Add comments explaining each field
+- [ ] Include tag references if applicable
+- [ ] Include dependency references (tenant, etc.)
 
 ### 9. Tests (`controllers/netbox/src/reconciler/<module>/<resource>_test.rs`)
 
-- [ ] Test create path
-- [ ] Test update path
-- [ ] Test drift detection
-- [ ] Test dependency not found
-- [ ] Test error handling
-- [ ] Test event emission
-- [ ] Verify status updates
+- [ ] Create test file `controllers/netbox/src/reconciler/<module>/<resource>_test.rs`
+- [ ] Test create path (new resource)
+- [ ] Test update path (existing resource with changes)
+- [ ] Test drift detection (resource exists but fields differ)
+- [ ] Test dependency not found (required dependency missing)
+- [ ] Test optional dependency handling
+- [ ] Test error handling (NetBox API errors, network errors)
+- [ ] Test event emission (verify CREATED, UPDATED, DRIFT_DETECTED events)
+- [ ] Test status updates (verify netbox_id, netbox_url, state are set correctly)
+- [ ] Test tag reconciliation
+- [ ] Test driftDetection flag (enabled vs disabled)
+- [ ] Verify all tests pass: `cargo test --package netbox-controller <resource>`
 
 ### 10. Verification
 
-- [ ] Compilation: `python3 scripts/host_aware_build.py --release -p netbox-controller` (DO NOT use `cargo check`)
-- [ ] CRD Generation: `cargo run -p crds --bin crdgen` generates valid YAML
-- [ ] Tests pass: `cargo test --package netbox-controller`
-- [ ] Coverage meets minimum: `cargo llvm-cov --package netbox-controller --bin netbox-controller`
+- [ ] **Compilation**: `python3 scripts/host_aware_build.py --release -p netbox-controller` (DO NOT use `cargo check` or `cargo build`)
+- [ ] **CRD Generation**: `python3 scripts/generate_crds.py` generates valid YAML
+- [ ] **CRD Applied**: `kubectl apply -f config/crd/all-crds.yaml` succeeds
+- [ ] **RBAC Applied**: `kubectl apply -f config/netbox-controller/role.yaml` succeeds
+- [ ] **Example CR Applied**: `kubectl apply -f config/examples/.../netbox-<resource>-example.yaml` succeeds
+- [ ] **Tests Pass**: `cargo test --package netbox-controller` passes
+- [ ] **Coverage Meets Minimum**: `cargo llvm-cov --package netbox-controller --bin netbox-controller` shows ≥65% coverage
+- [ ] **Controller Starts**: Controller pod starts without errors
+- [ ] **Watcher Logs**: Controller logs show "Starting NetBox<Resource> watcher"
+- [ ] **Reconciliation Works**: CR status shows `state: Created` and `netboxId` is populated
+- [ ] **NetBox Resource Created**: Verify resource exists in NetBox via API or UI
+- [ ] **Drift Detection Works**: Manually modify resource in NetBox, verify reconciler detects and fixes drift
 
-**Remember:** This checklist must be completed in a single pass. Do not submit PRs with partial implementations.
+### 11. Common Pitfalls to Avoid
+
+- [ ] **Missing RBAC**: Forgetting to add CRD to `role.yaml` causes 403 errors
+- [ ] **Missing Trait Implementation**: Forgetting `NetBoxStatusCheck` causes compilation errors
+- [ ] **Missing Status Patch Helper**: Forgetting `create_typed_<resource>_status_patch()` causes compilation errors
+- [ ] **Missing Import**: Forgetting to add `use crds::NetBox<Resource>;` in multiple files
+- [ ] **Missing Module Export**: Forgetting to add `pub use` in module `mod.rs` files
+- [ ] **Missing Watcher Spawn**: Forgetting to spawn watcher task in `Controller::new()`
+- [ ] **Missing Select Branch**: Forgetting to add branch to `tokio::select!` in `Controller::run()`
+- [ ] **Missing Client Methods**: Forgetting to add methods to `NetBoxClientTrait` and implementations
+- [ ] **Missing Mock Methods**: Forgetting to add mock implementations causes test failures
+
+**Remember:** This checklist must be completed in a single pass. Do not submit PRs with partial implementations. Use this checklist as a working document - check off each item as you complete it.
+
+---
+
+## Interconnected Resources - Dependency Management
+
+When resources depend on each other (e.g., Tenant → TenantGroup, Device → Site, IPAddress → Interface), special care must be taken to ensure:
+
+1. **Dependency changes are detected** - When a dependency is updated, dependent resources must be reconciled
+2. **Field-level drift detection includes dependencies** - When checking if a resource needs updating, compare dependency fields
+3. **Dependent resources update when dependencies change** - If a Tenant's group changes, the Tenant must be updated in NetBox
+
+### Checklist: Resource with Dependencies
+
+When creating a reconciler for a resource that **depends on** other resources:
+
+- [ ] **Identify all dependencies** (required and optional):
+  - [ ] List all `NetBoxResourceReference` fields in the CRD spec
+  - [ ] Mark which are required vs optional
+  - [ ] Document dependency relationships
+
+- [ ] **Implement dependency resolution**:
+  - [ ] Use `resolve_required_dependency_id()` for required dependencies
+  - [ ] Use `resolve_optional_dependency_id()` for optional dependencies
+  - [ ] Handle dependency not found errors gracefully
+  - [ ] Emit `DEPENDENCY_NOT_FOUND` events when dependencies are missing
+
+- [ ] **Include dependencies in drift detection**:
+  - [ ] In `<resource>_needs_update()` function, compare dependency fields:
+    ```rust
+    // Example: Compare tenant group
+    let group_changed = {
+        let spec_group_id = if let Some(group_ref) = &spec.group {
+            // Resolve group ID from CRD reference
+            resolve_group_id_from_crd(group_ref).await?
+        } else {
+            None
+        };
+        let netbox_group_id = netbox_resource.group.as_ref().map(|g| g.id);
+        spec_group_id != netbox_group_id
+    };
+    ```
+  - [ ] Include dependency comparisons in the `needs_update` boolean
+  - [ ] Test that dependency changes trigger updates
+
+- [ ] **Update dependencies when creating/updating**:
+  - [ ] Resolve dependency IDs before create/update calls
+  - [ ] Pass resolved dependency IDs to NetBox API calls
+  - [ ] Handle dependency resolution failures appropriately
+
+- [ ] **Test dependency scenarios**:
+  - [ ] Test create with required dependency
+  - [ ] Test create with optional dependency
+  - [ ] Test create without optional dependency
+  - [ ] Test update when dependency changes
+  - [ ] Test update when dependency is removed (if allowed)
+  - [ ] Test drift detection when dependency changes in NetBox UI
+  - [ ] Test error handling when dependency not found
+
+### Checklist: Resource that is a Dependency
+
+When creating a reconciler for a resource that **other resources depend on** (e.g., TenantGroup, Site, Device):
+
+- [ ] **Identify all dependent resources**:
+  - [ ] Search codebase for CRDs that reference this resource type
+  - [ ] Document which resources depend on this one
+  - [ ] Understand the dependency relationship (required vs optional)
+
+- [ ] **Ensure dependent resources reconcile when dependency changes**:
+  - [ ] When dependency resource is updated, dependent resources should detect drift
+  - [ ] Periodic reconciliation (every 10s) will catch dependency changes
+  - [ ] Field-level drift detection in dependent resources must compare dependency fields
+
+- [ ] **Test dependency propagation**:
+  - [ ] Create dependency resource (e.g., TenantGroup)
+  - [ ] Create dependent resource (e.g., Tenant) referencing dependency
+  - [ ] Update dependency resource (e.g., change TenantGroup name)
+  - [ ] Verify dependent resource detects drift and updates (if applicable)
+  - [ ] Test that dependent resources can be updated when dependency changes
+
+### Checklist: Field-Level Drift Detection for Dependencies
+
+When implementing drift detection for a resource with dependencies:
+
+- [ ] **Compare dependency fields in `*_needs_update()` function**:
+  ```rust
+  fn tenant_needs_update(spec: &NetBoxTenantSpec, netbox: &Tenant, group_id: Option<u64>) -> bool {
+      // Compare name
+      let name_changed = spec.name != netbox.name;
+      
+      // Compare slug
+      let slug_changed = /* ... */;
+      
+      // Compare description
+      let description_changed = /* ... */;
+      
+      // Compare comments
+      let comments_changed = /* ... */;
+      
+      // ⚠️ CRITICAL: Compare group dependency
+      let group_changed = {
+          let spec_group_id = spec.group.as_ref().map(|g| group_id); // Resolved group ID
+          let netbox_group_id = netbox.group.as_ref().map(|g| g.id);
+          spec_group_id != netbox_group_id
+      };
+      
+      // Include ALL fields in the check
+      name_changed || slug_changed || description_changed || comments_changed || group_changed
+  }
+  ```
+
+- [ ] **Resolve dependency IDs before comparison**:
+  - [ ] Don't compare CRD references directly (they're just names)
+  - [ ] Resolve CRD references to NetBox IDs first
+  - [ ] Compare resolved IDs with NetBox resource IDs
+
+- [ ] **Handle optional dependencies correctly**:
+  - [ ] If spec has no dependency but NetBox has one → drift detected
+  - [ ] If spec has dependency but NetBox has none → drift detected
+  - [ ] If both have dependencies but IDs differ → drift detected
+  - [ ] If both have no dependency → no drift
+
+- [ ] **Test all dependency drift scenarios**:
+  - [ ] Dependency added in spec (NetBox has none)
+  - [ ] Dependency removed from spec (NetBox has one)
+  - [ ] Dependency changed in spec (NetBox has different one)
+  - [ ] Dependency unchanged (no drift)
+  - [ ] Optional dependency scenarios
+
+### Checklist: Ensuring Dependent Resources Update
+
+When a dependency resource changes, dependent resources must be updated:
+
+- [ ] **Verify periodic reconciliation works**:
+  - [ ] Watcher requeues every 10s (enabled by default)
+  - [ ] Each reconciliation checks for drift
+  - [ ] Field-level drift detection includes dependency fields
+
+- [ ] **Verify drift detection includes dependencies**:
+  - [ ] `*_needs_update()` function compares dependency fields
+  - [ ] Dependency changes trigger updates
+  - [ ] Updates include resolved dependency IDs
+
+- [ ] **Test end-to-end dependency updates**:
+  - [ ] Create dependency (e.g., TenantGroup "default")
+  - [ ] Create dependent resource (e.g., Tenant) without dependency
+  - [ ] Update dependent resource CR to include dependency
+  - [ ] Verify dependent resource is updated in NetBox
+  - [ ] Manually change dependency in NetBox UI
+  - [ ] Verify dependent resource detects drift and corrects it
+
+### Common Pitfalls: Interconnected Resources
+
+- [ ] **Missing dependency in drift detection**: Forgetting to compare dependency fields in `*_needs_update()` causes dependent resources to not update when dependencies change
+- [ ] **Comparing references instead of IDs**: Comparing `NetBoxResourceReference` objects directly instead of resolving to NetBox IDs first
+- [ ] **Not handling optional dependencies**: Forgetting to handle `None` cases for optional dependencies
+- [ ] **Not resolving dependencies before update**: Trying to update with unresolved dependency references instead of NetBox IDs
+- [ ] **Assuming dependencies don't change**: Not implementing drift detection for dependency fields because "they rarely change"
+- [ ] **Circular dependency issues**: Creating circular dependencies (e.g., TenantGroup → Tenant → TenantGroup) without proper handling
+
+### Example: Tenant → TenantGroup Dependency
+
+**Problem**: Tenants depend on TenantGroups. When a TenantGroup is created, existing Tenants should be updated to reference it if their CR specifies it.
+
+**Solution**:
+1. Tenant reconciler's `tenant_needs_update()` must compare `group` field
+2. Resolve TenantGroup CRD reference to NetBox ID before comparison
+3. Compare resolved ID with NetBox Tenant's group ID
+4. If different, trigger update with resolved group ID
+
+**Code Pattern**:
+```rust
+// In tenant_needs_update() or similar
+let group_changed = {
+    // Resolve group ID from CRD reference
+    let spec_group_id = if let Some(group_ref) = &spec.group {
+        // Resolve via CRD → NetBox ID
+        resolve_tenant_group_id_from_crd(group_ref).await?
+    } else {
+        None
+    };
+    
+    // Get current group ID from NetBox
+    let netbox_group_id = netbox_tenant.group.as_ref().map(|g| g.id);
+    
+    // Compare
+    spec_group_id != netbox_group_id
+};
+
+// Include in needs_update check
+let needs_update = name_changed || slug_changed || description_changed || comments_changed || group_changed;
+```
 
 ---
 

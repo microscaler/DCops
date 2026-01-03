@@ -9,7 +9,7 @@
 use crate::reconciler::Reconciler;
 use crate::error::ControllerError;
 use crds::{
-    IPClaim, IPPool, NetBoxPrefix, NetBoxTenant, NetBoxSite, NetBoxRole, NetBoxTag, NetBoxAggregate,
+    NetBoxPrefix, NetBoxTenant, NetBoxTenantGroup, NetBoxSite, NetBoxRole, NetBoxTag, NetBoxAggregate,
     NetBoxVLAN, NetBoxRIR, NetBoxIPAddress, NetBoxIPRange, NetBoxVRF, NetBoxRouteTarget, NetBoxDeviceRole, NetBoxManufacturer, NetBoxPlatform, NetBoxDeviceType,
     NetBoxDevice, NetBoxInterface, NetBoxMACAddress, NetBoxRegion, NetBoxSiteGroup, NetBoxLocation,
 };
@@ -152,6 +152,7 @@ pub struct Watcher {
     netbox_route_target_api: Api<NetBoxRouteTarget>,
     // Tenancy APIs
     netbox_tenant_api: Api<NetBoxTenant>,
+    netbox_tenant_group_api: Api<NetBoxTenantGroup>,
     // DCIM APIs
     netbox_site_api: Api<NetBoxSite>,
     netbox_device_role_api: Api<NetBoxDeviceRole>,
@@ -164,9 +165,6 @@ pub struct Watcher {
     netbox_region_api: Api<NetBoxRegion>,
     netbox_site_group_api: Api<NetBoxSiteGroup>,
     netbox_location_api: Api<NetBoxLocation>,
-    // Custom CRDs
-    ip_pool_api: Api<IPPool>,
-    ip_claim_api: Api<IPClaim>,
 }
 
 impl Watcher {
@@ -186,6 +184,7 @@ impl Watcher {
         netbox_route_target_api: Api<NetBoxRouteTarget>,
         // Tenancy APIs
         netbox_tenant_api: Api<NetBoxTenant>,
+        netbox_tenant_group_api: Api<NetBoxTenantGroup>,
         // DCIM APIs
         netbox_site_api: Api<NetBoxSite>,
         netbox_device_role_api: Api<NetBoxDeviceRole>,
@@ -198,9 +197,6 @@ impl Watcher {
         netbox_region_api: Api<NetBoxRegion>,
         netbox_site_group_api: Api<NetBoxSiteGroup>,
         netbox_location_api: Api<NetBoxLocation>,
-        // Custom CRDs
-        ip_pool_api: Api<IPPool>,
-        ip_claim_api: Api<IPClaim>,
     ) -> Self {
         Self {
             reconciler,
@@ -217,6 +213,7 @@ impl Watcher {
             netbox_route_target_api,
             // Tenancy
             netbox_tenant_api,
+            netbox_tenant_group_api,
             // DCIM
             netbox_site_api,
             netbox_device_role_api,
@@ -229,9 +226,6 @@ impl Watcher {
             netbox_region_api,
             netbox_site_group_api,
             netbox_location_api,
-            // Custom
-            ip_pool_api,
-            ip_claim_api,
         }
     }
     
@@ -249,40 +243,6 @@ impl Watcher {
                 })
             },
             "NetBoxPrefix",
-        ).await
-    }
-    
-    /// Starts watching IPClaim resources.
-    pub async fn watch_ip_claims(&self) -> Result<(), ControllerError> {
-        watch_resource(
-            self.ip_claim_api.clone(),
-            self.reconciler.clone(),
-            |reconciler, resource| {
-                Box::pin(async move {
-                    match reconciler.reconcile_ip_claim(&*resource).await {
-                        Ok(()) => Ok(Action::await_change()),
-                        Err(e) => Err(e),
-                    }
-                })
-            },
-            "IPClaim",
-        ).await
-    }
-    
-    /// Starts watching IPPool resources.
-    pub async fn watch_ip_pools(&self) -> Result<(), ControllerError> {
-        watch_resource(
-            self.ip_pool_api.clone(),
-            self.reconciler.clone(),
-            |reconciler, resource| {
-                Box::pin(async move {
-                    match reconciler.reconcile_ip_pool(&*resource).await {
-                        Ok(()) => Ok(Action::await_change()),
-                        Err(e) => Err(e),
-                    }
-                })
-            },
-            "IPPool",
         ).await
     }
     
@@ -313,6 +273,23 @@ impl Watcher {
                 })
             },
             "NetBoxTenant",
+        ).await
+    }
+    
+    /// Starts watching NetBoxTenantGroup resources.
+    pub async fn watch_netbox_tenant_groups(&self) -> Result<(), ControllerError> {
+        watch_resource(
+            self.netbox_tenant_group_api.clone(),
+            self.reconciler.clone(),
+            |reconciler, resource| {
+                Box::pin(async move {
+                    match reconciler.reconcile_netbox_tenant_group(&*resource).await {
+                        Ok(()) => Ok(Action::await_change()),
+                        Err(e) => Err(e),
+                    }
+                })
+            },
+            "NetBoxTenantGroup",
         ).await
     }
     

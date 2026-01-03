@@ -4,20 +4,22 @@ metadata:
   name: talos-control-plane-01-eth0
   namespace: default
 spec:
-  device: "talos-control-plane-01"  # References NetBoxDevice CRD
-  name: "eth0"  # Interface name
-  type: "1000base-t"  # Interface type (e.g., "1000base-t", "virtual", "other")
-  enabled: true  # Interface enabled
-  macAddress: "aa:bb:cc:dd:ee:ff"  # MAC address (optional, can be managed via NetBoxMACAddress CRD)
-  mtu: 1500  # MTU (optional)
-  description: "Primary Ethernet interface for control plane node"
-  comments: "Primary Ethernet interface for Kubernetes control plane node. Managed by DCops controller."
+  device: talos-control-plane-01
+  name: eth0
+  type: 1000base-t
+  enabled: true
+  macAddress: aa:bb:cc:dd:ee:ff
+  mtu: 1500
+  description: Primary Ethernet interface for control plane node
+  comments: Primary Ethernet interface for Kubernetes control plane node. Managed
+    by DCops controller.
+  driftDetection: true
   tags:
-    - apiGroup: dcops.microscaler.io
-      kind: NetBoxTag
-      name: managed-by-dcops
-      namespace: default
-    - apiGroup: dcops.microscaler.io
-      kind: NetBoxTag
-      name: production
-      namespace: default
+  - apiGroup: dcops.microscaler.io
+    kind: NetBoxTag
+    name: managed-by-dcops
+    namespace: default
+  - apiGroup: dcops.microscaler.io
+    kind: NetBoxTag
+    name: production
+    namespace: default

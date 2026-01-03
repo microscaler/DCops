@@ -50,6 +50,51 @@ pub async fn query_tenant_groups(
     }
 }
 
+/// Get tenant group by ID
+pub async fn get_tenant_group(
+    core: &NetBoxClientCore,
+    id: TenantGroupId,
+) -> Result<TenantGroup, NetBoxError> {
+    let id_value: u64 = id.into();
+    let url = format!("{}/api/tenancy/tenant-groups/{}/", core.base_url, id_value);
+    let response = core.client
+        .get(&url)
+        .header("Authorization", format!("Token {}", core.token))
+        .header("Accept", "application/json")
+        .send()
+        .await
+        .map_err(|e| {
+            // Convert reqwest errors to appropriate NetBoxError types
+            if e.is_timeout() {
+                NetBoxError::Api(format!("Request timeout: {}", e))
+            } else if e.is_connect() {
+                NetBoxError::Api(format!("Connection error: {}", e))
+            } else {
+                NetBoxError::Http(e)
+            }
+        })?;
+    
+    if !response.status().is_success() {
+        let status = response.status();
+        let body = response.text().await.unwrap_or_default();
+        
+        // Handle 404 specifically as NotFound
+        if status == 404 {
+            return Err(NetBoxError::NotFound(format!(
+                "Tenant group {} not found: {}",
+                id_value, body
+            )));
+        }
+        
+        return Err(NetBoxError::Api(format!(
+            "Failed to get tenant group {}: {} - {}",
+            id_value, status, body
+        )));
+    }
+    
+    response.json().await.map_err(|e| NetBoxError::Http(e))
+}
+
 /// Get tenant group by name (slug or name)
 pub async fn get_tenant_group_by_name(
     core: &NetBoxClientCore,

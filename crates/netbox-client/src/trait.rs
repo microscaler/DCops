@@ -145,6 +145,7 @@ pub trait NetBoxClientTrait: Send + Sync {
     async fn update_tenant(&self, id: TenantId, name: Option<&str>, slug: Option<&str>, description: Option<String>, comments: Option<String>, group: Option<TenantGroupId>, tags: Option<Vec<String>>) -> Result<Tenant, NetBoxError>;
     
     async fn query_tenant_groups(&self, filters: &[(&str, &str)], fetch_all: bool) -> Result<Vec<TenantGroup>, NetBoxError>;
+    async fn get_tenant_group(&self, id: TenantGroupId) -> Result<TenantGroup, NetBoxError>;
     async fn get_tenant_group_by_name(&self, name: &str) -> Result<Option<TenantGroup>, NetBoxError>;
     async fn create_tenant_group(&self, name: &str, slug: Option<&str>, description: Option<String>, comments: Option<String>, parent_id: Option<TenantGroupId>, tags: Option<Vec<String>>) -> Result<TenantGroup, NetBoxError>;
     async fn update_tenant_group(&self, id: TenantGroupId, name: Option<&str>, slug: Option<&str>, description: Option<String>, comments: Option<String>, parent_id: Option<TenantGroupId>, tags: Option<Vec<String>>) -> Result<TenantGroup, NetBoxError>;

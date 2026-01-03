@@ -83,6 +83,7 @@ impl Reconciler {
                     &location_crd.spec.tags,
                     namespace,
                     name,
+                None,
                 ).await;
                 
                 // Convert resolved tags from Vec<serde_json::Value> to Vec<String>
@@ -270,7 +271,8 @@ impl Reconciler {
                         &location_crd.spec.tags,
                         namespace,
                         name,
-                    ).await;
+                    None,
+                ).await;
                     let resolved_tags = crate::reconcile_helpers::convert_tags_to_strings(resolved_tags_json);
                     
                     // Update tags if they differ (location requires dependency resolution)
@@ -337,7 +339,8 @@ impl Reconciler {
                         &location_crd.spec.tags,
                         namespace,
                         name,
-                    ).await;
+                    None,
+                ).await;
                     
                     let resolved_tags = crate::reconcile_helpers::convert_tags_to_strings(resolved_tags_json);
                     

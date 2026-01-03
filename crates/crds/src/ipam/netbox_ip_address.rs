@@ -89,6 +89,18 @@ pub struct NetBoxIPAddressSpec {
     /// When specified, the IP address will be assigned to this interface in NetBox
     #[serde(skip_serializing_if = "Option::is_none")]
     pub interface: Option<NetBoxResourceReference>,
+    
+    /// Enable drift detection (default: true)
+    /// 
+    /// When enabled, the reconciler will detect and correct any changes made to the resource
+    /// in the NetBox UI that differ from the CRD spec. Git is the source of truth.
+    /// Set to false to disable drift detection (not recommended for GitOps workflows).
+    #[serde(skip_serializing_if = "Option::is_none", default = "default_drift_detection")]
+    pub drift_detection: Option<bool>,
+}
+
+fn default_drift_detection() -> Option<bool> {
+    Some(true)
 }
 
 fn default_ip_address_status() -> IPAddressStatus {

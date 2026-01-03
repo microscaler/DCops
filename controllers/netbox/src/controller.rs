@@ -3,10 +3,7 @@
 //! This module contains the `Controller` struct that orchestrates
 //! reconciliation and resource watching for the unified NetBox Controller.
 //!
-//! The controller manages three CRD types:
-//! - NetBoxPrefix: Creates and manages prefixes in NetBox
-//! - IPPool: Manages IP address pools (references NetBoxPrefix)
-//! - IPClaim: Allocates IP addresses from IPPools via NetBox
+//! The controller manages NetBox CRD types for IPAM, Tenancy, DCIM, and Extras.
 
 use crate::reconciler::Reconciler;
 use crate::watcher::Watcher;
@@ -14,7 +11,7 @@ use crate::error::ControllerError;
 use crate::kube_api_trait::KubeApiWrapper;
 use crate::token_resolver::TokenResolver;
 use crds::{
-    IPClaim, IPPool, NetBoxPrefix, NetBoxTenant, NetBoxSite, NetBoxRole, NetBoxTag, NetBoxAggregate,
+    NetBoxPrefix, NetBoxTenant, NetBoxTenantGroup, NetBoxSite, NetBoxRole, NetBoxTag, NetBoxAggregate,
     NetBoxVLAN, NetBoxRIR, NetBoxIPAddress, NetBoxIPRange, NetBoxVRF, NetBoxRouteTarget, NetBoxDeviceRole, NetBoxManufacturer, NetBoxPlatform, NetBoxDeviceType,
     NetBoxDevice, NetBoxInterface, NetBoxMACAddress, NetBoxRegion, NetBoxSiteGroup, NetBoxLocation,
 };
@@ -38,6 +35,7 @@ pub struct Controller {
     netbox_route_target_watcher: JoinHandle<Result<(), ControllerError>>,
     // Tenancy watchers
     netbox_tenant_watcher: JoinHandle<Result<(), ControllerError>>,
+    netbox_tenant_group_watcher: JoinHandle<Result<(), ControllerError>>,
     // DCIM watchers
     netbox_site_watcher: JoinHandle<Result<(), ControllerError>>,
     netbox_device_role_watcher: JoinHandle<Result<(), ControllerError>>,
@@ -50,9 +48,6 @@ pub struct Controller {
     netbox_region_watcher: JoinHandle<Result<(), ControllerError>>,
     netbox_site_group_watcher: JoinHandle<Result<(), ControllerError>>,
     netbox_location_watcher: JoinHandle<Result<(), ControllerError>>,
-    // Custom CRD watchers
-    ip_pool_watcher: JoinHandle<Result<(), ControllerError>>,
-    ip_claim_watcher: JoinHandle<Result<(), ControllerError>>,
 }
 
 impl Controller {
@@ -125,6 +120,7 @@ impl Controller {
         let netbox_route_target_api: Api<NetBoxRouteTarget> = Api::namespaced(kube_client.clone(), ns);
         // Tenancy APIs
         let netbox_tenant_api: Api<NetBoxTenant> = Api::namespaced(kube_client.clone(), ns);
+        let netbox_tenant_group_api: Api<NetBoxTenantGroup> = Api::namespaced(kube_client.clone(), ns);
         // DCIM APIs
         let netbox_site_api: Api<NetBoxSite> = Api::namespaced(kube_client.clone(), ns);
         let netbox_device_role_api: Api<NetBoxDeviceRole> = Api::namespaced(kube_client.clone(), ns);
@@ -137,9 +133,6 @@ impl Controller {
         let netbox_region_api: Api<NetBoxRegion> = Api::namespaced(kube_client.clone(), ns);
         let netbox_site_group_api: Api<NetBoxSiteGroup> = Api::namespaced(kube_client.clone(), ns);
         let netbox_location_api: Api<NetBoxLocation> = Api::namespaced(kube_client.clone(), ns);
-        // Custom CRDs
-        let ip_pool_api: Api<IPPool> = Api::namespaced(kube_client.clone(), ns);
-        let ip_claim_api: Api<IPClaim> = Api::namespaced(kube_client.clone(), ns);
         
         // Create reconciler with wrapped APIs
         // NOTE: KubeApiWrapper is a thin delegation layer - all calls forward to real Api<T>
@@ -175,6 +168,7 @@ impl Controller {
             KubeApiWrapper::new(netbox_route_target_api.clone()),
             // Tenancy
             KubeApiWrapper::new(netbox_tenant_api.clone()),
+            KubeApiWrapper::new(netbox_tenant_group_api.clone()),
             // DCIM
             KubeApiWrapper::new(netbox_site_api.clone()),
             KubeApiWrapper::new(netbox_device_role_api.clone()),
@@ -187,9 +181,6 @@ impl Controller {
             KubeApiWrapper::new(netbox_region_api.clone()),
             KubeApiWrapper::new(netbox_site_group_api.clone()),
             KubeApiWrapper::new(netbox_location_api.clone()),
-            // Custom
-            KubeApiWrapper::new(ip_pool_api.clone()),
-            KubeApiWrapper::new(ip_claim_api.clone()),
         );
         
         // Perform startup tasks (reconciliation, cleanup, etc.)
@@ -214,6 +205,7 @@ impl Controller {
             netbox_route_target_api.clone(),
             // Tenancy
             netbox_tenant_api.clone(),
+            netbox_tenant_group_api.clone(),
             // DCIM
             netbox_site_api.clone(),
             netbox_device_role_api.clone(),
@@ -226,9 +218,6 @@ impl Controller {
             netbox_region_api.clone(),
             netbox_site_group_api.clone(),
             netbox_location_api.clone(),
-            // Custom
-            ip_pool_api.clone(),
-            ip_claim_api.clone(),
         ));
         
         // Start all watchers in background tasks
@@ -243,6 +232,13 @@ impl Controller {
             let watcher = watcher_instance.clone();
             tokio::spawn(async move {
                 watcher.watch_netbox_tenants().await
+            })
+        };
+        
+        let netbox_tenant_group_watcher = {
+            let watcher = watcher_instance.clone();
+            tokio::spawn(async move {
+                watcher.watch_netbox_tenant_groups().await
             })
         };
         
@@ -386,20 +382,6 @@ impl Controller {
             })
         };
         
-        let ip_pool_watcher = {
-            let watcher = watcher_instance.clone();
-            tokio::spawn(async move {
-                watcher.watch_ip_pools().await
-            })
-        };
-        
-        let ip_claim_watcher = {
-            let watcher = watcher_instance;
-            tokio::spawn(async move {
-                watcher.watch_ip_claims().await
-            })
-        };
-        
         Ok(Self {
             // IPAM watchers
             netbox_prefix_watcher,
@@ -414,6 +396,7 @@ impl Controller {
             netbox_route_target_watcher,
             // Tenancy watchers
             netbox_tenant_watcher,
+            netbox_tenant_group_watcher,
             // DCIM watchers
             netbox_site_watcher,
             netbox_device_role_watcher,
@@ -426,9 +409,6 @@ impl Controller {
             netbox_region_watcher,
             netbox_site_group_watcher,
             netbox_location_watcher,
-            // Custom CRD watchers
-            ip_pool_watcher,
-            ip_claim_watcher,
         })
     }
     
@@ -445,6 +425,10 @@ impl Controller {
             result = &mut self.netbox_tenant_watcher => {
                 result.map_err(|e| ControllerError::Watch(format!("NetBoxTenant watcher panicked: {}", e)))?
                     .map_err(|e| ControllerError::Watch(format!("NetBoxTenant watcher error: {}", e)))?;
+            }
+            result = &mut self.netbox_tenant_group_watcher => {
+                result.map_err(|e| ControllerError::Watch(format!("NetBoxTenantGroup watcher panicked: {}", e)))?
+                    .map_err(|e| ControllerError::Watch(format!("NetBoxTenantGroup watcher error: {}", e)))?;
             }
             result = &mut self.netbox_site_watcher => {
                 result.map_err(|e| ControllerError::Watch(format!("NetBoxSite watcher panicked: {}", e)))?
@@ -525,14 +509,6 @@ impl Controller {
             result = &mut self.netbox_location_watcher => {
                 result.map_err(|e| ControllerError::Watch(format!("NetBoxLocation watcher panicked: {}", e)))?
                     .map_err(|e| ControllerError::Watch(format!("NetBoxLocation watcher error: {}", e)))?;
-            }
-            result = &mut self.ip_pool_watcher => {
-                result.map_err(|e| ControllerError::Watch(format!("IPPool watcher panicked: {}", e)))?
-                    .map_err(|e| ControllerError::Watch(format!("IPPool watcher error: {}", e)))?;
-            }
-            result = &mut self.ip_claim_watcher => {
-                result.map_err(|e| ControllerError::Watch(format!("IPClaim watcher panicked: {}", e)))?
-                    .map_err(|e| ControllerError::Watch(format!("IPClaim watcher error: {}", e)))?;
             }
         }
         

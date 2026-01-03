@@ -1,13 +1,13 @@
 apiVersion: dcops.microscaler.io/v1alpha1
-kind: NetBoxManufacturer
+kind: NetBoxTenantGroup
 metadata:
-  name: raspberry-pi
+  name: default
   namespace: default
 spec:
-  name: "Raspberry Pi"
-  slug: "raspberry-pi"
-  description: "Raspberry Pi Foundation single-board computer"
-  comments: "Raspberry Pi Foundation manufacturer entry. Managed by DCops controller."
+  name: "Default"
+  slug: "default"
+  description: "Default tenant group for DCops"
+  comments: "Default tenant group managed by DCops controller. All tenants without a specific group will use this group."
   driftDetection: true
   # Tag references (optional)
   # Tags must exist in NetBox before they can be referenced
@@ -16,9 +16,5 @@ spec:
     - apiGroup: dcops.microscaler.io
       kind: NetBoxTag
       name: managed-by-dcops
-      namespace: default
-    - apiGroup: dcops.microscaler.io
-      kind: NetBoxTag
-      name: client-device
       namespace: default
 

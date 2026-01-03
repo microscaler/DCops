@@ -7,6 +7,32 @@ use crds::{NetBoxPlatform, ResourceState};
 use netbox_client::{NetBoxClientTrait, ManufacturerId};
 
 impl Reconciler {
+    /// Check if Platform needs updating by comparing spec with existing NetBox resource
+    fn platform_needs_update(
+        spec: &crds::NetBoxPlatformSpec,
+        existing: &netbox_client::Platform,
+        desired_manufacturer_id: Option<u64>,
+    ) -> bool {
+        use crate::reconcile_helpers::{
+            compare_string_field,
+            compare_slug_field,
+            compare_optional_string_field,
+            compare_optional_dependency_id,
+        };
+        
+        let auto_generated_slug = spec.name.to_lowercase().replace(' ', "-");
+        let existing_manufacturer_id = existing.manufacturer.as_ref().map(|m| m.id);
+        
+        compare_string_field(&spec.name, &existing.name)
+            || compare_slug_field(&spec.slug, &existing.slug, auto_generated_slug)
+            || compare_optional_dependency_id(desired_manufacturer_id, existing_manufacturer_id)
+            || compare_optional_string_field(&spec.napalm_driver, &existing.napalm_driver)
+            || compare_optional_string_field(&spec.napalm_args, &existing.napalm_args)
+            || compare_optional_string_field(&spec.description, &existing.description)
+            || compare_optional_string_field(&spec.comments, &existing.comments)
+        // Tags are handled separately
+    }
+
     pub async fn reconcile_netbox_platform(&self, platform_crd: &NetBoxPlatform) -> Result<(), ControllerError> {
         // Extract name and namespace using helper
         use crate::reconcile_helpers::{extract_name_and_namespace, resolve_optional_dependency_id};
@@ -51,8 +77,69 @@ impl Reconciler {
             ).await?
         };
         
+        // Check if drift detection is enabled (defaults to true)
+        let drift_detection_enabled = platform_crd.spec.drift_detection.unwrap_or(true);
+        
         let netbox_platform = match drift_result {
-            DriftCheckResult::UseExisting(platform) => Some(platform),
+            DriftCheckResult::UseExisting(platform) => {
+                // Check for field drift if enabled
+                if drift_detection_enabled {
+                    if Self::platform_needs_update(&platform_crd.spec, &platform, manufacturer_id) {
+                        // Field drift detected - update NetBox to match CRD (Git is source of truth)
+                        warn!("NetBoxPlatform {}/{} fields differ from CRD spec, updating to match Git", namespace, name);
+                        use crate::events::reasons;
+                        self.record_event_warning(
+                            reasons::DRIFT_DETECTED,
+                            &format!("NetBoxPlatform {}/{} fields differ from CRD, updating to match Git", namespace, name),
+                            platform_crd,
+                        ).await;
+                        
+                        // Resolve tags for update
+                        let resolved_tags_json = self.resolve_tag_references(
+                            netbox_client.as_ref(),
+                            &platform_crd.spec.tags,
+                            namespace,
+                            name,
+                            Some(platform.id),
+                        ).await;
+                        let resolved_tags = crate::reconcile_helpers::convert_tags_to_strings(resolved_tags_json);
+                        
+                        match netbox_client.update_platform(
+                            netbox_client::PlatformId(platform.id),
+                            Some(&platform_crd.spec.name),
+                            platform_crd.spec.slug.as_deref(),
+                            manufacturer_id.map(ManufacturerId),
+                            platform_crd.spec.napalm_driver.as_deref(),
+                            platform_crd.spec.napalm_args.as_deref(),
+                            platform_crd.spec.description.clone(),
+                            platform_crd.spec.comments.clone(),
+                            resolved_tags,
+                        ).await {
+                            Ok(updated) => {
+                                info!("Updated NetBoxPlatform {}/{} in NetBox to match CRD (ID: {})", namespace, name, updated.id);
+                                Some(updated)
+                            }
+                            Err(e) => {
+                                error!("Failed to update NetBoxPlatform {}/{} in NetBox: {}", namespace, name, e);
+                                use crate::events::reasons;
+                                self.record_event_warning(
+                                    reasons::RECONCILIATION_FAILED,
+                                    &format!("Failed to update NetBoxPlatform {}/{} in NetBox: {}", namespace, name, e),
+                                    platform_crd,
+                                ).await;
+                                return Err(ControllerError::NetBox(e));
+                            }
+                        }
+                    } else {
+                        // No field drift - use existing
+                        Some(platform)
+                    }
+                } else {
+                    // Drift detection disabled - use existing without checking
+                    debug!("Drift detection disabled for NetBoxPlatform {}/{}", namespace, name);
+                    Some(platform)
+                }
+            }
             DriftCheckResult::StatusCleared { message } => {
                 // Emit event for drift detection
                 use crate::events::reasons;
@@ -86,6 +173,7 @@ impl Reconciler {
                     &platform_crd.spec.tags,
                     namespace,
                     name,
+                None,
                 ).await;
                 
                 // Convert resolved tags from Vec<serde_json::Value> to Vec<String>
@@ -181,7 +269,8 @@ impl Reconciler {
                         &platform_crd.spec.tags,
                         namespace,
                         name,
-                    ).await;
+                    None,
+                ).await;
                     let resolved_tags = crate::reconcile_helpers::convert_tags_to_strings(resolved_tags_json);
                     
                     // Update tags if they differ

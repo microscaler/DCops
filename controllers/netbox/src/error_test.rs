@@ -28,14 +28,6 @@ mod tests {
     }
 
     #[test]
-    fn test_controller_error_display_ippool_not_found() {
-        let err = ControllerError::IPPoolNotFound("test-pool".to_string());
-        let display = format!("{}", err);
-        assert!(display.contains("IPPool not found"));
-        assert!(display.contains("test-pool"));
-    }
-
-    #[test]
     fn test_controller_error_display_invalid_config() {
         let err = ControllerError::InvalidConfig("Invalid configuration".to_string());
         let display = format!("{}", err);

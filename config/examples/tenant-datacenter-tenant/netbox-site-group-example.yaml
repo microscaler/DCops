@@ -4,25 +4,17 @@ metadata:
   name: production-sites
   namespace: default
 spec:
-  name: "Production Sites"
-  slug: "production-sites"
-  description: "Production datacenter sites"
-  comments: "Production datacenter sites group. Managed by DCops controller."
-  # Optional: parent site group for hierarchical organization
-  # parent:
-  #   apiGroup: "dcops.microscaler.io"
-  #   kind: "NetBoxSiteGroup"
-  #   name: "all-sites"
-  # Tag references (optional)
-  # Tags must exist in NetBox before they can be referenced
-  # See netbox-tag-example.yaml for creating tags
+  name: Production Sites
+  slug: production-sites
+  description: Production datacenter sites
+  comments: Production datacenter sites group. Managed by DCops controller.
+  driftDetection: true
   tags:
-    - apiGroup: dcops.microscaler.io
-      kind: NetBoxTag
-      name: managed-by-dcops
-      namespace: default
-    - apiGroup: dcops.microscaler.io
-      kind: NetBoxTag
-      name: production
-      namespace: default
-
+  - apiGroup: dcops.microscaler.io
+    kind: NetBoxTag
+    name: managed-by-dcops
+    namespace: default
+  - apiGroup: dcops.microscaler.io
+    kind: NetBoxTag
+    name: production
+    namespace: default

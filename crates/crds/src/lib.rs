@@ -11,9 +11,6 @@
 pub mod boot_profile;
 pub mod boot_intent;
 
-// IPAM resources
-pub mod ip_pool;
-pub mod ip_claim;
 
 // Common reference types
 pub mod references;
@@ -33,8 +30,6 @@ pub mod extras;
 // Re-exports
 pub use boot_profile::*;
 pub use boot_intent::*;
-pub use ip_pool::*;
-pub use ip_claim::*;
 pub use references::*;
 
 // Re-export all DCIM resources

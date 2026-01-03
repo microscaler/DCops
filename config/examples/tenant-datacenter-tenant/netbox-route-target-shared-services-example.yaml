@@ -4,48 +4,45 @@ metadata:
   name: shared-services-rt-65000-200
   namespace: default
 spec:
-  # Route Target name (required)
-  # Format: RFC 4360 format (e.g., "65000:200")
-  name: "65000:200"
-
-  # Tenant reference (optional)
+  name: 65000:200
   tenant:
     apiGroup: dcops.microscaler.io
     kind: NetBoxTenant
     name: datacenter-tenant
     namespace: default
+  description: Shared services route target for common infrastructure routes
+  comments: 'This route target is used for:
 
-  # Description (optional)
-  description: "Shared services route target for common infrastructure routes"
-
-  # Comments (optional)
-  comments: |
-    This route target is used for:
     - Shared DNS/DHCP services
+
     - Common monitoring infrastructure
+
     - Shared storage networks
-    
+
+
     Routes with this target are imported by multiple VRFs
+
     to provide access to shared services.
-    
+
+
     Managed by DCops automation system.
 
-  # Tag references (optional)
+    '
+  driftDetection: true
   tags:
-    - apiGroup: dcops.microscaler.io
-      kind: NetBoxTag
-      name: managed-by-dcops
-      namespace: default
-    - apiGroup: dcops.microscaler.io
-      kind: NetBoxTag
-      name: production
-      namespace: default
-    - apiGroup: dcops.microscaler.io
-      kind: NetBoxTag
-      name: route-target
-      namespace: default
-    - apiGroup: dcops.microscaler.io
-      kind: NetBoxTag
-      name: shared-services
-      namespace: default
-
+  - apiGroup: dcops.microscaler.io
+    kind: NetBoxTag
+    name: managed-by-dcops
+    namespace: default
+  - apiGroup: dcops.microscaler.io
+    kind: NetBoxTag
+    name: production
+    namespace: default
+  - apiGroup: dcops.microscaler.io
+    kind: NetBoxTag
+    name: route-target
+    namespace: default
+  - apiGroup: dcops.microscaler.io
+    kind: NetBoxTag
+    name: shared-services
+    namespace: default

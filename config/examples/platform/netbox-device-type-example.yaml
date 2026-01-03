@@ -5,26 +5,23 @@ metadata:
   namespace: default
 spec:
   manufacturer:
-    apiGroup: "dcops.microscaler.io"
-    kind: "NetBoxManufacturer"
-    name: "raspberry-pi"
-  model: "Raspberry Pi 4 Model B"
-  slug: "raspberry-pi-4-model-b"
-  partNumber: "RPI4-MODB-4GB"
-  uHeight: 1.0  # Rack units (1U)
+    apiGroup: dcops.microscaler.io
+    kind: NetBoxManufacturer
+    name: raspberry-pi
+  model: Raspberry Pi 4 Model B
+  slug: raspberry-pi-4-model-b
+  partNumber: RPI4-MODB-4GB
+  uHeight: 1.0
   isFullDepth: false
-  description: "Raspberry Pi 4 Model B with 4GB RAM"
-  comments: "Managed by DCops"
-  # Tag references (optional)
-  # Tags must exist in NetBox before they can be referenced
-  # See netbox-tag-example.yaml for creating tags
+  description: Raspberry Pi 4 Model B with 4GB RAM
+  comments: Managed by DCops
+  driftDetection: true
   tags:
-    - apiGroup: dcops.microscaler.io
-      kind: NetBoxTag
-      name: managed-by-dcops
-      namespace: default
-    - apiGroup: dcops.microscaler.io
-      kind: NetBoxTag
-      name: client-device
-      namespace: default
-
+  - apiGroup: dcops.microscaler.io
+    kind: NetBoxTag
+    name: managed-by-dcops
+    namespace: default
+  - apiGroup: dcops.microscaler.io
+    kind: NetBoxTag
+    name: client-device
+    namespace: default

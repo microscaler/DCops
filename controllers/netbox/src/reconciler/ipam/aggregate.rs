@@ -155,7 +155,8 @@ impl Reconciler {
                         &aggregate_crd.spec.tags,
                         namespace,
                         name,
-                    ).await;
+                    None,
+                ).await;
                     let resolved_tags = crate::reconcile_helpers::convert_tags_to_strings(resolved_tags_json);
                     
                     match netbox_client.as_ref().update_aggregate(
@@ -240,7 +241,8 @@ impl Reconciler {
                             &aggregate_crd.spec.tags,
                             namespace,
                             name,
-                        ).await;
+                        None,
+                ).await;
                         let resolved_tags = crate::reconcile_helpers::convert_tags_to_strings(resolved_tags_json);
                         
                         match netbox_client.as_ref().update_aggregate(
@@ -279,7 +281,8 @@ impl Reconciler {
                         &aggregate_crd.spec.tags,
                         namespace,
                         name,
-                    ).await;
+                    None,
+                ).await;
                     let resolved_tags = crate::reconcile_helpers::convert_tags_to_strings(resolved_tags_json);
                     
                     match netbox_client.create_aggregate(

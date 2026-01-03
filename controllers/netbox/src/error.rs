@@ -18,14 +18,6 @@ pub enum ControllerError {
     #[error("NetBox error: {0}")]
     NetBox(#[from] NetBoxError),
     
-    /// IPPool not found
-    #[error("IPPool not found: {0}")]
-    IPPoolNotFound(String),
-    
-    /// IPClaim not found
-    #[error("IPClaim not found: {0}")]
-    #[allow(dead_code)] // Reserved for future use
-    IPClaimNotFound(String),
     
     /// Invalid configuration
     #[error("Invalid configuration: {0}")]

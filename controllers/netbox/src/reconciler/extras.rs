@@ -77,6 +77,7 @@ impl Reconciler {
                     &role_crd.spec.tags,
                     namespace,
                     name,
+                    role_crd.status.as_ref().and_then(|s| s.netbox_id).filter(|&id| id != 0),
                 ).await;
                 
                 // Convert resolved tags from Vec<serde_json::Value> to Vec<String>
@@ -174,7 +175,8 @@ impl Reconciler {
                         &role_crd.spec.tags,
                         namespace,
                         name,
-                    ).await;
+                    None,
+                ).await;
                     let resolved_tags = crate::reconcile_helpers::convert_tags_to_strings(resolved_tags_json);
                     
                     // Update tags if they differ
@@ -220,7 +222,8 @@ impl Reconciler {
                         &role_crd.spec.tags,
                         namespace,
                         name,
-                    ).await;
+                    None,
+                ).await;
                     let resolved_tags = crate::reconcile_helpers::convert_tags_to_strings(resolved_tags_json);
                     
                     debug!("Attempting to create role {} in NetBox", role_crd.spec.name);

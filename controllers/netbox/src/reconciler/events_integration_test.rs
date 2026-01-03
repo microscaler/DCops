@@ -494,62 +494,6 @@ mod tests {
             .expect("Event message should mention device creation");
     }
     
-    /// Test that CREATED event infrastructure works for IPPool reconciler
-    #[tokio::test]
-    async fn test_created_event_on_ip_pool_infrastructure() {
-        let netbox_url = "http://test-netbox".to_string();
-        let mock_token_resolver = Arc::new(MockTokenResolver::new(netbox_url.clone()));
-        let (reconciler, _, mock_event_recorder) = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
-        
-        use crate::test_utils::create_test_ip_pool;
-        let ip_pool = create_test_ip_pool("test-pool", "default", "test-prefix", None);
-        
-        reconciler.record_event_normal(
-            reasons::CREATED,
-            "Created IPPool test-pool in NetBox",
-            &ip_pool,
-        ).await;
-        
-        let event = assert_normal_event_emitted(&mock_event_recorder, reasons::CREATED)
-            .expect("CREATED event should be emitted");
-        assert_event_for_resource(&event, &ip_pool)
-            .expect("Event should be for the correct IPPool resource");
-        assert_event_message_contains(&event, "Created IPPool")
-            .expect("Event message should mention IPPool creation");
-    }
-    
-    /// Test that CREATED event infrastructure works for IPClaim reconciler
-    #[tokio::test]
-    async fn test_created_event_on_ip_claim_infrastructure() {
-        let netbox_url = "http://test-netbox".to_string();
-        let mock_token_resolver = Arc::new(MockTokenResolver::new(netbox_url.clone()));
-        let (reconciler, _, mock_event_recorder) = create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
-        
-        use crate::test_utils::create_test_ip_claim;
-        let ip_claim = create_test_ip_claim(
-            "test-claim",
-            "default",
-            "test-pool",
-            None, // pool_ref_namespace
-            "test-device", // device_name (required)
-            None, // interface
-            None, // preferred_ip
-        );
-        
-        reconciler.record_event_normal(
-            reasons::CREATED,
-            "Allocated IP for IPClaim test-claim",
-            &ip_claim,
-        ).await;
-        
-        let event = assert_normal_event_emitted(&mock_event_recorder, reasons::CREATED)
-            .expect("CREATED event should be emitted");
-        assert_event_for_resource(&event, &ip_claim)
-            .expect("Event should be for the correct IPClaim resource");
-        assert_event_message_contains(&event, "IPClaim")
-            .expect("Event message should mention IPClaim");
-    }
-    
     /// Test that CREATED event infrastructure works for Aggregate reconciler
     #[tokio::test]
     async fn test_created_event_on_aggregate_infrastructure() {

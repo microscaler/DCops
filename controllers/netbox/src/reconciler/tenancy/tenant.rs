@@ -2,7 +2,7 @@
 //! 
 //! Handles: NetBoxTenant
 
-use super::Reconciler;
+use crate::reconciler::Reconciler;
 use crate::error::ControllerError;
 use crate::kube_api_trait::KubeApiTrait;
 use crds::{NetBoxTenant, ResourceState};
@@ -216,40 +216,44 @@ impl Reconciler {
             Some(tenant) => {
                 // Resource exists - check for drift between spec and NetBox
                 // Separate tag updates from other field updates for DRY code
-                let needs_update = {
-                    // Compare name
-                    let name_changed = tenant_crd.spec.name != tenant.name;
-                    if name_changed {
-                        debug!("Tenant name changed: '{}' -> '{}'", tenant.name, tenant_crd.spec.name);
+                
+                // Resolve tenant group ID from CRD spec for comparison
+                let spec_group_id = if let Some(group_ref) = &tenant_crd.spec.group {
+                    match netbox_client.as_ref().get_tenant_group_by_name(&group_ref.name).await {
+                        Ok(Some(group)) => Some(group.id),
+                        Ok(None) => {
+                            warn!("Tenant group '{}' specified in CRD but not found in NetBox", group_ref.name);
+                            None
+                        }
+                        Err(e) => {
+                            warn!("Failed to resolve tenant group '{}' from CRD: {}", group_ref.name, e);
+                            None
+                        }
                     }
-                    
-                    // Compare slug
-                    let slug_changed = if let Some(slug) = &tenant_crd.spec.slug {
-                        slug != &tenant.slug
-                    } else {
-                        // No slug in spec, but NetBox has one - check if it matches auto-generated
-                        let auto_slug = tenant_crd.spec.name.to_lowercase().replace(' ', "-");
-                        auto_slug != tenant.slug
-                    };
-                    if slug_changed {
-                        debug!("Tenant slug changed: '{}' -> '{}'", tenant.slug, tenant_crd.spec.slug.as_deref().unwrap_or(&tenant_crd.spec.name.to_lowercase().replace(' ', "-")));
-                    }
-                    
-                    // Compare description
-                    let description_changed = tenant_crd.spec.description.as_deref() != tenant.description.as_deref();
-                    if description_changed {
-                        debug!("Tenant description changed");
-                    }
-                    
-                    // Compare comments
-                    let comments_changed = tenant_crd.spec.comments.as_deref() != tenant.comments.as_deref();
-                    if comments_changed {
-                        debug!("Tenant comments changed");
-                    }
-                    
-                    // Note: Tags are handled separately using update_tags_if_differ helper
-                    name_changed || slug_changed || description_changed || comments_changed
+                } else {
+                    None
                 };
+                
+                // Get current group ID from NetBox tenant
+                let netbox_group_id = tenant.group.as_ref().map(|g| g.id);
+                
+                // Use reusable helpers for DRY field comparison
+                // See docs/implementationChecklists/MACRO_ANALYSIS.md for why we use helpers instead of macros
+                use crate::reconcile_helpers::{
+                    compare_string_field,
+                    compare_slug_field,
+                    compare_optional_string_field,
+                    compare_optional_dependency_id,
+                };
+                
+                let auto_generated_slug = tenant_crd.spec.name.to_lowercase().replace(' ', "-");
+                let needs_update = 
+                    compare_string_field(&tenant_crd.spec.name, &tenant.name)
+                    || compare_slug_field(&tenant_crd.spec.slug, &tenant.slug, auto_generated_slug)
+                    || compare_optional_string_field(&tenant_crd.spec.description, &tenant.description)
+                    || compare_optional_string_field(&tenant_crd.spec.comments, &tenant.comments)
+                    || compare_optional_dependency_id(spec_group_id, netbox_group_id);
+                // Note: Tags are handled separately using update_tags_if_differ helper
                 
                 // Update other fields if they changed
                 let mut tenant = if needs_update {
@@ -258,15 +262,8 @@ impl Reconciler {
                     let slug = tenant_crd.spec.slug.as_deref().map(|s| s.to_string())
                         .unwrap_or_else(|| tenant_crd.spec.name.to_lowercase().replace(' ', "-"));
                     
-                    // Resolve tenant group ID if group reference provided
-                    let group_id = if let Some(group_ref) = &tenant_crd.spec.group {
-                        match netbox_client.as_ref().get_tenant_group_by_name(&group_ref.name).await {
-                            Ok(Some(group)) => Some(group.id),
-                            _ => None,
-                        }
-                    } else {
-                        None
-                    };
+                    // Use already resolved group_id from above
+                    let group_id = spec_group_id;
                     
                     match netbox_client.as_ref().update_tenant(
                         TenantId(tenant.id),
@@ -313,22 +310,16 @@ impl Reconciler {
                         &tenant_crd.spec.tags,
                         namespace,
                         name,
-                    ).await;
+                    None,
+                ).await;
                     let resolved_tags = crate::reconcile_helpers::convert_tags_to_strings(resolved_tags_json);
                     
                     // Prepare slug for update
                     let slug = tenant_crd.spec.slug.as_deref().map(|s| s.to_string())
                         .unwrap_or_else(|| tenant_crd.spec.name.to_lowercase().replace(' ', "-"));
                     
-                    // Resolve tenant group ID if group reference provided (needed for update)
-                    let group_id = if let Some(group_ref) = &tenant_crd.spec.group {
-                        match netbox_client.as_ref().get_tenant_group_by_name(&group_ref.name).await {
-                            Ok(Some(group)) => Some(group.id),
-                            _ => None,
-                        }
-                    } else {
-                        None
-                    };
+                    // Use already resolved group_id from above (no need to resolve again)
+                    let group_id = spec_group_id;
                     
                     match netbox_client.as_ref().update_tenant(
                         TenantId(tenant.id),
@@ -443,37 +434,10 @@ impl Reconciler {
                         }
                     }
                 } else {
-                    info!("No tenant group specified in CRD, checking for existing tenant groups");
-                    // Check if any tenant groups exist, if not create a default one
-                    match netbox_client.query_tenant_groups(&[], false).await {
-                        Ok(groups) if !groups.is_empty() => {
-                            // Use the first available tenant group
-                            let group = &groups[0];
-                            info!("Using existing tenant group '{}' (ID: {}) for tenant", group.name, group.id);
-                            Some(group.id)
-                        }
-                        _ => {
-                            // Create a default tenant group
-                            debug!("No tenant groups found, attempting to create default tenant group 'Default'");
-                            match netbox_client.as_ref().create_tenant_group(
-                                "Default",
-                                Some("default"), // Slug is required
-                                Some("Default tenant group for DCops".to_string()),
-                                None, // comments
-                                None, // parent_id
-                                None, // tags - not yet implemented
-                            ).await {
-                                Ok(group) => {
-                                    info!("Created default tenant group '{}' (ID: {})", group.name, group.id);
-                                    Some(group.id)
-                                }
-                                Err(e) => {
-                                    warn!("Failed to create default tenant group: {}, will try without group", e);
-                                    None
-                                }
-                            }
-                        }
-                    }
+                    // No tenant group specified - this is valid (tenant groups are optional in NetBox)
+                    // GitOps principle: Only create resources via CRDs, not by direct API calls
+                    debug!("No tenant group specified in CRD for tenant {}/{}", namespace, name);
+                    None
                 };
                 
                 let netbox_tenant = if let Some(existing) = existing_tenant {

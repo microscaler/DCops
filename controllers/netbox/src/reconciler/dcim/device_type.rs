@@ -4,9 +4,36 @@ use super::super::Reconciler;
 use crate::error::ControllerError;
 use tracing::{info, error, debug, warn};
 use crds::{NetBoxDeviceType, ResourceState};
-use netbox_client::{NetBoxClientTrait, ManufacturerId};
+use netbox_client::ManufacturerId;
 
 impl Reconciler {
+    fn device_type_needs_update(
+        spec: &crds::NetBoxDeviceTypeSpec,
+        existing: &netbox_client::DeviceType,
+        desired_manufacturer_id: u64,
+    ) -> bool {
+        use crate::reconcile_helpers::{
+            compare_string_field,
+            compare_slug_field,
+            compare_optional_string_field,
+            compare_required_dependency_id,
+            compare_optional_numeric_field,
+        };
+        
+        let auto_generated_slug = spec.model.to_lowercase().replace(' ', "-");
+        let existing_manufacturer_id = existing.manufacturer.id;
+        
+        compare_required_dependency_id(desired_manufacturer_id, Some(existing_manufacturer_id))
+            || compare_string_field(&spec.model, &existing.model)
+            || compare_slug_field(&spec.slug, &existing.slug, auto_generated_slug)
+            || compare_optional_string_field(&spec.part_number, &existing.part_number)
+            || compare_optional_numeric_field(&Some(spec.u_height), &Some(existing.u_height))
+            || spec.is_full_depth != existing.is_full_depth
+            || compare_optional_string_field(&spec.description, &existing.description)
+            || compare_optional_string_field(&spec.comments, &existing.comments)
+        // Tags are handled separately
+    }
+
     pub async fn reconcile_netbox_device_type(&self, device_type_crd: &NetBoxDeviceType) -> Result<(), ControllerError> {
         // Extract name and namespace using helper
         use crate::reconcile_helpers::{extract_name_and_namespace, validate_reference_kind, resolve_required_dependency_id};
@@ -90,30 +117,36 @@ impl Reconciler {
             DriftCheckResult::Recreate => None,
         };
         
+        // Check if drift detection is enabled (defaults to true)
+        let drift_detection_enabled = device_type_crd.spec.drift_detection.unwrap_or(true);
+        
         let netbox_device_type = match netbox_device_type {
             Some(device_type) => {
-                // Always resolve tags (even if nothing else changed, tags might need updating)
-                let resolved_tags_json = self.resolve_tag_references(
-                    netbox_client.as_ref(),
-                    &device_type_crd.spec.tags,
-                    namespace,
-                    name,
-                ).await;
-                
-                // Convert resolved tags from Vec<serde_json::Value> to Vec<String>
-                let resolved_tags = crate::reconcile_helpers::convert_tags_to_strings(resolved_tags_json);
-                
-                // Update tags if they differ
-                use netbox_client::DeviceTypeId;
-                let device_type_id = device_type.id;
-                let device_type_clone = device_type.clone();
-                let device_type = match crate::reconcile_helpers::update_tags_if_differ(
-                    device_type,
-                    &device_type_crd.spec.tags,
-                    resolved_tags.clone(),
-                    |tags| async move {
-                        netbox_client.update_device_type(
-                            DeviceTypeId(device_type_id),
+                // Check for field drift if enabled
+                if drift_detection_enabled {
+                    if Self::device_type_needs_update(&device_type_crd.spec, &device_type, manufacturer_id) {
+                        // Field drift detected - update NetBox to match CRD (Git is source of truth)
+                        warn!("NetBoxDeviceType {}/{} fields differ from CRD spec, updating to match Git", namespace, name);
+                        use crate::events::reasons;
+                        self.record_event_warning(
+                            reasons::DRIFT_DETECTED,
+                            &format!("NetBoxDeviceType {}/{} fields differ from CRD, updating to match Git", namespace, name),
+                            device_type_crd,
+                        ).await;
+                        
+                        // Resolve tags for update
+                        let resolved_tags_json = self.resolve_tag_references(
+                            netbox_client.as_ref(),
+                            &device_type_crd.spec.tags,
+                            namespace,
+                            name,
+                            Some(device_type.id),
+                        ).await;
+                        let resolved_tags = crate::reconcile_helpers::convert_tags_to_strings(resolved_tags_json);
+                        
+                        use netbox_client::DeviceTypeId;
+                        match netbox_client.update_device_type(
+                            DeviceTypeId(device_type.id),
                             Some(ManufacturerId(manufacturer_id)),
                             Some(&device_type_crd.spec.model),
                             device_type_crd.spec.slug.as_deref(),
@@ -122,69 +155,129 @@ impl Reconciler {
                             Some(device_type_crd.spec.is_full_depth),
                             device_type_crd.spec.description.clone(),
                             device_type_crd.spec.comments.clone(),
-                            tags,
-                        ).await
-                    },
-                    &format!("NetBoxDeviceType {}/{}", namespace, name),
-                ).await {
-                    Ok(Some(updated)) => {
-                        use crate::events::reasons;
-                        self.record_event_normal(
-                            reasons::UPDATED,
-                            &format!("Updated NetBoxDeviceType {}/{} tags in NetBox", namespace, name),
-                            device_type_crd,
-                        ).await;
-                        updated
-                    }
-                    Ok(None) => device_type_clone, // Tags are up-to-date
-                    Err(e) => {
-                        warn!("Failed to update NetBoxDeviceType {}/{} tags: {}", namespace, name, e);
-                        device_type_clone // Use existing if update fails
-                    }
-                };
-                
-                // Check if status needs updating
-                use crate::reconcile_helpers::status_needs_update;
-                let needs_status_update = status_needs_update(
-                    device_type_crd.status.as_ref(),
-                    device_type.id,
-                    &device_type.url,
-                    "Created",
-                    None,
-                );
-                
-                if needs_status_update {
-                    let status_patch = Self::create_typed_device_type_status_patch(
-                        device_type.id,
-                        device_type.url.clone(),
-                        ResourceState::Created,
-                        None,
-                    );
-                    let pp = kube::api::PatchParams::default();
-                    match self.netbox_device_type_api
-                        .patch_status(name, &pp, &kube::api::Patch::Merge(status_patch.clone()))
-                        .await
-                    {
-                        Ok(_) => {
-                            debug!("Updated NetBoxDeviceType {}/{} status: NetBox ID {}", namespace, name, device_type.id);
-                            return Ok(());
+                            resolved_tags,
+                        ).await {
+                            Ok(updated) => {
+                                info!("Updated NetBoxDeviceType {}/{} in NetBox to match CRD (ID: {})", namespace, name, updated.id);
+                                use crate::events::reasons;
+                                self.record_event_normal(
+                                    reasons::UPDATED,
+                                    &format!("Updated NetBoxDeviceType {}/{} in NetBox to match CRD", namespace, name),
+                                    device_type_crd,
+                                ).await;
+                                updated
+                            }
+                            Err(e) => {
+                                error!("Failed to update NetBoxDeviceType {}/{} in NetBox: {}", namespace, name, e);
+                                use crate::events::reasons;
+                                self.record_event_warning(
+                                    reasons::RECONCILIATION_FAILED,
+                                    &format!("Failed to update NetBoxDeviceType {}/{} in NetBox: {}", namespace, name, e),
+                                    device_type_crd,
+                                ).await;
+                                // Continue with existing device_type - don't fail reconciliation
+                                device_type
+                            }
                         }
-                        Err(e) => {
-                            let error_msg = format!("Failed to update NetBoxDeviceType status: {}", e);
-                            error!("{}", error_msg);
-                            // Emit event for reconciliation failure
-                            use crate::events::reasons;
-                            self.record_event_warning(
-                                reasons::RECONCILIATION_FAILED,
-                                &error_msg,
-                                device_type_crd,
-                            ).await;
-                            return Err(ControllerError::Kube(e.into()));
+                    } else {
+                        // No field drift - check tags
+                        let resolved_tags_json = self.resolve_tag_references(
+                            netbox_client.as_ref(),
+                            &device_type_crd.spec.tags,
+                            namespace,
+                            name,
+                            Some(device_type.id),
+                        ).await;
+                        let resolved_tags = crate::reconcile_helpers::convert_tags_to_strings(resolved_tags_json);
+                        
+                        use netbox_client::DeviceTypeId;
+                        let device_type_id = device_type.id;
+                        let device_type_clone = device_type.clone();
+                        match crate::reconcile_helpers::update_tags_if_differ(
+                            device_type,
+                            &device_type_crd.spec.tags,
+                            resolved_tags,
+                            |tags| async move {
+                                netbox_client.update_device_type(
+                                    DeviceTypeId(device_type_id),
+                                    Some(ManufacturerId(manufacturer_id)),
+                                    Some(&device_type_crd.spec.model),
+                                    device_type_crd.spec.slug.as_deref(),
+                                    device_type_crd.spec.part_number.as_deref(),
+                                    Some(device_type_crd.spec.u_height),
+                                    Some(device_type_crd.spec.is_full_depth),
+                                    device_type_crd.spec.description.clone(),
+                                    device_type_crd.spec.comments.clone(),
+                                    tags,
+                                ).await
+                            },
+                            &format!("NetBoxDeviceType {}/{}", namespace, name),
+                        ).await {
+                            Ok(Some(updated)) => {
+                                use crate::events::reasons;
+                                self.record_event_normal(
+                                    reasons::UPDATED,
+                                    &format!("Updated NetBoxDeviceType {}/{} tags in NetBox", namespace, name),
+                                    device_type_crd,
+                                ).await;
+                                updated
+                            }
+                            Ok(None) => device_type_clone, // Tags are up-to-date
+                            Err(e) => {
+                                warn!("Failed to update NetBoxDeviceType {}/{} tags: {}", namespace, name, e);
+                                device_type_clone // Use existing if update fails
+                            }
                         }
                     }
                 } else {
-                    debug!("NetBoxDeviceType {}/{} already has correct status (ID: {}), skipping update", namespace, name, device_type.id);
-                    return Ok(());
+                    // Drift detection disabled - only check tags
+                    let resolved_tags_json = self.resolve_tag_references(
+                        netbox_client.as_ref(),
+                        &device_type_crd.spec.tags,
+                        namespace,
+                        name,
+                        Some(device_type.id),
+                    ).await;
+                    let resolved_tags = crate::reconcile_helpers::convert_tags_to_strings(resolved_tags_json);
+                    
+                    use netbox_client::DeviceTypeId;
+                    let device_type_id = device_type.id;
+                    let device_type_clone = device_type.clone();
+                    match crate::reconcile_helpers::update_tags_if_differ(
+                        device_type,
+                        &device_type_crd.spec.tags,
+                        resolved_tags,
+                        |tags| async move {
+                            netbox_client.update_device_type(
+                                DeviceTypeId(device_type_id),
+                                Some(ManufacturerId(manufacturer_id)),
+                                Some(&device_type_crd.spec.model),
+                                device_type_crd.spec.slug.as_deref(),
+                                device_type_crd.spec.part_number.as_deref(),
+                                Some(device_type_crd.spec.u_height),
+                                Some(device_type_crd.spec.is_full_depth),
+                                device_type_crd.spec.description.clone(),
+                                device_type_crd.spec.comments.clone(),
+                                tags,
+                            ).await
+                        },
+                        &format!("NetBoxDeviceType {}/{}", namespace, name),
+                    ).await {
+                        Ok(Some(updated)) => {
+                            use crate::events::reasons;
+                            self.record_event_normal(
+                                reasons::UPDATED,
+                                &format!("Updated NetBoxDeviceType {}/{} tags in NetBox", namespace, name),
+                                device_type_crd,
+                            ).await;
+                            updated
+                        }
+                        Ok(None) => device_type_clone, // Tags are up-to-date
+                        Err(e) => {
+                            warn!("Failed to update NetBoxDeviceType {}/{} tags: {}", namespace, name, e);
+                            device_type_clone // Use existing if update fails
+                        }
+                    }
                 }
             }
             None => {
@@ -208,7 +301,8 @@ impl Reconciler {
                         &device_type_crd.spec.tags,
                         namespace,
                         name,
-                    ).await;
+                    None,
+                ).await;
                     let resolved_tags = crate::reconcile_helpers::convert_tags_to_strings(resolved_tags_json);
                     
                     // Update tags if they differ
@@ -257,7 +351,8 @@ impl Reconciler {
                         &device_type_crd.spec.tags,
                         namespace,
                         name,
-                    ).await;
+                    None,
+                ).await;
                     let resolved_tags = crate::reconcile_helpers::convert_tags_to_strings(resolved_tags_json);
                     
                     debug!("Attempting to create device type {} in NetBox", device_type_crd.spec.model);

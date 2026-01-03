@@ -53,67 +53,38 @@ impl Reconciler {
         desired_import_target_ids: &Option<Vec<u64>>,
         desired_export_target_ids: &Option<Vec<u64>>,
     ) -> bool {
-        // Compare name
-        if spec.name != existing.name {
-            debug!("VRF name changed: '{}' -> '{}'", existing.name, spec.name);
-            return true;
-        }
+        use crate::reconcile_helpers::{
+            compare_string_field,
+            compare_optional_string_field,
+            compare_optional_dependency_id,
+        };
         
-        // Compare RD
-        if spec.rd != existing.rd {
-            debug!("VRF RD changed: {:?} -> {:?}", existing.rd, spec.rd);
-            return true;
-        }
-        
-        // Compare enforce_unique
-        if spec.enforce_unique != existing.enforce_unique {
-            debug!("VRF enforce_unique changed: {} -> {}", existing.enforce_unique, spec.enforce_unique);
-            return true;
-        }
-        
-        // Compare tenant
         let existing_tenant_id = existing.tenant.as_ref().map(|t| t.id);
-        if desired_tenant_id != existing_tenant_id {
-            debug!("VRF tenant changed: {:?} -> {:?}", existing_tenant_id, desired_tenant_id);
-            return true;
-        }
         
-        // Compare description
-        let spec_desc = spec.description.as_deref().unwrap_or("");
-        if spec_desc != existing.description {
-            debug!("VRF description changed: '{}' -> '{}'", existing.description, spec_desc);
-            return true;
-        }
-        
-        // Compare comments
+        // VRF model has description and comments as String (not Option<String>)
+        let spec_description = spec.description.as_deref().unwrap_or("");
         let spec_comments = spec.comments.as_deref().unwrap_or("");
-        if spec_comments != existing.comments {
-            debug!("VRF comments changed: '{}' -> '{}'", existing.comments, spec_comments);
-            return true;
-        }
         
-        // Compare import targets
-        let existing_import_ids: Vec<u64> = existing.import_targets.iter().map(|rt| rt.id).collect();
-        let desired_import_ids = desired_import_target_ids.as_ref().map(|ids| ids.as_slice()).unwrap_or(&[]);
-        if existing_import_ids != desired_import_ids {
-            debug!("VRF import_targets changed: {:?} -> {:?}", existing_import_ids, desired_import_ids);
-            return true;
-        }
+        // Compare route target vectors (need to sort for comparison)
+        let mut existing_import_ids: Vec<u64> = existing.import_targets.iter().map(|rt| rt.id).collect();
+        existing_import_ids.sort();
+        let mut desired_import_ids = desired_import_target_ids.as_ref().cloned().unwrap_or_default();
+        desired_import_ids.sort();
         
-        // Compare export targets
-        let existing_export_ids: Vec<u64> = existing.export_targets.iter().map(|rt| rt.id).collect();
-        let desired_export_ids = desired_export_target_ids.as_ref().map(|ids| ids.as_slice()).unwrap_or(&[]);
-        if existing_export_ids != desired_export_ids {
-            debug!("VRF export_targets changed: {:?} -> {:?}", existing_export_ids, desired_export_ids);
-            return true;
-        }
+        let mut existing_export_ids: Vec<u64> = existing.export_targets.iter().map(|rt| rt.id).collect();
+        existing_export_ids.sort();
+        let mut desired_export_ids = desired_export_target_ids.as_ref().cloned().unwrap_or_default();
+        desired_export_ids.sort();
         
-        // Compare tags using helper function
-        if crate::reconcile_helpers::tags_differ(&existing.tags, &spec.tags) {
-            return true;
-        }
-        
-        false // No changes needed
+        compare_string_field(&spec.name, &existing.name)
+            || compare_optional_string_field(&spec.rd, &existing.rd)
+            || spec.enforce_unique != existing.enforce_unique
+            || compare_optional_dependency_id(desired_tenant_id, existing_tenant_id)
+            || compare_string_field(spec_description, &existing.description)
+            || compare_string_field(spec_comments, &existing.comments)
+            || existing_import_ids != desired_import_ids
+            || existing_export_ids != desired_export_ids
+        // Tags are handled separately using tags_differ helper
     }
 
     pub async fn reconcile_netbox_vrf(&self, vrf_crd: &NetBoxVRF) -> Result<(), ControllerError> {
@@ -222,6 +193,7 @@ impl Reconciler {
                     &vrf_crd.spec.tags,
                     namespace,
                     name,
+                None,
                 ).await;
                 
                 // Convert resolved tags from Vec<serde_json::Value> to Vec<String>
@@ -376,7 +348,8 @@ impl Reconciler {
             &vrf_crd.spec.tags,
             namespace,
             name,
-        ).await;
+        None,
+                ).await;
         
         // Convert resolved tags from Vec<serde_json::Value> to Vec<String>
         let resolved_tags: Option<Vec<String>> = resolved_tags_json.map(|tags| {

@@ -91,3 +91,203 @@ spec:
     kind: NetBoxTenant
     name: datacenter-tenant
     namespace: default
+
+---
+# Tenant-managed tag for VRF resources (uses datacenter-tenant's token)
+apiVersion: dcops.microscaler.io/v1alpha1
+kind: NetBoxTag
+metadata:
+  name: vrf
+  namespace: default
+spec:
+  name: "vrf"
+  slug: "vrf"
+  description: "Tag for VRF (Virtual Routing and Forwarding) resources"
+  color: "9c27b0"
+  comments: "Tag for VRF resources managed by DCops"
+  tenant:
+    apiGroup: dcops.microscaler.io
+    kind: NetBoxTenant
+    name: datacenter-tenant
+    namespace: default
+
+---
+# Tenant-managed tag for MPLS-enabled resources (uses datacenter-tenant's token)
+apiVersion: dcops.microscaler.io/v1alpha1
+kind: NetBoxTag
+metadata:
+  name: mpls-enabled
+  namespace: default
+spec:
+  name: "mpls-enabled"
+  slug: "mpls-enabled"
+  description: "Tag for MPLS-enabled resources"
+  color: "673ab7"
+  comments: "Tag for MPLS-enabled resources managed by DCops"
+  tenant:
+    apiGroup: dcops.microscaler.io
+    kind: NetBoxTenant
+    name: datacenter-tenant
+    namespace: default
+
+---
+# Tenant-managed tag for BGP EVPN resources (uses datacenter-tenant's token)
+apiVersion: dcops.microscaler.io/v1alpha1
+kind: NetBoxTag
+metadata:
+  name: bgp-evpn
+  namespace: default
+spec:
+  name: "bgp-evpn"
+  slug: "bgp-evpn"
+  description: "Tag for BGP EVPN (Ethernet VPN) resources"
+  color: "3f51b5"
+  comments: "Tag for BGP EVPN resources managed by DCops"
+  tenant:
+    apiGroup: dcops.microscaler.io
+    kind: NetBoxTenant
+    name: datacenter-tenant
+    namespace: default
+
+---
+# Tenant-managed tag for Route Target resources (uses datacenter-tenant's token)
+apiVersion: dcops.microscaler.io/v1alpha1
+kind: NetBoxTag
+metadata:
+  name: route-target
+  namespace: default
+spec:
+  name: "route-target"
+  slug: "route-target"
+  description: "Tag for Route Target resources"
+  color: "2196f3"
+  comments: "Tag for Route Target resources managed by DCops"
+  tenant:
+    apiGroup: dcops.microscaler.io
+    kind: NetBoxTenant
+    name: datacenter-tenant
+    namespace: default
+
+---
+# Tenant-managed tag for Shared Services resources (uses datacenter-tenant's token)
+apiVersion: dcops.microscaler.io/v1alpha1
+kind: NetBoxTag
+metadata:
+  name: shared-services
+  namespace: default
+spec:
+  name: "shared-services"
+  slug: "shared-services"
+  description: "Tag for shared services resources"
+  color: "00bcd4"
+  comments: "Tag for shared services resources managed by DCops"
+  tenant:
+    apiGroup: dcops.microscaler.io
+    kind: NetBoxTenant
+    name: datacenter-tenant
+    namespace: default
+
+---
+# Tenant-managed tag (uses datacenter-tenant's token)
+# Used for BGP EVPN (Ethernet VPN) resources
+apiVersion: dcops.microscaler.io/v1alpha1
+kind: NetBoxTag
+metadata:
+  name: bgp-evpn
+  namespace: default
+spec:
+  name: "bgp-evpn"
+  slug: "bgp-evpn"
+  description: "BGP EVPN (Ethernet VPN) resources"
+  color: "0066cc"
+  comments: "Tag for BGP EVPN enabled resources"
+  # Tenant reference - tag will be managed using this tenant's NetBox API token
+  tenant:
+    apiGroup: dcops.microscaler.io
+    kind: NetBoxTenant
+    name: datacenter-tenant
+    namespace: default
+
+---
+# Tenant-managed tag (uses datacenter-tenant's token)
+# Used for MPLS-enabled resources
+apiVersion: dcops.microscaler.io/v1alpha1
+kind: NetBoxTag
+metadata:
+  name: mpls-enabled
+  namespace: default
+spec:
+  name: "mpls-enabled"
+  slug: "mpls-enabled"
+  description: "MPLS-enabled resources"
+  color: "cc0066"
+  comments: "Tag for MPLS-enabled resources"
+  # Tenant reference - tag will be managed using this tenant's NetBox API token
+  tenant:
+    apiGroup: dcops.microscaler.io
+    kind: NetBoxTenant
+    name: datacenter-tenant
+    namespace: default
+
+---
+# Tenant-managed tag (uses datacenter-tenant's token)
+# Used for route target resources
+apiVersion: dcops.microscaler.io/v1alpha1
+kind: NetBoxTag
+metadata:
+  name: route-target
+  namespace: default
+spec:
+  name: "route-target"
+  slug: "route-target"
+  description: "Route target resources"
+  color: "00cc66"
+  comments: "Tag for route target resources"
+  # Tenant reference - tag will be managed using this tenant's NetBox API token
+  tenant:
+    apiGroup: dcops.microscaler.io
+    kind: NetBoxTenant
+    name: datacenter-tenant
+    namespace: default
+
+---
+# Tenant-managed tag (uses datacenter-tenant's token)
+# Used for shared services resources
+apiVersion: dcops.microscaler.io/v1alpha1
+kind: NetBoxTag
+metadata:
+  name: shared-services
+  namespace: default
+spec:
+  name: "shared-services"
+  slug: "shared-services"
+  description: "Shared services resources"
+  color: "cc6600"
+  comments: "Tag for shared services resources"
+  # Tenant reference - tag will be managed using this tenant's NetBox API token
+  tenant:
+    apiGroup: dcops.microscaler.io
+    kind: NetBoxTenant
+    name: datacenter-tenant
+    namespace: default
+
+---
+# Tenant-managed tag (uses datacenter-tenant's token)
+# Used for VRF (Virtual Routing and Forwarding) resources
+apiVersion: dcops.microscaler.io/v1alpha1
+kind: NetBoxTag
+metadata:
+  name: vrf
+  namespace: default
+spec:
+  name: "vrf"
+  slug: "vrf"
+  description: "VRF (Virtual Routing and Forwarding) resources"
+  color: "6600cc"
+  comments: "Tag for VRF resources"
+  # Tenant reference - tag will be managed using this tenant's NetBox API token
+  tenant:
+    apiGroup: dcops.microscaler.io
+    kind: NetBoxTenant
+    name: datacenter-tenant
+    namespace: default

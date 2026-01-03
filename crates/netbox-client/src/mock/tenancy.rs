@@ -104,6 +104,14 @@ pub async fn query_tenant_groups(client: &MockNetBoxClient, _filters: &[(&str, &
         Ok(tenant_groups.values().cloned().collect())
 }
 
+pub async fn get_tenant_group(client: &MockNetBoxClient, id: u64) -> Result<TenantGroup, NetBoxError> {
+        let tenant_groups = client.tenant_groups.lock().unwrap();
+        tenant_groups.values()
+            .find(|tg| tg.id == id)
+            .cloned()
+            .ok_or_else(|| NetBoxError::NotFound(format!("Tenant group {} not found", id)))
+}
+
 pub async fn get_tenant_group_by_name(client: &MockNetBoxClient, name: &str) -> Result<Option<TenantGroup>, NetBoxError> {
         Ok(client.tenant_groups.lock().unwrap().get(name).cloned())
 }

@@ -634,8 +634,6 @@ pub struct TestReconcilerApis {
     pub region_api: std::sync::Arc<crate::kube_api_trait::mock::MockKubeApi<crds::NetBoxRegion>>,
     pub site_group_api: std::sync::Arc<crate::kube_api_trait::mock::MockKubeApi<crds::NetBoxSiteGroup>>,
     pub location_api: std::sync::Arc<crate::kube_api_trait::mock::MockKubeApi<crds::NetBoxLocation>>,
-    pub ip_pool_api: std::sync::Arc<crate::kube_api_trait::mock::MockKubeApi<crds::IPPool>>,
-    pub ip_claim_api: std::sync::Arc<crate::kube_api_trait::mock::MockKubeApi<crds::IPClaim>>,
 }
 
 /// Helper to create a test reconciler with MockTokenResolver
@@ -677,8 +675,6 @@ pub fn create_test_reconciler_with_mock_token_resolver(
     let region_api = Arc::new(MockKubeApi::<NetBoxRegion>::new());
     let site_group_api = Arc::new(MockKubeApi::<NetBoxSiteGroup>::new());
     let location_api = Arc::new(MockKubeApi::<NetBoxLocation>::new());
-    let ip_pool_api = Arc::new(MockKubeApi::<IPPool>::new());
-    let ip_claim_api = Arc::new(MockKubeApi::<IPClaim>::new());
     
     // Create MockSecretFetcher using the same secret storage
     use crate::secret_fetcher::mock::MockSecretFetcher;
@@ -719,9 +715,6 @@ pub fn create_test_reconciler_with_mock_token_resolver(
         region_api.clone(),
         site_group_api.clone(),
         location_api.clone(),
-        // Custom CRDs
-        ip_pool_api.clone(),
-        ip_claim_api.clone(),
     );
     
     let apis = TestReconcilerApis {
@@ -747,8 +740,6 @@ pub fn create_test_reconciler_with_mock_token_resolver(
         region_api,
         site_group_api,
         location_api,
-        ip_pool_api,
-        ip_claim_api,
     };
     
     // Unwrap the Arc to return the MockEventRecorder directly

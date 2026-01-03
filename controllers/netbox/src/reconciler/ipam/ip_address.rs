@@ -18,12 +18,20 @@ impl Reconciler {
     /// 2. Extract the NetBox tag ID from the CRD status
     /// 3. If ID not found, query NetBox by name/slug
     /// 4. Return a list of tag IDs or dictionaries for the NetBox API
+    /// 
+    /// # Arguments
+    /// - `netbox_client`: NetBox client to use for queries
+    /// - `tag_refs`: Optional list of tag references to resolve
+    /// - `namespace`: Namespace of the resource referencing the tags
+    /// - `resource_name`: Name of the resource referencing the tags
+    /// - `resource_netbox_id`: Optional NetBox ID of the resource (for better error messages)
     pub async fn resolve_tag_references(
         &self,
         netbox_client: &dyn NetBoxClientTrait,
         tag_refs: &Option<Vec<crds::NetBoxResourceReference>>,
         namespace: &str,
         resource_name: &str,
+        resource_netbox_id: Option<u64>,
     ) -> Option<Vec<serde_json::Value>> {
         let tag_refs = match tag_refs {
             Some(refs) if !refs.is_empty() => refs,
@@ -42,20 +50,96 @@ impl Reconciler {
                 Ok(tag_crd) => {
                     if let Some(status) = &tag_crd.status {
                         if let Some(id) = status.netbox_id {
+                            if id == 0 {
+                                // Tag CRD exists but hasn't been reconciled yet - wait for it
+                                if let Some(netbox_id) = resource_netbox_id {
+                                    warn!(
+                                        "⚠️  NetBoxTag CRD '{}/{}' exists but hasn't been reconciled yet (netbox_id is 0). \
+                                        The tag reconciler will create it in NetBox. \
+                                        Resource '{}/{}' (NetBox ID: {}) will be requeued to wait for tag reconciliation. \
+                                        If this persists, check the NetBoxTag reconciler logs.",
+                                        tag_namespace, tag_ref.name, namespace, resource_name, netbox_id
+                                    );
+                                } else {
+                                    warn!(
+                                        "⚠️  NetBoxTag CRD '{}/{}' exists but hasn't been reconciled yet (netbox_id is 0). \
+                                        The tag reconciler will create it in NetBox. \
+                                        Resource '{}/{}' will be requeued to wait for tag reconciliation. \
+                                        If this persists, check the NetBoxTag reconciler logs.",
+                                        tag_namespace, tag_ref.name, namespace, resource_name
+                                    );
+                                }
+                                return None; // Return None to signal dependency not ready, will be requeued
+                            }
                             debug!("Resolved tag {}/{} to NetBox ID {} from CRD status", tag_namespace, tag_ref.name, id);
                             Some(id)
                         } else {
-                            warn!("NetBoxTag CRD {}/{} exists but has no netbox_id in status, querying NetBox", tag_namespace, tag_ref.name);
-                            None
+                            // Tag CRD exists but has no netbox_id - wait for reconciliation
+                            if let Some(netbox_id) = resource_netbox_id {
+                                warn!(
+                                    "⚠️  NetBoxTag CRD '{}/{}' exists but has no netbox_id in status. \
+                                    The tag reconciler will create it in NetBox. \
+                                    Resource '{}/{}' (NetBox ID: {}) will be requeued to wait for tag reconciliation. \
+                                    If this persists, check the NetBoxTag reconciler logs.",
+                                    tag_namespace, tag_ref.name, namespace, resource_name, netbox_id
+                                );
+                            } else {
+                                warn!(
+                                    "⚠️  NetBoxTag CRD '{}/{}' exists but has no netbox_id in status. \
+                                    The tag reconciler will create it in NetBox. \
+                                    Resource '{}/{}' will be requeued to wait for tag reconciliation. \
+                                    If this persists, check the NetBoxTag reconciler logs.",
+                                    tag_namespace, tag_ref.name, namespace, resource_name
+                                );
+                            }
+                            return None; // Return None to signal dependency not ready, will be requeued
                         }
                     } else {
-                        warn!("NetBoxTag CRD {}/{} exists but has no status, querying NetBox", tag_namespace, tag_ref.name);
-                        None
+                        // Tag CRD exists but has no status - wait for reconciliation
+                        if let Some(netbox_id) = resource_netbox_id {
+                            warn!(
+                                "⚠️  NetBoxTag CRD '{}/{}' exists but has no status. \
+                                The tag reconciler will create it in NetBox. \
+                                Resource '{}/{}' (NetBox ID: {}) will be requeued to wait for tag reconciliation. \
+                                If this persists, check the NetBoxTag reconciler logs.",
+                                tag_namespace, tag_ref.name, namespace, resource_name, netbox_id
+                            );
+                        } else {
+                            warn!(
+                                "⚠️  NetBoxTag CRD '{}/{}' exists but has no status. \
+                                The tag reconciler will create it in NetBox. \
+                                Resource '{}/{}' will be requeued to wait for tag reconciliation. \
+                                If this persists, check the NetBoxTag reconciler logs.",
+                                tag_namespace, tag_ref.name, namespace, resource_name
+                            );
+                        }
+                        return None; // Return None to signal dependency not ready, will be requeued
                     }
                 }
                 Err(_) => {
-                    debug!("NetBoxTag CRD {}/{} not found, querying NetBox directly", tag_namespace, tag_ref.name);
-                    None
+                    // NetBoxTag CRD doesn't exist - warn user to create it
+                    if let Some(netbox_id) = resource_netbox_id {
+                        warn!(
+                            "⚠️  Tag '{}' is referenced in resource '{}/{}' (NetBox ID: {}) but the NetBoxTag CRD '{}/{}' does not exist. \
+                            The resource will be requeued until the tag CRD is created. \
+                            To fix this, create a NetBoxTag CRD with name '{}' in namespace '{}'. \
+                            See config/examples/tenant-datacenter-tenant/netbox-tag-example.yaml for examples. \
+                            Once the NetBoxTag CRD is created, the tag reconciler will automatically create it in NetBox.",
+                            tag_ref.name, namespace, resource_name, netbox_id, tag_namespace, tag_ref.name, tag_ref.name, tag_namespace
+                        );
+                    } else {
+                        warn!(
+                            "⚠️  Tag '{}' is referenced in resource '{}/{}' but the NetBoxTag CRD '{}/{}' does not exist. \
+                            The resource will be requeued until the tag CRD is created. \
+                            To fix this, create a NetBoxTag CRD with name '{}' in namespace '{}'. \
+                            See config/examples/tenant-datacenter-tenant/netbox-tag-example.yaml for examples. \
+                            Once the NetBoxTag CRD is created, the tag reconciler will automatically create it in NetBox.",
+                            tag_ref.name, namespace, resource_name, tag_namespace, tag_ref.name, tag_ref.name, tag_namespace
+                        );
+                    }
+                    // Return None to signal dependency not ready - this will cause the resource to be requeued
+                    // The user should create the NetBoxTag CRD, then the tag reconciler will create it in NetBox
+                    return None;
                 }
             };
             
@@ -65,22 +149,65 @@ impl Reconciler {
                 continue;
             }
             
-            // Fallback: Query NetBox directly by name
+            // Fallback: Query NetBox directly by name (in case tag was created manually or by another process)
             match netbox_client.query_tags(&[("name", &tag_ref.name)], false).await {
                 Ok(tags) => {
                     if let Some(tag) = tags.first() {
                         resolved_tags.push(serde_json::json!(tag.id));
-                        debug!("Resolved tag '{}' to NetBox ID {} via query", tag_ref.name, tag.id);
+                        warn!(
+                            "⚠️  Tag '{}' exists in NetBox (ID: {}) but the NetBoxTag CRD '{}/{}' is missing. \
+                            The tag was resolved from NetBox directly, but for proper GitOps management, \
+                            you should create a NetBoxTag CRD with name '{}' in namespace '{}' to track this tag. \
+                            See config/examples/tenant-datacenter-tenant/netbox-tag-example.yaml for examples.",
+                            tag_ref.name, tag.id, tag_namespace, tag_ref.name, tag_ref.name, tag_namespace
+                        );
+                        debug!("Resolved tag '{}' to NetBox ID {} via query (tag exists in NetBox but NetBoxTag CRD is missing)", tag_ref.name, tag.id);
                     } else {
-                        // Tag doesn't exist in NetBox - skip it
-                        // NetBox requires tags to exist before they can be referenced
-                        // TODO: Consider creating missing tags automatically in the future
-                        warn!("Tag '{}' not found in NetBox, skipping (tags must exist in NetBox before they can be assigned)", tag_ref.name);
+                        // Tag doesn't exist in NetBox and NetBoxTag CRD doesn't exist
+                        if let Some(netbox_id) = resource_netbox_id {
+                            warn!(
+                                "⚠️  Tag '{}' referenced in resource '{}/{}' (NetBox ID: {}) does not exist in NetBox and NetBoxTag CRD '{}/{}' not found. \
+                                The resource will be requeued until the tag CRD is created. \
+                                To fix this, create a NetBoxTag CRD with name '{}' in namespace '{}'. \
+                                See config/examples/tenant-datacenter-tenant/netbox-tag-example.yaml for examples. \
+                                Once the NetBoxTag CRD is created, the tag reconciler will automatically create it in NetBox.",
+                                tag_ref.name, namespace, resource_name, netbox_id, tag_namespace, tag_ref.name, tag_ref.name, tag_namespace
+                            );
+                        } else {
+                            warn!(
+                                "⚠️  Tag '{}' referenced in resource '{}/{}' does not exist in NetBox and NetBoxTag CRD '{}/{}' not found. \
+                                The resource will be requeued until the tag CRD is created. \
+                                To fix this, create a NetBoxTag CRD with name '{}' in namespace '{}'. \
+                                See config/examples/tenant-datacenter-tenant/netbox-tag-example.yaml for examples. \
+                                Once the NetBoxTag CRD is created, the tag reconciler will automatically create it in NetBox.",
+                                tag_ref.name, namespace, resource_name, tag_namespace, tag_ref.name, tag_ref.name, tag_namespace
+                            );
+                        }
+                        // Return None to signal dependency not ready - this will cause the resource to be requeued
+                        return None;
                     }
                 }
                 Err(e) => {
-                    // Query failed - skip this tag
-                    warn!("Failed to query tag '{}' from NetBox: {}, skipping (tags must exist in NetBox before they can be assigned)", tag_ref.name, e);
+                    // Query failed - warn user
+                    if let Some(netbox_id) = resource_netbox_id {
+                        warn!(
+                            "⚠️  Failed to query tag '{}' from NetBox: {}. Tag is referenced in resource '{}/{}' (NetBox ID: {}) but cannot be resolved. \
+                            The resource will be requeued. \
+                            If the NetBoxTag CRD '{}/{}' exists, check the tag reconciler logs. \
+                            If it doesn't exist, create it. See config/examples/tenant-datacenter-tenant/netbox-tag-example.yaml for examples.",
+                            tag_ref.name, e, namespace, resource_name, netbox_id, tag_namespace, tag_ref.name
+                        );
+                    } else {
+                        warn!(
+                            "⚠️  Failed to query tag '{}' from NetBox: {}. Tag is referenced in resource '{}/{}' but cannot be resolved. \
+                            The resource will be requeued. \
+                            If the NetBoxTag CRD '{}/{}' exists, check the tag reconciler logs. \
+                            If it doesn't exist, create it. See config/examples/tenant-datacenter-tenant/netbox-tag-example.yaml for examples.",
+                            tag_ref.name, e, namespace, resource_name, tag_namespace, tag_ref.name
+                        );
+                    }
+                    // Return None to signal dependency not ready - this will cause the resource to be requeued
+                    return None;
                 }
             }
         }
@@ -273,20 +400,15 @@ impl Reconciler {
         _desired_vlan_id: Option<u32>,
         desired_status: &str,
     ) -> bool {
-        // Compare tenant
+        use crate::reconcile_helpers::{
+            compare_required_dependency_id,
+            compare_string_field,
+            compare_optional_string_field,
+        };
+        
         let existing_tenant_id = existing.tenant.as_ref().map(|t| t.id);
-        if Some(desired_tenant_id) != existing_tenant_id {
-            debug!("IP address tenant changed: {:?} -> {}", existing_tenant_id, desired_tenant_id);
-            return true;
-        }
         
-        // Compare vlan
-        // Note: IPAddress model doesn't have a vlan field in the response,
-        // but vlan can be set via API. We can't compare vlan from existing resource,
-        // so we'll update if other fields changed. Vlan updates will be handled by
-        // always including vlan_id in update calls when provided.
-        
-        // Compare status
+        // Convert existing status enum to string for comparison
         let existing_status = match existing.status {
             netbox_client::IPAddressStatus::Active => "active",
             netbox_client::IPAddressStatus::Reserved => "reserved",
@@ -294,40 +416,25 @@ impl Reconciler {
             netbox_client::IPAddressStatus::Dhcp => "dhcp",
             netbox_client::IPAddressStatus::Slaac => "slaac",
         };
-        if desired_status != existing_status {
-            debug!("IP address status changed: '{}' -> '{}'", existing_status, desired_status);
-            return true;
-        }
         
-        // Compare role
-        let existing_role = existing.role.as_deref();
-        let desired_role = spec.role.as_deref();
-        if desired_role != existing_role {
-            debug!("IP address role changed: {:?} -> {:?}", existing_role, desired_role);
-            return true;
-        }
+        // IPAddress model has description and comments as String (not Option<String>)
+        let spec_description = spec.description.as_deref().unwrap_or("");
+        let spec_comments = spec.comments.as_deref().unwrap_or("");
+        let spec_dns_name = spec.dns_name.as_deref().unwrap_or("");
         
-        // Compare dns_name
-        let existing_dns_name = existing.dns_name.as_str();
-        let desired_dns_name = spec.dns_name.as_deref().unwrap_or("");
-        if desired_dns_name != existing_dns_name {
-            debug!("IP address dns_name changed: '{}' -> '{}'", existing_dns_name, desired_dns_name);
-            return true;
-        }
+        // Note: IPAddress model doesn't have a vlan field in the response,
+        // but vlan can be set via API. We can't compare vlan from existing resource,
+        // so we'll update if other fields changed. Vlan updates will be handled by
+        // always including vlan_id in update calls when provided.
         
-        // Compare description
-        let spec_desc = spec.description.as_deref().unwrap_or("");
-        if spec_desc != existing.description {
-            debug!("IP address description changed: '{}' -> '{}'", existing.description, spec_desc);
-            return true;
-        }
-        
-        // Compare tags using helper function
-        if crate::reconcile_helpers::tags_differ(&existing.tags, &spec.tags) {
-            return true;
-        }
-        
-        false // No changes needed
+        // Compare role - both are Option<String>
+        compare_required_dependency_id(desired_tenant_id, existing_tenant_id)
+            || compare_string_field(desired_status, existing_status)
+            || compare_optional_string_field(&spec.role, &existing.role)
+            || compare_string_field(spec_dns_name, existing.dns_name.as_str())
+            || compare_string_field(spec_description, &existing.description)
+            || compare_string_field(spec_comments, &existing.comments)
+        // Tags are handled separately using tags_differ helper
     }
 
     pub async fn reconcile_netbox_ip_address(&self, ip_address_crd: &NetBoxIPAddress) -> Result<(), ControllerError> {
@@ -483,8 +590,111 @@ impl Reconciler {
             None
         };
         
-        // Parse IP address from spec or status (for DHCP IPs, address may be in status)
-        let ip_net = if let Some(address) = &ip_address_crd.spec.address {
+        // Handle random DHCP allocation: if status is DHCP, no address in spec, and ipRange is provided,
+        // we need to allocate an IP from the range
+        let ip_net = if ip_address_crd.spec.address.is_none() 
+            && ip_address_crd.spec.status == crds::IPAddressStatus::Dhcp
+            && ip_range_id.is_some() {
+            // Random DHCP allocation: need to find an available IP in the range
+            let range_id = ip_range_id.unwrap();
+            info!("Random DHCP allocation requested for {}/{} from IP range {}", namespace, name, range_id);
+            
+            // Get the IP range to find available IPs
+            let ip_range = netbox_client.get_ip_range(netbox_client::IPRangeId(range_id)).await
+                .map_err(|e| ControllerError::NetBox(e))?;
+            
+            // Query existing IPs in the range to find an available one
+            // We'll iterate through the range and check if each IP exists
+            let start_ip = ip_range.start_address.addr();
+            let end_ip = ip_range.end_address.addr();
+            let prefix_len = ip_range.start_address.prefix_len();
+            
+            // Find an available IP by checking each IP in the range
+            let mut allocated_ip: Option<IpNet> = None;
+            let mut current_ip = start_ip;
+            let max_attempts = 100; // Limit attempts to avoid infinite loops
+            let mut attempts = 0;
+            
+            while current_ip <= end_ip && attempts < max_attempts {
+                attempts += 1;
+                let test_ip_net = IpNet::new(current_ip, prefix_len)
+                    .map_err(|e| ControllerError::InvalidInput(format!("Failed to create IP net from {}: {}", current_ip, e)))?;
+                let test_ip_str = test_ip_net.to_string();
+                
+                // Check if this IP already exists in NetBox
+                match netbox_client.query_ip_addresses(
+                    &[("address", test_ip_str.as_str())],
+                    false, // Don't fetch all, just check first page
+                ).await {
+                    Ok(existing_ips) => {
+                        // Filter to exact matches (NetBox API might return fuzzy matches)
+                        let exact_match = existing_ips.iter()
+                            .any(|ip| ip.address.to_string() == test_ip_str);
+                        
+                        if !exact_match {
+                            // This IP is available!
+                            allocated_ip = Some(test_ip_net);
+                            info!("Found available IP {} in range {} for random DHCP allocation", test_ip_str, range_id);
+                            break;
+                        }
+                    }
+                    Err(e) => {
+                        warn!("Failed to query IP {} from NetBox: {}, trying next IP", test_ip_str, e);
+                    }
+                }
+                
+                // Move to next IP
+                current_ip = match current_ip {
+                    std::net::IpAddr::V4(ipv4) => {
+                        let mut octets = ipv4.octets();
+                        // Increment the last octet
+                        if octets[3] < 255 {
+                            octets[3] += 1;
+                            std::net::IpAddr::V4(std::net::Ipv4Addr::from(octets))
+                        } else {
+                            // Overflow, break
+                            break;
+                        }
+                    }
+                    std::net::IpAddr::V6(_) => {
+                        // IPv6 increment is more complex, for now just break
+                        warn!("IPv6 random allocation not yet fully supported");
+                        break;
+                    }
+                };
+            }
+            
+            match allocated_ip {
+                Some(ip) => {
+                    // Store the allocated IP in status.address for future reconciliations
+                    let status_patch = Self::create_typed_ip_address_status_patch(
+                        0, // Will be set after creation
+                        String::new(), // Will be set after creation
+                        Some(ip.to_string()),
+                        ResourceState::Pending,
+                        None,
+                    );
+                    update_resource_status(
+                        &*self.netbox_ip_address_api,
+                        name,
+                        namespace,
+                        &status_patch,
+                        "NetBoxIPAddress",
+                        0,
+                    ).await?;
+                    ip
+                }
+                None => {
+                    let error_msg = format!(
+                        "No available IPs found in IP range {} (checked {} IPs from {} to {})",
+                        range_id, attempts, ip_range.start_address, ip_range.end_address
+                    );
+                    error!("NetBoxIPAddress {}/{}: {}", namespace, name, error_msg);
+                    update_status_error(&*self.netbox_ip_address_api, name, namespace, error_msg.clone(), ip_address_crd.status.as_ref()).await;
+                    return Err(ControllerError::InvalidInput(error_msg));
+                }
+            }
+        } else if let Some(address) = &ip_address_crd.spec.address {
             // Use address from spec (static IPs)
             IpNet::from_str(address)
                 .map_err(|e| ControllerError::InvalidInput(format!("Invalid IP address format '{}': {}", address, e)))?
@@ -646,11 +856,13 @@ impl Reconciler {
                 };
                 
                 // Always resolve tags (even if nothing else changed, tags might need updating)
+                let resource_netbox_id = remediated_ip.id;
                 let resolved_tags = self.resolve_tag_references(
                     netbox_client.as_ref(),
                     &ip_address_crd.spec.tags,
                     namespace,
                     name,
+                    Some(resource_netbox_id),
                 ).await;
                 
                 // Check if any field changed (including tags)
@@ -1021,11 +1233,16 @@ impl Reconciler {
         info!("Pre-creation check: No existing IP found for {}, creating new one", address_str);
         
         // Resolve tags from NetBoxResourceReference to NetBox tag IDs
+        // Get NetBox ID from status if available (for better error messages)
+        let resource_netbox_id = ip_address_crd.status.as_ref()
+            .and_then(|s| s.netbox_id)
+            .filter(|&id| id != 0); // Only use valid IDs
         let resolved_tags = self.resolve_tag_references(
             netbox_client.as_ref(),
             &ip_address_crd.spec.tags,
             namespace,
             name,
+            resource_netbox_id,
         ).await;
         
         debug!("Creating IP address {} with tenant_id: {}, tags: {:?}", address_str, tenant_id, resolved_tags);

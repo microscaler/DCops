@@ -4,41 +4,37 @@ metadata:
   name: control-plane-prefix
   namespace: default
 spec:
-  prefix: "192.168.1.0/24"
-  description: "Control plane IP address pool for Talos clusters"
+  prefix: 192.168.1.0/24
+  description: Control plane IP address pool for Talos clusters
   status: active
-  # Kubernetes-compliant object references (apiGroup, kind, name, optional namespace)
   site:
-    apiGroup: "dcops.microscaler.io"
-    kind: "NetBoxSite"
-    name: "datacenter-1"
+    apiGroup: dcops.microscaler.io
+    kind: NetBoxSite
+    name: datacenter-1
   tenant:
-    apiGroup: "dcops.microscaler.io"
-    kind: "NetBoxTenant"
-    name: "datacenter-tenant"
+    apiGroup: dcops.microscaler.io
+    kind: NetBoxTenant
+    name: datacenter-tenant
   aggregate:
-    apiGroup: "dcops.microscaler.io"
-    kind: "NetBoxAggregate"
-    name: "private-network-aggregate"
+    apiGroup: dcops.microscaler.io
+    kind: NetBoxAggregate
+    name: private-network-aggregate
   vlan:
-    apiGroup: "dcops.microscaler.io"
-    kind: "NetBoxVLAN"
-    name: "control-plane-vlan"
+    apiGroup: dcops.microscaler.io
+    kind: NetBoxVLAN
+    name: control-plane-vlan
   role:
-    apiGroup: "dcops.microscaler.io"
-    kind: "NetBoxRole"
-    name: "control-plane"
-  # Tag references (optional)
-  # Tags must exist in NetBox before they can be referenced
-  # See netbox-tag-example.yaml for creating tags
+    apiGroup: dcops.microscaler.io
+    kind: NetBoxRole
+    name: control-plane
   tags:
-    - apiGroup: dcops.microscaler.io
-      kind: NetBoxTag
-      name: managed-by-dcops
-      namespace: default
-    - apiGroup: dcops.microscaler.io
-      kind: NetBoxTag
-      name: production
-      namespace: default
-  comments: "Managed by DCops controller"
-
+  - apiGroup: dcops.microscaler.io
+    kind: NetBoxTag
+    name: managed-by-dcops
+    namespace: default
+  - apiGroup: dcops.microscaler.io
+    kind: NetBoxTag
+    name: production
+    namespace: default
+  comments: Managed by DCops controller
+  driftDetection: true

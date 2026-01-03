@@ -2,8 +2,7 @@
 //!
 //! Unified controller for managing all NetBox-related CRDs:
 //! - NetBoxPrefix: Creates and manages prefixes in NetBox
-//! - IPPool: Manages IP address pools (references NetBoxPrefix)
-//! - IPClaim: Allocates IP addresses from IPPools via NetBox
+//! Manages NetBox CRD types for IPAM, Tenancy, DCIM, and Extras.
 //!
 //! This controller ensures GitOps-style management of NetBox IPAM resources.
 

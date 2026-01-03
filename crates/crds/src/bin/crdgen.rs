@@ -21,8 +21,6 @@
 //! - Default values
 //! - Status subresources
 
-use crds::ip_claim::IPClaim;
-use crds::ip_pool::IPPool;
 use crds::boot_profile::BootProfile;
 use crds::boot_intent::BootIntent;
 
@@ -55,7 +53,7 @@ use crds::ipam::{
 };
 
 // Tenancy resources
-use crds::tenancy::NetBoxTenant;
+use crds::tenancy::{NetBoxTenant, NetBoxTenantGroup};
 
 // Extras resources
 use crds::extras::NetBoxTag;
@@ -66,10 +64,9 @@ fn main() {
     let mut crds = Vec::new();
     
     // IPAM resources
-    crds.push(IPClaim::crd());
-    crds.push(IPPool::crd());
     crds.push(NetBoxPrefix::crd());
     crds.push(NetBoxTenant::crd());
+    crds.push(NetBoxTenantGroup::crd());
     
     // DCIM resources - Sites
     crds.push(NetBoxRegion::crd());

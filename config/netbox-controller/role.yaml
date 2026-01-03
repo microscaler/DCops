@@ -21,6 +21,7 @@ rules:
   - netboxroutetargets
   # Tenancy resources
   - netboxtenants
+  - netboxtenantgroups
   # DCIM resources - Sites
   - netboxregions
   - netboxsitegroups
@@ -34,9 +35,6 @@ rules:
   - netboxdevices
   - netboxinterfaces
   - netboxmacaddresses
-  # Custom CRDs
-  - ippools
-  - ipclaims
   verbs:
   - get
   - list
@@ -61,6 +59,7 @@ rules:
   - netboxroutetargets/status
   # Tenancy resources
   - netboxtenants/status
+  - netboxtenantgroups/status
   # DCIM resources - Sites
   - netboxregions/status
   - netboxsitegroups/status
@@ -74,9 +73,6 @@ rules:
   - netboxdevices/status
   - netboxinterfaces/status
   - netboxmacaddresses/status
-  # Custom CRDs
-  - ippools/status
-  - ipclaims/status
   verbs:
   - get
   - update

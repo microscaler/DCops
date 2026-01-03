@@ -1,7 +1,7 @@
 //! Reconciliation logic for NetBox-related CRDs.
 //!
 //! This module is organized by NetBox API sections:
-//! - `ipam`: IP Address Management (Prefixes, Aggregates, IPClaims, IPPools)
+//! - `ipam`: IP Address Management (Prefixes, Aggregates, IP Ranges, IP Addresses)
 //! - `tenancy`: Tenancy (Tenants)
 //! - `dcim`: Data Center Infrastructure Management (Sites, Devices, Interfaces, etc.)
 //! - `extras`: Extras (Roles, Tags)
@@ -26,7 +26,7 @@ use crate::token_resolver::TokenResolverTrait;
 use crate::secret_fetcher::SecretFetcher;
 use netbox_client::{NetBoxClientTrait, PrefixId};
 use crds::{
-    IPClaim, IPPool, NetBoxPrefix, NetBoxTenant, NetBoxSite, NetBoxRole, NetBoxTag, NetBoxAggregate,
+    NetBoxPrefix, NetBoxTenant, NetBoxTenantGroup, NetBoxSite, NetBoxRole, NetBoxTag, NetBoxAggregate,
     NetBoxDeviceRole, NetBoxManufacturer, NetBoxPlatform, NetBoxDeviceType, NetBoxDevice,
     NetBoxInterface, NetBoxMACAddress, NetBoxVLAN, NetBoxRegion, NetBoxSiteGroup, NetBoxLocation,
     NetBoxRIR, NetBoxIPAddress, NetBoxIPRange, NetBoxVRF, NetBoxRouteTarget, PrefixState, ResourceState,
@@ -78,6 +78,7 @@ pub struct Reconciler {
     pub(crate) netbox_route_target_api: Box<dyn KubeApiTrait<NetBoxRouteTarget> + Send + Sync>,
     // Tenancy APIs
     pub(crate) netbox_tenant_api: Box<dyn KubeApiTrait<NetBoxTenant> + Send + Sync>,
+    pub(crate) netbox_tenant_group_api: Box<dyn KubeApiTrait<NetBoxTenantGroup> + Send + Sync>,
     // DCIM APIs
     pub(crate) netbox_site_api: Box<dyn KubeApiTrait<NetBoxSite> + Send + Sync>,
     pub(crate) netbox_device_role_api: Box<dyn KubeApiTrait<NetBoxDeviceRole> + Send + Sync>,
@@ -90,9 +91,6 @@ pub struct Reconciler {
     pub(crate) netbox_region_api: Box<dyn KubeApiTrait<NetBoxRegion> + Send + Sync>,
     pub(crate) netbox_site_group_api: Box<dyn KubeApiTrait<NetBoxSiteGroup> + Send + Sync>,
     pub(crate) netbox_location_api: Box<dyn KubeApiTrait<NetBoxLocation> + Send + Sync>,
-    // Custom CRDs
-    pub(crate) ip_pool_api: Box<dyn KubeApiTrait<IPPool> + Send + Sync>,
-    pub(crate) ip_claim_api: Box<dyn KubeApiTrait<IPClaim> + Send + Sync>,
     /// Error count tracking per resource (namespace/name -> BackoffState)
     backoff_states: Arc<Mutex<HashMap<String, BackoffState>>>,
 }
@@ -152,31 +150,6 @@ impl Reconciler {
                 "netboxId": netbox_id,
                 "netboxUrl": netbox_url,
                 "state": state_str,
-                "error": error,
-                // Removed lastReconciled to prevent reconciliation loops
-            }
-        })
-    }
-    
-    /// Helper to create IPClaim status patch with PascalCase state
-    /// NOTE: `lastReconciled` removed to prevent reconciliation loops
-    pub(crate) fn create_ipclaim_status_patch(
-        ip: Option<String>,
-        state: crds::AllocationState,
-        netbox_ip_ref: Option<String>,
-        error: Option<String>,
-    ) -> serde_json::Value {
-        let state_str = match state {
-            crds::AllocationState::Pending => "Pending",
-            crds::AllocationState::Allocated => "Allocated",
-            crds::AllocationState::Failed => "Failed",
-        };
-        
-        serde_json::json!({
-            "status": {
-                "ip": ip,
-                "state": state_str,
-                "netboxIpRef": netbox_ip_ref,
                 "error": error,
                 // Removed lastReconciled to prevent reconciliation loops
             }
@@ -394,6 +367,23 @@ impl Reconciler {
         serde_json::json!({ "status": status })
     }
     
+    /// Create typed NetBoxTenantGroupStatus and serialize to JSON patch
+    pub(crate) fn create_typed_tenant_group_status_patch(
+        netbox_id: u64,
+        netbox_url: String,
+        state: ResourceState,
+        error: Option<String>,
+    ) -> serde_json::Value {
+        let status = crds::NetBoxTenantGroupStatus {
+            netbox_id: Some(netbox_id),
+            netbox_url: Some(netbox_url),
+            state,
+            error,
+            last_reconciled: None, // Removed to prevent reconciliation loops
+        };
+        serde_json::json!({ "status": status })
+    }
+    
     /// Creates a new reconciler instance.
     pub fn new(
         token_resolver: Arc<dyn TokenResolverTrait>,
@@ -412,6 +402,7 @@ impl Reconciler {
         netbox_route_target_api: impl KubeApiTrait<NetBoxRouteTarget> + Send + Sync + 'static,
         // Tenancy APIs
         netbox_tenant_api: impl KubeApiTrait<NetBoxTenant> + Send + Sync + 'static,
+        netbox_tenant_group_api: impl KubeApiTrait<NetBoxTenantGroup> + Send + Sync + 'static,
         // DCIM APIs
         netbox_site_api: impl KubeApiTrait<NetBoxSite> + Send + Sync + 'static,
         netbox_device_role_api: impl KubeApiTrait<NetBoxDeviceRole> + Send + Sync + 'static,
@@ -424,9 +415,6 @@ impl Reconciler {
         netbox_region_api: impl KubeApiTrait<NetBoxRegion> + Send + Sync + 'static,
         netbox_site_group_api: impl KubeApiTrait<NetBoxSiteGroup> + Send + Sync + 'static,
         netbox_location_api: impl KubeApiTrait<NetBoxLocation> + Send + Sync + 'static,
-        // Custom CRDs
-        ip_pool_api: impl KubeApiTrait<IPPool> + Send + Sync + 'static,
-        ip_claim_api: impl KubeApiTrait<IPClaim> + Send + Sync + 'static,
     ) -> Self {
         Self {
             token_resolver,
@@ -445,6 +433,7 @@ impl Reconciler {
             netbox_route_target_api: Box::new(netbox_route_target_api),
             // Tenancy
             netbox_tenant_api: Box::new(netbox_tenant_api),
+            netbox_tenant_group_api: Box::new(netbox_tenant_group_api),
             // DCIM
             netbox_site_api: Box::new(netbox_site_api),
             netbox_device_role_api: Box::new(netbox_device_role_api),
@@ -457,9 +446,6 @@ impl Reconciler {
             netbox_region_api: Box::new(netbox_region_api),
             netbox_site_group_api: Box::new(netbox_site_group_api),
             netbox_location_api: Box::new(netbox_location_api),
-            // Custom
-            ip_pool_api: Box::new(ip_pool_api),
-            ip_claim_api: Box::new(ip_claim_api),
             backoff_states: Arc::new(Mutex::new(HashMap::new())),
         }
     }

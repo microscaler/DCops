@@ -4,69 +4,29 @@ metadata:
   name: dhcp-pool-range
   namespace: default
 spec:
-  # Start IP address with CIDR (required)
-  # Must be a valid CIDR notation (IP address with prefix length)
-  startAddress: "192.168.1.100/24"
-
-  # End IP address with CIDR (required)
-  # Must be a valid CIDR notation (IP address with prefix length)
-  # Must be in the same family (IPv4 or IPv6) as startAddress
-  endAddress: "192.168.1.200/24"
-
-  # Tenant reference (required)
+  startAddress: 192.168.1.100/24
+  endAddress: 192.168.1.200/24
   tenant:
     apiGroup: dcops.microscaler.io
     kind: NetBoxTenant
     name: datacenter-tenant
     namespace: default
-
-  # VRF reference (optional - not yet implemented)
-  # vrf:
-  #   apiGroup: dcops.microscaler.io
-  #   kind: NetBoxVRF
-  #   name: production-vrf
-  #   namespace: default
-
-  # IP range status (default: active)
-  # Options: active, reserved, deprecated
   status: active
-
-  # IP range role reference (optional)
-  # role:
-  #   apiGroup: dcops.microscaler.io
-  #   kind: NetBoxRole
-  #   name: dhcp-pool
-  #   namespace: default
-
-  # Description (optional)
-  description: "DHCP pool range for client devices"
-
-  # Comments (optional)
-  # Additional notes or documentation about this IP range
-  comments: "This IP range is used for DHCP pool allocation. Managed by DCops controller."
-
-  # Mark as utilized (for DHCP ranges, set to true)
-  # When true, all IPs in the range are considered utilized
-  markUtilized: true
-
-  # Mark as populated (for DHCP ranges, set to true)
-  # When true, all IPs in the range are considered populated
+  description: DHCP pool range for client devices
+  comments: This IP range is used for DHCP pool allocation. Managed by DCops controller.
+  driftDetection: true
+  markUtilized: false
   markPopulated: true
-
-  # Tag references (optional)
-  # Tags must exist in NetBox before they can be referenced
-  # See netbox-tag-example.yaml for creating tags
   tags:
-    - apiGroup: dcops.microscaler.io
-      kind: NetBoxTag
-      name: managed-by-dcops
-      namespace: default
-    - apiGroup: dcops.microscaler.io
-      kind: NetBoxTag
-      name: dhcp-managed
-      namespace: default
-    - apiGroup: dcops.microscaler.io
-      kind: NetBoxTag
-      name: client-device
-      namespace: default
-
+  - apiGroup: dcops.microscaler.io
+    kind: NetBoxTag
+    name: managed-by-dcops
+    namespace: default
+  - apiGroup: dcops.microscaler.io
+    kind: NetBoxTag
+    name: dhcp-managed
+    namespace: default
+  - apiGroup: dcops.microscaler.io
+    kind: NetBoxTag
+    name: client-device
+    namespace: default

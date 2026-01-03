@@ -4,22 +4,19 @@ metadata:
   name: kubernetes-control-plane
   namespace: default
 spec:
-  name: "Kubernetes Control Plane"
-  slug: "kubernetes-control-plane"
-  color: "2196f3"  # Blue color for control plane
-  vmRole: false  # Physical device role
-  description: "Kubernetes control plane nodes"
-  comments: "Managed by DCops"
-  # Tag references (optional)
-  # Tags must exist in NetBox before they can be referenced
-  # See netbox-tag-example.yaml for creating tags
+  name: Kubernetes Control Plane
+  slug: kubernetes-control-plane
+  color: 2196f3
+  vmRole: false
+  description: Kubernetes control plane nodes
+  comments: Managed by DCops
+  driftDetection: true
   tags:
-    - apiGroup: dcops.microscaler.io
-      kind: NetBoxTag
-      name: managed-by-dcops
-      namespace: default
-    - apiGroup: dcops.microscaler.io
-      kind: NetBoxTag
-      name: production
-      namespace: default
-
+  - apiGroup: dcops.microscaler.io
+    kind: NetBoxTag
+    name: managed-by-dcops
+    namespace: default
+  - apiGroup: dcops.microscaler.io
+    kind: NetBoxTag
+    name: production
+    namespace: default

@@ -4,21 +4,21 @@ metadata:
   name: us-east
   namespace: default
 spec:
-  name: "US East"
-  slug: "us-east"
-  description: "US East region for datacenter operations"
-  comments: "US East region for datacenter operations. Managed by DCops controller."
+  name: US East
+  slug: us-east
+  description: US East region for datacenter operations
+  comments: US East region for datacenter operations. Managed by DCops controller.
+  driftDetection: true
   parent:
-    apiGroup: "dcops.microscaler.io"
-    kind: "NetBoxRegion"
-    name: "north-america"
+    apiGroup: dcops.microscaler.io
+    kind: NetBoxRegion
+    name: north-america
   tags:
-    - apiGroup: dcops.microscaler.io
-      kind: NetBoxTag
-      name: managed-by-dcops
-      namespace: default
-    - apiGroup: dcops.microscaler.io
-      kind: NetBoxTag
-      name: production
-      namespace: default
-
+  - apiGroup: dcops.microscaler.io
+    kind: NetBoxTag
+    name: managed-by-dcops
+    namespace: default
+  - apiGroup: dcops.microscaler.io
+    kind: NetBoxTag
+    name: production
+    namespace: default

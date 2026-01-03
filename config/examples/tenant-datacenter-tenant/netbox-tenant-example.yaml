@@ -4,33 +4,25 @@ metadata:
   name: datacenter-tenant
   namespace: default
 spec:
-  name: "Data Center Operations"
-  slug: "datacenter-ops"
-  description: "Primary tenant for datacenter operations"
-  comments: "Managed by DCops"
-  # Secret reference containing the NetBox API token for this tenant
-  # The Secret must exist in the same namespace (or specified namespace)
-  # and contain a key (defaults to "token") with the NetBox API token
+  name: Data Center Operations
+  slug: datacenter-ops
+  description: Primary tenant for datacenter operations
+  comments: Managed by DCops
+  driftDetection: true
+  group:
+    apiGroup: dcops.microscaler.io
+    kind: NetBoxTenantGroup
+    name: default
+    namespace: default
   tokenSecret:
     name: netbox-token-datacenter-tenant
-    # namespace: default  # Optional: defaults to same namespace as Tenant CR
-    # key: token          # Optional: defaults to "token"
-  
-  # Reconcile interval in seconds (optional)
-  # How often to check for drift between the CRD spec and NetBox, even when no changes occur.
-  # Defaults to 300 seconds (5 minutes) if not specified.
-  # Set to 0 to disable periodic reconciliation (only reconcile on changes).
-  reconcileInterval: 300  # Check for drift every 5 minutes
-  # Tag references (optional)
-  # Tags must exist in NetBox before they can be referenced
-  # See netbox-tag-example.yaml for creating tags
+  reconcileInterval: 300
   tags:
-    - apiGroup: dcops.microscaler.io
-      kind: NetBoxTag
-      name: managed-by-dcops
-      namespace: default
-    - apiGroup: dcops.microscaler.io
-      kind: NetBoxTag
-      name: production
-      namespace: default
-
+  - apiGroup: dcops.microscaler.io
+    kind: NetBoxTag
+    name: managed-by-dcops
+    namespace: default
+  - apiGroup: dcops.microscaler.io
+    kind: NetBoxTag
+    name: production
+    namespace: default

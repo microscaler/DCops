@@ -213,7 +213,7 @@ where
 /// **Why this isn't used directly:**
 /// Each reconciler has type-specific status patch methods (e.g., `create_resource_status_patch`,
 /// `create_prefix_status_patch`, `create_ipclaim_status_patch`) that handle the correct state enum
-/// types (`ResourceState::Pending`, `PrefixState::Pending`, `AllocationState::Pending`).
+/// types (`ResourceState::Pending`, `PrefixState::Pending`).
 /// 
 /// The generic helper here returns a JSON structure with a hardcoded "Pending" string, but
 /// CRD validation schemas expect PascalCase enum values that match the specific state enum type.
@@ -367,54 +367,6 @@ impl NetBoxStatusCheck for crds::NetBoxIPRangeStatus {
         }
     }
     fn error(&self) -> Option<&str> { self.error.as_deref() }
-}
-
-impl NetBoxStatusCheck for crds::IPClaimStatus {
-    fn netbox_id(&self) -> Option<u64> { None }  // IPClaim doesn't have netbox_id
-    fn netbox_url(&self) -> Option<&str> { self.netbox_ip_ref.as_deref() }
-    fn state_str(&self) -> &str {
-        match self.state {
-            crds::AllocationState::Pending => "Pending",
-            crds::AllocationState::Allocated => "Allocated",
-            crds::AllocationState::Failed => "Failed",
-        }
-    }
-    fn error(&self) -> Option<&str> { self.error.as_deref() }
-}
-
-/// Extended trait for IPClaim status that includes IP address checking
-/// 
-/// IPClaim has an additional `ip` field that needs to be checked separately
-/// because it's not part of the standard NetBoxStatusCheck trait.
-pub trait IPClaimStatusCheck: NetBoxStatusCheck {
-    fn allocated_ip(&self) -> Option<&str>;
-}
-
-impl IPClaimStatusCheck for crds::IPClaimStatus {
-    fn allocated_ip(&self) -> Option<&str> { self.ip.as_deref() }
-}
-
-/// Check if IPClaim status needs updating (includes IP address check)
-pub fn ipclaim_status_needs_update(
-    current_status: Option<&crds::IPClaimStatus>,
-    desired_ip: Option<&str>,
-    desired_state: &str,
-    desired_netbox_ip_ref: Option<&str>,
-    desired_error: Option<&str>,
-) -> bool {
-    match current_status {
-        None => {
-            // No status - definitely need to update
-            true
-        }
-        Some(status) => {
-            // Check if any status field changed
-            status.allocated_ip() != desired_ip
-                || status.state_str() != desired_state
-                || status.netbox_url() != desired_netbox_ip_ref
-                || status.error() != desired_error
-        }
-    }
 }
 
 // Implement for all remaining NetBox status types
@@ -631,6 +583,20 @@ impl NetBoxStatusCheck for crds::NetBoxVRFStatus {
 }
 
 impl NetBoxStatusCheck for crds::NetBoxRouteTargetStatus {
+    fn netbox_id(&self) -> Option<u64> { self.netbox_id }
+    fn netbox_url(&self) -> Option<&str> { self.netbox_url.as_deref() }
+    fn state_str(&self) -> &str {
+        match self.state {
+            crds::ResourceState::Pending => "Pending",
+            crds::ResourceState::Created => "Created",
+            crds::ResourceState::Updated => "Updated",
+            crds::ResourceState::Failed => "Failed",
+        }
+    }
+    fn error(&self) -> Option<&str> { self.error.as_deref() }
+}
+
+impl NetBoxStatusCheck for crds::NetBoxTenantGroupStatus {
     fn netbox_id(&self) -> Option<u64> { self.netbox_id }
     fn netbox_url(&self) -> Option<&str> { self.netbox_url.as_deref() }
     fn state_str(&self) -> &str {
@@ -1137,9 +1103,18 @@ where
 /// 
 /// # Returns
 /// - `Ok(DriftCheckResult::UseExisting(resource))` if resource exists and is valid
+///   **IMPORTANT**: This only checks if the resource exists in NetBox. You MUST still check
+///   if the resource fields match the CRD spec and update NetBox if they differ (field drift).
+///   Git is the source of truth - any changes made in the NetBox UI should be corrected to match the CRD.
 /// - `Ok(DriftCheckResult::Recreate)` if resource should be recreated (status already cleared or resource deleted)
 /// - `Ok(DriftCheckResult::StatusCleared { message })` if status was cleared and needs to be updated
 /// - `Err(e)` if there's an error that should be retried
+/// 
+/// # Field Drift Detection
+/// After receiving `DriftCheckResult::UseExisting`, reconcilers MUST:
+/// 1. Compare NetBox resource fields with CRD spec using a `*_needs_update()` function
+/// 2. If fields differ, update NetBox to match the CRD (Git is source of truth)
+/// 3. Emit a `DRIFT_DETECTED` event when correcting field drift (not just `UPDATED`)
 /// 
 /// # Example
 /// ```rust
@@ -1153,7 +1128,17 @@ where
 /// 
 /// match result {
 ///     DriftCheckResult::UseExisting(site) => {
-///         // Use existing site for updates
+///         // Check for field drift - compare NetBox fields with CRD spec
+///         if Self::site_needs_update(&site_crd.spec, &site, tenant_id, region_id, site_group_id, "active") {
+///             // Fields differ - update NetBox to match CRD (Git is source of truth)
+///             use crate::events::reasons;
+///             self.record_event_warning(
+///                 reasons::DRIFT_DETECTED,
+///                 &format!("NetBoxSite {}/{} fields differ from CRD, updating to match Git", namespace, name),
+///                 site_crd,
+///             ).await;
+///             // ... update NetBox ...
+///         }
 ///     }
 ///     DriftCheckResult::Recreate => {
 ///         // Create new resource
@@ -1266,7 +1251,45 @@ where
         }
     }
 
-    // Other states (Pending, Updated) - need to create or retry
+    // Handle Updated state - verify resource still exists
+    if state_str == "Updated" {
+        match netbox_id {
+            Some(id) if id == 0 => {
+                // Updated state with invalid netbox_id (0) - clear status and recreate
+                warn!("{} {}/{} has Updated state with invalid netbox_id (0), clearing status and will recreate", resource_name, namespace, name);
+                return Ok(DriftCheckResult::StatusCleared {
+                    message: format!("Invalid netbox_id (0) in Updated state, will recreate"),
+                });
+            }
+            Some(id) => {
+                // Updated state with valid netbox_id - verify resource exists
+                match get_resource_fn(id).await {
+                    Ok(existing) => {
+                        // Resource exists and is valid
+                        return Ok(DriftCheckResult::UseExisting(existing));
+                    }
+                    Err(netbox_client::NetBoxError::NotFound(_)) => {
+                        // Drift detected - resource was deleted
+                        warn!("{} {}/{} was deleted in NetBox (ID: {}) while in Updated state, clearing status and will recreate", resource_name, namespace, name, id);
+                        return Ok(DriftCheckResult::StatusCleared {
+                            message: format!("Resource was deleted in NetBox, will recreate"),
+                        });
+                    }
+                    Err(e) => {
+                        // Other errors - retry
+                        error!("Failed to verify {} {}/{} (ID: {}) exists: {}, will retry", resource_name, namespace, name, id, e);
+                        return Err(ControllerError::NetBox(e));
+                    }
+                }
+            }
+            None => {
+                // Updated state but no netbox_id - need to create
+                return Ok(DriftCheckResult::Recreate);
+            }
+        }
+    }
+
+    // Other states (Pending) - need to create or retry
     Ok(DriftCheckResult::Recreate)
 }
 
@@ -1370,6 +1393,9 @@ impl HasTags for netbox_client::Aggregate {
     fn tags(&self) -> &[netbox_client::NestedTag] { &self.tags }
 }
 impl HasTags for netbox_client::Vlan {
+    fn tags(&self) -> &[netbox_client::NestedTag] { &self.tags }
+}
+impl HasTags for netbox_client::TenantGroup {
     fn tags(&self) -> &[netbox_client::NestedTag] { &self.tags }
 }
 
@@ -1565,6 +1591,133 @@ pub fn normalize_mac_address(mac: &str) -> Option<String> {
         .ok()
         .map(|m| clia_macaddr::format_mac_addr(&m)) // Format to standard format
 }
+
+/// Compare two string fields for equality
+/// 
+/// Simple helper for comparing required string fields like `name`.
+/// Returns `true` if fields differ, `false` if they match.
+pub fn compare_string_field(spec: &str, netbox: &str) -> bool {
+    if spec != netbox {
+        debug!("String field changed: '{}' -> '{}'", netbox, spec);
+        return true;
+    }
+    false
+}
+
+/// Compare slug fields with auto-generation support
+/// 
+/// Compares slug fields, handling the case where the CRD spec doesn't specify a slug
+/// but NetBox has one (which may be auto-generated from the name).
+/// 
+/// # Parameters
+/// - `spec_slug`: Optional slug from CRD spec
+/// - `netbox_slug`: Slug from NetBox resource
+/// - `auto_generated`: Auto-generated slug (typically `name.to_lowercase().replace(' ', "-")`)
+/// 
+/// # Returns
+/// `true` if slugs differ, `false` if they match.
+pub fn compare_slug_field(spec_slug: &Option<String>, netbox_slug: &str, auto_generated: String) -> bool {
+    let expected_slug = spec_slug.as_deref().unwrap_or(&auto_generated);
+    if expected_slug != netbox_slug {
+        debug!("Slug field changed: '{}' -> '{}'", netbox_slug, expected_slug);
+        return true;
+    }
+    false
+}
+
+/// Compare optional string fields for equality
+/// 
+/// Helper for comparing optional string fields like `description` and `comments`.
+/// Handles `None` vs `Some("")` as equivalent (both represent empty).
+/// Returns `true` if fields differ, `false` if they match.
+pub fn compare_optional_string_field(spec: &Option<String>, netbox: &Option<String>) -> bool {
+    let spec_value = spec.as_deref();
+    let netbox_value = netbox.as_deref();
+    
+    if spec_value != netbox_value {
+        debug!("Optional string field changed: {:?} -> {:?}", netbox_value, spec_value);
+        return true;
+    }
+    false
+}
+
+/// Compare optional dependency IDs
+/// 
+/// Helper for comparing optional dependency fields (like `group`, `region`, etc.)
+/// after they've been resolved to NetBox IDs.
+/// Returns `true` if IDs differ, `false` if they match.
+pub fn compare_optional_dependency_id(spec_id: Option<u64>, netbox_id: Option<u64>) -> bool {
+    if spec_id != netbox_id {
+        debug!("Optional dependency ID changed: {:?} -> {:?}", netbox_id, spec_id);
+        return true;
+    }
+    false
+}
+
+/// Compare required dependency IDs
+/// 
+/// Helper for comparing required dependency fields (like `tenant` for most resources)
+/// after they've been resolved to NetBox IDs.
+/// Returns `true` if IDs differ, `false` if they match.
+pub fn compare_required_dependency_id(spec_id: u64, netbox_id: Option<u64>) -> bool {
+    let netbox_id_value = netbox_id.unwrap_or(0);
+    if spec_id != netbox_id_value {
+        debug!("Required dependency ID changed: {:?} -> {}", netbox_id, spec_id);
+        return true;
+    }
+    false
+}
+
+/// Compare optional numeric fields for equality
+/// 
+/// Helper for comparing optional numeric fields like `latitude`, `longitude`, `u_height`, etc.
+/// Returns `true` if fields differ, `false` if they match.
+pub fn compare_optional_numeric_field<T: PartialEq + std::fmt::Debug>(spec: &Option<T>, netbox: &Option<T>) -> bool {
+    if spec != netbox {
+        debug!("Optional numeric field changed: {:?} -> {:?}", netbox, spec);
+        return true;
+    }
+    false
+}
+
+/// Compare enum fields for equality
+/// 
+/// Helper for comparing enum fields like `status`, `role`, `type`, etc.
+/// Returns `true` if fields differ, `false` if they match.
+pub fn compare_enum_field<T: PartialEq + std::fmt::Debug>(spec: &T, netbox: &T) -> bool {
+    if spec != netbox {
+        debug!("Enum field changed: {:?} -> {:?}", netbox, spec);
+        return true;
+    }
+    false
+}
+
+// ============================================================================
+// Field Comparison Helpers - Use These Instead of Macros
+// ============================================================================
+//
+// These helpers provide DRY field comparison logic without the complexity
+// of macros. Simply compose them with `||` operators:
+//
+// ```rust
+// let needs_update = 
+//     compare_string_field(&spec.name, &netbox.name)
+//     || compare_slug_field(&spec.slug, &netbox.slug, auto_generated)
+//     || compare_optional_string_field(&spec.description, &netbox.description)
+//     || compare_optional_string_field(&spec.comments, &netbox.comments)
+//     || compare_optional_dependency_id(spec_group_id, netbox_group_id);
+// ```
+//
+// This approach is:
+// - Simpler than macros (no macro_rules! complexity)
+// - More maintainable (easy to read and debug)
+// - Type-safe (full Rust type checking)
+// - Testable (each helper can be unit tested)
+// - Still DRY (all comparison logic in reusable helpers)
+//
+// See docs/implementationChecklists/MACRO_ANALYSIS.md for why we don't
+// use macros for this (previous macro attempts failed with async_trait).
+// Instead, we use simple helper function composition (see example above).
 
 pub fn is_conflict_error(error: &netbox_client::NetBoxError) -> bool {
     let error_str = format!("{}", error);

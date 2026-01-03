@@ -7,6 +7,26 @@ use crds::{NetBoxManufacturer, ResourceState};
 use netbox_client::NetBoxClientTrait;
 
 impl Reconciler {
+    /// Check if Manufacturer needs updating by comparing spec with existing NetBox resource
+    fn manufacturer_needs_update(
+        spec: &crds::NetBoxManufacturerSpec,
+        existing: &netbox_client::Manufacturer,
+    ) -> bool {
+        use crate::reconcile_helpers::{
+            compare_string_field,
+            compare_slug_field,
+            compare_optional_string_field,
+        };
+        
+        let auto_generated_slug = spec.name.to_lowercase().replace(' ', "-");
+        
+        compare_string_field(&spec.name, &existing.name)
+            || compare_slug_field(&spec.slug, &existing.slug, auto_generated_slug)
+            || compare_optional_string_field(&spec.description, &existing.description)
+            || compare_optional_string_field(&spec.comments, &existing.comments)
+        // Tags are handled separately
+    }
+
     pub async fn reconcile_netbox_manufacturer(&self, manufacturer_crd: &NetBoxManufacturer) -> Result<(), ControllerError> {
         // Extract name and namespace using helper
         use crate::reconcile_helpers::extract_name_and_namespace;
@@ -41,8 +61,67 @@ impl Reconciler {
             ).await?
         };
         
+        // Check if drift detection is enabled (defaults to true)
+        let drift_detection_enabled = manufacturer_crd.spec.drift_detection.unwrap_or(true);
+        
         let netbox_manufacturer = match drift_result {
-            DriftCheckResult::UseExisting(manufacturer) => Some(manufacturer),
+            DriftCheckResult::UseExisting(manufacturer) => {
+                // Check for field drift if enabled
+                if drift_detection_enabled {
+                    if Self::manufacturer_needs_update(&manufacturer_crd.spec, &manufacturer) {
+                        // Field drift detected - update NetBox to match CRD (Git is source of truth)
+                        warn!("NetBoxManufacturer {}/{} fields differ from CRD spec, updating to match Git", namespace, name);
+                        use crate::events::reasons;
+                        self.record_event_warning(
+                            reasons::DRIFT_DETECTED,
+                            &format!("NetBoxManufacturer {}/{} fields differ from CRD, updating to match Git", namespace, name),
+                            manufacturer_crd,
+                        ).await;
+                        
+                        // Resolve tags for update
+                        let resolved_tags_json = self.resolve_tag_references(
+                            netbox_client.as_ref(),
+                            &manufacturer_crd.spec.tags,
+                            namespace,
+                            name,
+                            Some(manufacturer.id),
+                        ).await;
+                        let resolved_tags = crate::reconcile_helpers::convert_tags_to_strings(resolved_tags_json);
+                        
+                        use netbox_client::ManufacturerId;
+                        match netbox_client.update_manufacturer(
+                            ManufacturerId(manufacturer.id),
+                            Some(&manufacturer_crd.spec.name),
+                            manufacturer_crd.spec.slug.as_deref(),
+                            manufacturer_crd.spec.description.clone(),
+                            manufacturer_crd.spec.comments.clone(),
+                            resolved_tags,
+                        ).await {
+                            Ok(updated) => {
+                                info!("Updated NetBoxManufacturer {}/{} in NetBox to match CRD (ID: {})", namespace, name, updated.id);
+                                Some(updated)
+                            }
+                            Err(e) => {
+                                error!("Failed to update NetBoxManufacturer {}/{} in NetBox: {}", namespace, name, e);
+                                use crate::events::reasons;
+                                self.record_event_warning(
+                                    reasons::RECONCILIATION_FAILED,
+                                    &format!("Failed to update NetBoxManufacturer {}/{} in NetBox: {}", namespace, name, e),
+                                    manufacturer_crd,
+                                ).await;
+                                return Err(ControllerError::NetBox(e));
+                            }
+                        }
+                    } else {
+                        // No field drift - use existing
+                        Some(manufacturer)
+                    }
+                } else {
+                    // Drift detection disabled - use existing without checking
+                    debug!("Drift detection disabled for NetBoxManufacturer {}/{}", namespace, name);
+                    Some(manufacturer)
+                }
+            }
             DriftCheckResult::StatusCleared { message } => {
                 // Emit event for drift detection
                 use crate::events::reasons;
@@ -76,6 +155,7 @@ impl Reconciler {
                     &manufacturer_crd.spec.tags,
                     namespace,
                     name,
+                None,
                 ).await;
                 
                 // Convert resolved tags from Vec<serde_json::Value> to Vec<String>
@@ -169,7 +249,8 @@ impl Reconciler {
                         &manufacturer_crd.spec.tags,
                         namespace,
                         name,
-                    ).await;
+                    None,
+                ).await;
                     let resolved_tags = crate::reconcile_helpers::convert_tags_to_strings(resolved_tags_json);
                     
                     // Update tags if they differ
@@ -214,7 +295,8 @@ impl Reconciler {
                         &manufacturer_crd.spec.tags,
                         namespace,
                         name,
-                    ).await;
+                    None,
+                ).await;
                     let resolved_tags = crate::reconcile_helpers::convert_tags_to_strings(resolved_tags_json);
                     
                     debug!("Attempting to create manufacturer {} in NetBox", manufacturer_crd.spec.name);

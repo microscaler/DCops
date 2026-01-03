@@ -16,102 +16,43 @@ impl Reconciler {
         desired_site_group_id: Option<u64>,
         desired_status: &str,
     ) -> bool {
-        // Compare name
-        if spec.name != existing.name {
-            debug!("Site name changed: '{}' -> '{}'", existing.name, spec.name);
-            return true;
-        }
+        use crate::reconcile_helpers::{
+            compare_string_field,
+            compare_slug_field,
+            compare_optional_string_field,
+            compare_required_dependency_id,
+            compare_optional_dependency_id,
+            compare_optional_numeric_field,
+        };
         
-        // Compare slug
-        if let Some(slug) = &spec.slug {
-            if slug != &existing.slug {
-                debug!("Site slug changed: '{}' -> '{}'", existing.slug, slug);
-                return true;
-            }
-        }
-        
-        // Compare description
-        if spec.description.as_deref() != existing.description.as_deref() {
-            debug!("Site description changed");
-            return true;
-        }
-        
-        // Compare physical_address
-        if spec.physical_address.as_deref() != existing.physical_address.as_deref() {
-            debug!("Site physical_address changed");
-            return true;
-        }
-        
-        // Compare shipping_address
-        if spec.shipping_address.as_deref() != existing.shipping_address.as_deref() {
-            debug!("Site shipping_address changed");
-            return true;
-        }
-        
-        // Compare latitude
-        if spec.latitude != existing.latitude {
-            debug!("Site latitude changed: {:?} -> {:?}", existing.latitude, spec.latitude);
-            return true;
-        }
-        
-        // Compare longitude
-        if spec.longitude != existing.longitude {
-            debug!("Site longitude changed: {:?} -> {:?}", existing.longitude, spec.longitude);
-            return true;
-        }
-        
-        // Compare tenant
+        let auto_generated_slug = spec.name.to_lowercase().replace(' ', "-");
         let existing_tenant_id = existing.tenant.as_ref().map(|t| t.id);
-        if Some(desired_tenant_id) != existing_tenant_id {
-            debug!("Site tenant changed: {:?} -> {}", existing_tenant_id, desired_tenant_id);
-            return true;
-        }
-        
-        // Compare region
         let existing_region_id = existing.region.as_ref().map(|r| r.id);
-        if desired_region_id != existing_region_id {
-            debug!("Site region changed: {:?} -> {:?}", existing_region_id, desired_region_id);
-            return true;
-        }
-        
-        // Compare site_group
         let existing_site_group_id = existing.site_group.as_ref().map(|sg| sg.id);
-        if desired_site_group_id != existing_site_group_id {
-            debug!("Site site_group changed: {:?} -> {:?}", existing_site_group_id, desired_site_group_id);
-            return true;
-        }
         
-        // Compare status
+        // Convert existing status enum to string for comparison
         let existing_status = match existing.status {
             netbox_client::SiteStatus::Active => "active",
             netbox_client::SiteStatus::Planned => "planned",
             netbox_client::SiteStatus::Retired => "retired",
             netbox_client::SiteStatus::Staging => "staging",
         };
-        if desired_status != existing_status {
-            debug!("Site status changed: '{}' -> '{}'", existing_status, desired_status);
-            return true;
-        }
         
-        // Compare facility
-        if spec.facility.as_deref() != existing.facility.as_deref() {
-            debug!("Site facility changed");
-            return true;
-        }
-        
-        // Compare time_zone
-        if spec.time_zone.as_deref() != existing.time_zone.as_deref() {
-            debug!("Site time_zone changed");
-            return true;
-        }
-        
-        // Compare comments
-        if spec.comments.as_deref() != existing.comments.as_deref() {
-            debug!("Site comments changed");
-            return true;
-        }
-        
-        false // No changes needed
+        compare_string_field(&spec.name, &existing.name)
+            || compare_slug_field(&spec.slug, &existing.slug, auto_generated_slug)
+            || compare_optional_string_field(&spec.description, &existing.description)
+            || compare_optional_string_field(&spec.physical_address, &existing.physical_address)
+            || compare_optional_string_field(&spec.shipping_address, &existing.shipping_address)
+            || compare_optional_numeric_field(&spec.latitude, &existing.latitude)
+            || compare_optional_numeric_field(&spec.longitude, &existing.longitude)
+            || compare_required_dependency_id(desired_tenant_id, existing_tenant_id)
+            || compare_optional_dependency_id(desired_region_id, existing_region_id)
+            || compare_optional_dependency_id(desired_site_group_id, existing_site_group_id)
+            || compare_string_field(desired_status, existing_status)
+            || compare_optional_string_field(&spec.facility, &existing.facility)
+            || compare_optional_string_field(&spec.time_zone, &existing.time_zone)
+            || compare_optional_string_field(&spec.comments, &existing.comments)
+        // Tags are handled separately
     }
 
     // DCIM reconciler functions

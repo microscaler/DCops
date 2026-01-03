@@ -4,52 +4,43 @@ metadata:
   name: production-rt-65000-100
   namespace: default
 spec:
-  # Route Target name (required)
-  # Format: RFC 4360 format (e.g., "65000:100" or "65000:100:200")
-  # This is a unique identifier for the route target
-  name: "65000:100"
-
-  # Tenant reference (optional)
-  # Route targets can be scoped to a tenant for multi-tenancy
+  name: 65000:100
   tenant:
     apiGroup: dcops.microscaler.io
     kind: NetBoxTenant
     name: datacenter-tenant
     namespace: default
+  description: Production route target for customer VPNs - used for importing/exporting
+    routes between VRFs
+  comments: 'This route target is used in production environments for:
 
-  # Description (optional)
-  # Human-readable description of the route target's purpose
-  description: "Production route target for customer VPNs - used for importing/exporting routes between VRFs"
-
-  # Comments (optional)
-  # Additional notes or documentation about this route target
-  comments: |
-    This route target is used in production environments for:
     - Customer VPN route exchange
+
     - Inter-VRF route redistribution
+
     - BGP EVPN route targeting
-    
+
+
     Managed by DCops automation system.
+
     Last updated: 2024-01-15
 
-  # Tag references (optional)
-  # Tags must exist in NetBox before they can be referenced
-  # See netbox-tag-example.yaml for creating tags
+    '
+  driftDetection: true
   tags:
-    - apiGroup: dcops.microscaler.io
-      kind: NetBoxTag
-      name: managed-by-dcops
-      namespace: default
-    - apiGroup: dcops.microscaler.io
-      kind: NetBoxTag
-      name: production
-      namespace: default
-    - apiGroup: dcops.microscaler.io
-      kind: NetBoxTag
-      name: route-target
-      namespace: default
-    - apiGroup: dcops.microscaler.io
-      kind: NetBoxTag
-      name: bgp-evpn
-      namespace: default
-
+  - apiGroup: dcops.microscaler.io
+    kind: NetBoxTag
+    name: managed-by-dcops
+    namespace: default
+  - apiGroup: dcops.microscaler.io
+    kind: NetBoxTag
+    name: production
+    namespace: default
+  - apiGroup: dcops.microscaler.io
+    kind: NetBoxTag
+    name: route-target
+    namespace: default
+  - apiGroup: dcops.microscaler.io
+    kind: NetBoxTag
+    name: bgp-evpn
+    namespace: default

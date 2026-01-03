@@ -12,6 +12,7 @@ spec:
     name: "raspberry-pi"
   description: "Talos Linux for Kubernetes on Raspberry Pi"
   comments: "Managed by DCops for Pi cluster deployments"
+  driftDetection: true
   # Tag references (optional)
   # Tags must exist in NetBox before they can be referenced
   # See netbox-tag-example.yaml for creating tags

@@ -4,16 +4,17 @@ metadata:
   name: talos-control-plane-01-eth0-mac
   namespace: default
 spec:
-  macAddress: "aa:bb:cc:dd:ee:ff"  # MAC address (format: "aa:bb:cc:dd:ee:ff" or "aa-bb-cc-dd-ee-ff")
-  interface: "talos-control-plane-01/eth0"  # Format: "<device-name>/<interface-name>" (references NetBoxInterface CRD)
-  description: "MAC address for control plane node primary interface"
-  comments: "Managed by DCops"
+  macAddress: aa:bb:cc:dd:ee:ff
+  interface: talos-control-plane-01/eth0
+  description: MAC address for control plane node primary interface
+  comments: Managed by DCops
+  driftDetection: true
   tags:
-    - apiGroup: dcops.microscaler.io
-      kind: NetBoxTag
-      name: managed-by-dcops
-      namespace: default
-    - apiGroup: dcops.microscaler.io
-      kind: NetBoxTag
-      name: production
-      namespace: default
+  - apiGroup: dcops.microscaler.io
+    kind: NetBoxTag
+    name: managed-by-dcops
+    namespace: default
+  - apiGroup: dcops.microscaler.io
+    kind: NetBoxTag
+    name: production
+    namespace: default

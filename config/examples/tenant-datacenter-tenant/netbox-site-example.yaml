@@ -4,32 +4,32 @@ metadata:
   name: datacenter-1
   namespace: default
 spec:
-  name: "Data Center 1"
-  slug: "datacenter-1"
-  description: "Primary datacenter facility"
+  name: Data Center 1
+  slug: datacenter-1
+  description: Primary datacenter facility
   status: active
   tenant:
-    apiGroup: "dcops.microscaler.io"
-    kind: "NetBoxTenant"
-    name: "datacenter-tenant"
+    apiGroup: dcops.microscaler.io
+    kind: NetBoxTenant
+    name: datacenter-tenant
   region:
-    apiGroup: "dcops.microscaler.io"
-    kind: "NetBoxRegion"
-    name: "us-east"
+    apiGroup: dcops.microscaler.io
+    kind: NetBoxRegion
+    name: us-east
   siteGroup:
-    apiGroup: "dcops.microscaler.io"
-    kind: "NetBoxSiteGroup"
-    name: "production-sites"
+    apiGroup: dcops.microscaler.io
+    kind: NetBoxSiteGroup
+    name: production-sites
   tags:
-    - apiGroup: dcops.microscaler.io
-      kind: NetBoxTag
-      name: managed-by-dcops
-      namespace: default
-    - apiGroup: dcops.microscaler.io
-      kind: NetBoxTag
-      name: production
-      namespace: default
-  facility: "DC1"
-  timeZone: "UTC"
-  comments: "Managed by DCops"
-
+  - apiGroup: dcops.microscaler.io
+    kind: NetBoxTag
+    name: managed-by-dcops
+    namespace: default
+  - apiGroup: dcops.microscaler.io
+    kind: NetBoxTag
+    name: production
+    namespace: default
+  facility: DC1
+  timeZone: UTC
+  comments: Managed by DCops
+  driftDetection: true

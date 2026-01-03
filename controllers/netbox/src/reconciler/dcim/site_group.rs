@@ -92,6 +92,7 @@ impl Reconciler {
                     &site_group_crd.spec.tags,
                     namespace,
                     name,
+                None,
                 ).await;
                 
                 let resolved_tags = crate::reconcile_helpers::convert_tags_to_strings(resolved_tags_json);
@@ -185,7 +186,8 @@ impl Reconciler {
                         &site_group_crd.spec.tags,
                         namespace,
                         name,
-                    ).await;
+                    None,
+                ).await;
                     let resolved_tags = crate::reconcile_helpers::convert_tags_to_strings(resolved_tags_json);
                     
                     // Update tags if they differ
@@ -230,7 +232,8 @@ impl Reconciler {
                         &site_group_crd.spec.tags,
                         namespace,
                         name,
-                    ).await;
+                    None,
+                ).await;
                     
                     let resolved_tags = crate::reconcile_helpers::convert_tags_to_strings(resolved_tags_json);
                     

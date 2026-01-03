@@ -26,52 +26,33 @@ impl Reconciler {
         desired_role_id: Option<u64>,
         desired_status: &str,
     ) -> bool {
-        // Compare tenant
+        use crate::reconcile_helpers::{
+            compare_required_dependency_id,
+            compare_optional_dependency_id,
+            compare_string_field,
+        };
+        
         let existing_tenant_id = existing.tenant.as_ref().map(|t| t.id);
-        if Some(desired_tenant_id) != existing_tenant_id {
-            debug!("Prefix tenant changed: {:?} -> {}", existing_tenant_id, desired_tenant_id);
-            return true;
-        }
-        
-        // Compare vlan
         let existing_vlan_id = existing.vlan.as_ref().map(|v| v.id as u32);
-        if desired_vlan_id != existing_vlan_id {
-            debug!("Prefix vlan changed: {:?} -> {:?}", existing_vlan_id, desired_vlan_id);
-            return true;
-        }
-        
-        // Compare role
         let existing_role_id = existing.role.as_ref().map(|r| r.id);
-        if desired_role_id != existing_role_id {
-            debug!("Prefix role changed: {:?} -> {:?}", existing_role_id, desired_role_id);
-            return true;
-        }
         
-        // Compare tags using helper function
-        if crate::reconcile_helpers::tags_differ(&existing.tags, &spec.tags) {
-            return true;
-        }
-        
-        // Compare description - Prefix model has description as String, not Option<String>
-        let spec_desc = spec.description.as_deref().unwrap_or("");
-        if spec_desc != existing.description {
-            debug!("Prefix description changed: '{}' -> '{}'", existing.description, spec_desc);
-            return true;
-        }
-        
-        // Compare status
+        // Convert existing status enum to string for comparison
         let existing_status = match existing.status {
             netbox_client::PrefixStatus::Active => "active",
             netbox_client::PrefixStatus::Reserved => "reserved",
             netbox_client::PrefixStatus::Deprecated => "deprecated",
             netbox_client::PrefixStatus::Container => "container",
         };
-        if desired_status != existing_status {
-            debug!("Prefix status changed: '{}' -> '{}'", existing_status, desired_status);
-            return true;
-        }
         
-        false // No changes needed
+        // Prefix model has description as String (not Option<String>)
+        let spec_description = spec.description.as_deref().unwrap_or("");
+        
+        compare_required_dependency_id(desired_tenant_id, existing_tenant_id)
+            || compare_optional_dependency_id(desired_vlan_id.map(|id| id as u64), existing_vlan_id.map(|id| id as u64))
+            || compare_optional_dependency_id(desired_role_id, existing_role_id)
+            || compare_string_field(desired_status, existing_status)
+            || compare_string_field(spec_description, &existing.description)
+        // Tags are handled separately using tags_differ helper
     }
 
     pub async fn reconcile_netbox_prefix(&self, prefix_crd: &NetBoxPrefix) -> Result<(), ControllerError> {
@@ -206,7 +187,8 @@ impl Reconciler {
                         &prefix_crd.spec.tags,
                         namespace,
                         name,
-                    ).await;
+                    None,
+                ).await;
                     
                     info!("Resolved tags JSON for prefix {}/{}: {:?}", namespace, name, resolved_tags_json);
                     
@@ -451,6 +433,7 @@ impl Reconciler {
                     &prefix_crd.spec.tags,
                     namespace,
                     name,
+                None,
                 ).await;
                 
                 // Convert resolved tags from Vec<serde_json::Value> to Vec<String>

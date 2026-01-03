@@ -627,7 +627,7 @@ pub async fn get_location_by_name(client: &MockNetBoxClient, site_id: u64, name:
         Ok(locations.values().find(|l| l.site.id == site_id && l.name == name).cloned())
 }
 
-pub async fn create_location(client: &MockNetBoxClient, site_id: u64, name: &str, slug: Option<&str>, parent_id: Option<u64>, _tenant_id: Option<u64>, _facility: Option<&str>, description: Option<String>, comments: Option<String>, tags: Option<Vec<String>>) -> Result<Location, NetBoxError> {
+pub async fn create_location(client: &MockNetBoxClient, site_id: u64, name: &str, slug: Option<&str>, parent_id: Option<u64>, tenant_id: Option<u64>, facility: Option<&str>, description: Option<String>, comments: Option<String>, tags: Option<Vec<String>>) -> Result<Location, NetBoxError> {
         let id = client.next_id();
         let slug_value = slug.map(|s| s.to_string()).unwrap_or_else(|| name.to_lowercase().replace(' ', "-"));
         let location = Location {
@@ -638,6 +638,8 @@ pub async fn create_location(client: &MockNetBoxClient, site_id: u64, name: &str
             slug: slug_value,
             site: client.helpers().create_nested_site(site_id, None),
             parent: parent_id.map(|id| client.helpers().create_nested_location(id, None)),
+            tenant: tenant_id.map(|id| client.helpers().create_nested_tenant(id, None)),
+            facility: facility.map(|s| s.to_string()),
             description: description,
             comments: comments,
             device_count: 0,
@@ -676,8 +678,18 @@ pub async fn update_location(client: &MockNetBoxClient, id: u64, name: Option<&s
             location.parent = Some(client.helpers().create_nested_location(parent, None));
         }
         
-        if tenant_id.is_some() {
-            // Tenant update would require NestedTenant, skipping for now
+        if let Some(tenant) = tenant_id {
+            location.tenant = Some(client.helpers().create_nested_tenant(tenant, None));
+        } else if tenant_id == None && location.tenant.is_some() {
+            // Explicitly clear tenant if None is passed
+            location.tenant = None;
+        }
+        
+        if let Some(facility_val) = facility {
+            location.facility = Some(facility_val.to_string());
+        } else if facility == None && location.facility.is_some() {
+            // Explicitly clear facility if None is passed
+            location.facility = None;
         }
         
         if description.is_some() {

@@ -719,7 +719,9 @@ impl Reconciler {
         };
         
         // If ip_range is provided, validate address (from spec or status) is within range
-        if let Some(range_id) = ip_range_id {
+        // CRITICAL: NetBox does NOT allow creating individual IP addresses that fall within an IP range.
+        // If the address is within a range, we can only track it if it already exists in NetBox.
+        let address_within_range: bool = if let Some(range_id) = ip_range_id {
             // Get the IP range to validate address is within it
             match netbox_client.get_ip_range(netbox_client::IPRangeId(range_id)).await {
                 Ok(range) => {
@@ -750,13 +752,17 @@ impl Reconciler {
                         return Err(ControllerError::InvalidInput(error_msg));
                     }
                     debug!("Validated IP address {} is within range {} - {}", address_str, range.start_address, range.end_address);
+                    true // Address is within range
                 }
                 Err(e) => {
                     warn!("Failed to validate IP address against range (ID: {}): {}", range_id, e);
                     // Continue anyway - range validation is best-effort
+                    false
                 }
             }
-        }
+        } else {
+            false // No range specified
+        };
         
         // Validate status and check for drift
         let drift_result = {

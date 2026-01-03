@@ -981,6 +981,8 @@ pub struct Location {
     pub slug: String,
     pub site: NestedSite,
     pub parent: Option<NestedLocation>,
+    pub tenant: Option<NestedTenant>,
+    pub facility: Option<String>,
     pub description: Option<String>,
     pub comments: Option<String>,
     pub device_count: u64,

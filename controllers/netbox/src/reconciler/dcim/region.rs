@@ -4,9 +4,32 @@ use super::super::Reconciler;
 use crate::error::ControllerError;
 use tracing::{info, error, debug, warn};
 use crds::{NetBoxRegion, ResourceState};
-use netbox_client::{NetBoxClientTrait, RegionId};
+use netbox_client::RegionId;
 
 impl Reconciler {
+    fn region_needs_update(
+        spec: &crds::NetBoxRegionSpec,
+        existing: &netbox_client::Region,
+        desired_parent_id: Option<u64>,
+    ) -> bool {
+        use crate::reconcile_helpers::{
+            compare_string_field,
+            compare_slug_field,
+            compare_optional_string_field,
+            compare_optional_dependency_id,
+        };
+        
+        let auto_generated_slug = spec.name.to_lowercase().replace(' ', "-");
+        let existing_parent_id = existing.parent.as_ref().map(|p| p.id);
+        
+        compare_string_field(&spec.name, &existing.name)
+            || compare_slug_field(&spec.slug, &existing.slug, auto_generated_slug)
+            || compare_optional_dependency_id(desired_parent_id, existing_parent_id)
+            || compare_optional_string_field(&spec.description, &existing.description)
+            || compare_optional_string_field(&spec.comments, &existing.comments)
+        // Tags are handled separately
+    }
+
     pub async fn reconcile_netbox_region(&self, region_crd: &NetBoxRegion) -> Result<(), ControllerError> {
         // Extract name and namespace using helper
         use crate::reconcile_helpers::{extract_name_and_namespace, resolve_optional_dependency_id};
@@ -46,10 +69,64 @@ impl Reconciler {
             ).await?
         };
         
+        // Check if drift detection is enabled (defaults to true)
+        let drift_detection_enabled = region_crd.spec.drift_detection.unwrap_or(true);
+        
         let netbox_region = match drift_result {
             DriftCheckResult::UseExisting(region) => {
-                // Resource exists and is up-to-date
-                Some(region)
+                // Check for field drift if enabled
+                if drift_detection_enabled {
+                    if Self::region_needs_update(&region_crd.spec, &region, parent_id) {
+                        // Field drift detected - update NetBox to match CRD (Git is source of truth)
+                        warn!("NetBoxRegion {}/{} fields differ from CRD spec, updating to match Git", namespace, name);
+                        use crate::events::reasons;
+                        self.record_event_warning(
+                            reasons::DRIFT_DETECTED,
+                            &format!("NetBoxRegion {}/{} fields differ from CRD, updating to match Git", namespace, name),
+                            region_crd,
+                        ).await;
+                        
+                        // Resolve tags for update
+                        let resolved_tags_json = self.resolve_tag_references(
+                            netbox_client.as_ref(),
+                            &region_crd.spec.tags,
+                            namespace,
+                            name,
+                            Some(region.id),
+                        ).await;
+                        let resolved_tags = crate::reconcile_helpers::convert_tags_to_strings(resolved_tags_json);
+                        
+                        match netbox_client.update_region(
+                            RegionId(region.id),
+                            Some(&region_crd.spec.name),
+                            region_crd.spec.slug.as_deref(),
+                            parent_id.map(RegionId),
+                            region_crd.spec.description.clone(),
+                            region_crd.spec.comments.clone(),
+                            resolved_tags,
+                        ).await {
+                            Ok(updated) => {
+                                use crate::events::reasons;
+                                self.record_event_normal(
+                                    reasons::UPDATED,
+                                    &format!("Updated NetBoxRegion {}/{} in NetBox to match CRD (ID: {})", namespace, name, updated.id),
+                                    region_crd,
+                                ).await;
+                                Some(updated)
+                            }
+                            Err(e) => {
+                                error!("Failed to update NetBoxRegion {}/{} in NetBox: {}", namespace, name, e);
+                                Some(region) // Use existing if update fails
+                            }
+                        }
+                    } else {
+                        // No drift - use existing
+                        Some(region)
+                    }
+                } else {
+                    // Drift detection disabled - use existing
+                    Some(region)
+                }
             }
             DriftCheckResult::StatusCleared { message } => {
                 // Emit event for drift detection

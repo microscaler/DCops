@@ -4,9 +4,40 @@ use super::super::Reconciler;
 use crate::error::ControllerError;
 use tracing::{info, error, debug, warn};
 use crds::{NetBoxLocation, ResourceState};
-use netbox_client::{NetBoxClientTrait, LocationId, SiteId, TenantId};
+use netbox_client::{LocationId, SiteId, TenantId};
 
 impl Reconciler {
+    fn location_needs_update(
+        spec: &crds::NetBoxLocationSpec,
+        existing: &netbox_client::Location,
+        desired_site_id: u64,
+        desired_tenant_id: u64,
+        desired_parent_id: Option<u64>,
+    ) -> bool {
+        use crate::reconcile_helpers::{
+            compare_string_field,
+            compare_slug_field,
+            compare_optional_string_field,
+            compare_required_dependency_id,
+            compare_optional_dependency_id,
+        };
+        
+        let auto_generated_slug = spec.name.to_lowercase().replace(' ', "-");
+        let existing_site_id = existing.site.id;
+        let existing_tenant_id = existing.tenant.as_ref().map(|t| t.id);
+        let existing_parent_id = existing.parent.as_ref().map(|p| p.id);
+        
+        compare_string_field(&spec.name, &existing.name)
+            || compare_slug_field(&spec.slug, &existing.slug, auto_generated_slug)
+            || compare_required_dependency_id(desired_site_id, Some(existing_site_id))
+            || compare_optional_dependency_id(Some(desired_tenant_id), existing_tenant_id)
+            || compare_optional_dependency_id(desired_parent_id, existing_parent_id)
+            || compare_optional_string_field(&spec.facility, &existing.facility)
+            || compare_optional_string_field(&spec.description, &existing.description)
+            || compare_optional_string_field(&spec.comments, &existing.comments)
+        // Tags are handled separately
+    }
+
     pub async fn reconcile_netbox_location(&self, location_crd: &NetBoxLocation) -> Result<(), ControllerError> {
         // Extract name and namespace using helper
         use crate::reconcile_helpers::extract_name_and_namespace;
@@ -36,10 +67,122 @@ impl Reconciler {
             ).await?
         };
         
+        // Resolve dependencies for drift detection
+        use crate::reconcile_helpers::{resolve_required_dependency_id, resolve_optional_dependency_id};
+        let site_id = match resolve_required_dependency_id(
+            &*self.netbox_site_api,
+            &location_crd.spec.site.name,
+            "Site",
+            name,
+            |crd| crd.status.as_ref(),
+        ).await {
+            Ok(id) => id,
+            Err(e) => {
+                use crate::events::reasons;
+                self.record_event_warning(
+                    reasons::DEPENDENCY_NOT_FOUND,
+                    &format!("Site '{}' not found or not ready: {}", location_crd.spec.site.name, e),
+                    location_crd,
+                ).await;
+                return Err(e);
+            }
+        };
+        
+        let tenant_id = match resolve_required_dependency_id(
+            &*self.netbox_tenant_api,
+            &location_crd.spec.tenant.name,
+            "Tenant",
+            name,
+            |crd| crd.status.as_ref(),
+        ).await {
+            Ok(id) => id,
+            Err(e) => {
+                use crate::events::reasons;
+                self.record_event_warning(
+                    reasons::DEPENDENCY_NOT_FOUND,
+                    &format!("Tenant '{}' not found or not ready: {}", location_crd.spec.tenant.name, e),
+                    location_crd,
+                ).await;
+                return Err(e);
+            }
+        };
+        
+        let parent_id: Option<u64> = resolve_optional_dependency_id(
+            &*self.netbox_location_api,
+            location_crd.spec.parent.as_ref(),
+            "NetBoxLocation",
+            "parent",
+            name,
+            |crd| crd.status.as_ref(),
+        ).await;
+        
+        // Check if drift detection is enabled (defaults to true)
+        let drift_detection_enabled = location_crd.spec.drift_detection.unwrap_or(true);
+        
         let netbox_location = match drift_result {
             DriftCheckResult::UseExisting(location) => {
-                // Resource exists and is up-to-date
-                Some(location)
+                // Check for field drift if enabled
+                if drift_detection_enabled {
+                    if Self::location_needs_update(&location_crd.spec, &location, site_id, tenant_id, parent_id) {
+                        // Field drift detected - update NetBox to match CRD (Git is source of truth)
+                        warn!("NetBoxLocation {}/{} fields differ from CRD spec, updating to match Git", namespace, name);
+                        use crate::events::reasons;
+                        self.record_event_warning(
+                            reasons::DRIFT_DETECTED,
+                            &format!("NetBoxLocation {}/{} fields differ from CRD, updating to match Git", namespace, name),
+                            location_crd,
+                        ).await;
+                        
+                        // Resolve tags for update
+                        let resolved_tags_json = self.resolve_tag_references(
+                            netbox_client.as_ref(),
+                            &location_crd.spec.tags,
+                            namespace,
+                            name,
+                            Some(location.id),
+                        ).await;
+                        let resolved_tags = crate::reconcile_helpers::convert_tags_to_strings(resolved_tags_json);
+                        
+                        // Note: NetBox API doesn't support updating site_id via update_location
+                        // If site has changed, we log a warning but can't update it
+                        if location.site.id != site_id {
+                            warn!("NetBoxLocation {}/{} site changed from {} to {}, but NetBox API doesn't support updating site. Location must be recreated to change site.", 
+                                namespace, name, location.site.id, site_id);
+                        }
+                        
+                        match netbox_client.update_location(
+                            LocationId(location.id),
+                            Some(&location_crd.spec.name),
+                            location_crd.spec.slug.as_deref(),
+                            parent_id.map(LocationId),
+                            Some(TenantId(tenant_id)),
+                            location_crd.spec.facility.as_deref(),
+                            location_crd.spec.description.clone(),
+                            location_crd.spec.comments.clone(),
+                            resolved_tags,
+                        ).await {
+                            Ok(updated) => {
+                                use crate::events::reasons;
+                                self.record_event_normal(
+                                    reasons::UPDATED,
+                                    &format!("Updated NetBoxLocation {}/{} in NetBox to match CRD (ID: {})", namespace, name, updated.id),
+                                    location_crd,
+                                ).await;
+                                Some(updated)
+                            }
+                            Err(e) => {
+                                error!("Failed to update NetBoxLocation {}/{} in NetBox: {}", namespace, name, e);
+                                Some(location) // Use existing if update fails
+                            }
+                        }
+                    } else {
+                        // No drift - use existing
+                        Some(location)
+                    }
+                } else {
+                    // Drift detection disabled - use existing
+                    Some(location)
+                }
             }
             DriftCheckResult::StatusCleared { message } => {
                 // Emit event for drift detection
@@ -96,35 +239,12 @@ impl Reconciler {
                 let location = if tags_need_update {
                     info!("NetBoxLocation {}/{} tags differ, updating in NetBox", namespace, name);
                     
-                    // Resolve optional parent location ID
-                    use crate::reconcile_helpers::resolve_optional_dependency_id;
-                    let parent_id: Option<u64> = resolve_optional_dependency_id(
-                        &*self.netbox_location_api,
-                        location_crd.spec.parent.as_ref(),
-                        "NetBoxLocation",
-                        "parent",
-                        name,
-                        |crd| crd.status.as_ref(),
-                    ).await;
-                    
-                    // Resolve tenant ID
-                    use crate::reconcile_helpers::resolve_required_dependency_id;
-                    let tenant_id = match resolve_required_dependency_id(
-                        &*self.netbox_tenant_api,
-                        &location_crd.spec.tenant.name,
-                        "Tenant",
-                        name,
-                        |crd| crd.status.as_ref(),
-                    ).await {
-                        Ok(id) => id,
-                        Err(e) => {
-                            warn!("Failed to resolve tenant ID for location update: {}", e);
-                            return Err(e);
-                        }
-                    };
+                    // Dependencies already resolved at top level (site_id, tenant_id, parent_id)
                     
                     let location_id = location.id;
                     let location_clone = location.clone();
+                    let tenant_id_for_update = tenant_id; // Capture for closure
+                    let parent_id_for_update = parent_id; // Capture for closure
                     match crate::reconcile_helpers::update_tags_if_differ(
                         location,
                         &location_crd.spec.tags,
@@ -134,8 +254,8 @@ impl Reconciler {
                                 LocationId(location_id),
                                 Some(&location_crd.spec.name),
                                 location_crd.spec.slug.as_deref(),
-                                parent_id.map(LocationId),
-                                Some(TenantId(tenant_id)),
+                                parent_id_for_update.map(LocationId),
+                                Some(TenantId(tenant_id_for_update)),
                                 location_crd.spec.facility.as_deref(),
                                 location_crd.spec.description.clone(),
                                 location_crd.spec.comments.clone(),

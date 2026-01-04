@@ -871,6 +871,9 @@ impl Reconciler {
                     Some(resource_netbox_id),
                 ).await;
                 
+                // Clone resolved_tags for tag reconciliation after update
+                let resolved_tags_for_tag_update = resolved_tags.clone();
+                
                 // Check if any field changed (including tags)
                 let needs_update = Self::ip_address_needs_update(
                     &ip_address_crd.spec,
@@ -913,18 +916,50 @@ impl Reconciler {
                     
                     match netbox_client.update_ip_address(IpAddressId(remediated_ip.id), update_request).await {
                         Ok(updated_ip) => {
+                            // Update successful - now ensure tags are reconciled
+                            let updated_ip_clone = updated_ip.clone();
+                            let resolved_tags_strings = crate::reconcile_helpers::convert_tags_to_strings(resolved_tags_for_tag_update);
+                            let _ = crate::reconcile_helpers::update_tags_if_differ(
+                                updated_ip,
+                                &ip_address_crd.spec.tags,
+                                resolved_tags_strings,
+                                |tags| {
+                                    let ip_id = updated_ip_clone.id;
+                                    // Convert Vec<String> back to Option<Vec<serde_json::Value>>
+                                    let tags_json: Option<Vec<serde_json::Value>> = tags.map(|t| {
+                                        t.into_iter().map(|s| serde_json::Value::String(s)).collect()
+                                    });
+                                    let update_request_tags = AllocateIPRequest {
+                                        address: None,
+                                        description: None,
+                                        comments: None,
+                                        status: None,
+                                        role: None,
+                                        dns_name: None,
+                                        tenant: None,
+                                        tags: tags_json,
+                                        assigned_object_type: None,
+                                        assigned_object_id: None,
+                                    };
+                                    async move {
+                                        netbox_client.update_ip_address(IpAddressId(ip_id), update_request_tags).await
+                                    }
+                                },
+                                &format!("NetBoxIPAddress {}/{}", namespace, name),
+                            ).await;
+                            
                             // Update successful
                             use crate::events::reasons;
                             self.record_event_normal(
                                 reasons::UPDATED,
-                                &format!("Updated IP address {} in NetBox (ID: {})", updated_ip.address, updated_ip.id),
+                                &format!("Updated IP address {} in NetBox (ID: {})", updated_ip_clone.address, updated_ip_clone.id),
                                 ip_address_crd,
                             ).await;
                             // Update status with the updated IP
                             let status_patch = Self::create_typed_ip_address_status_patch(
-                                updated_ip.id,
-                                updated_ip.url.clone(),
-                                Some(updated_ip.address.to_string()),
+                                updated_ip_clone.id,
+                                updated_ip_clone.url.clone(),
+                                Some(updated_ip_clone.address.to_string()),
                                 ResourceState::Created,
                                 None,
                             );
@@ -934,7 +969,7 @@ impl Reconciler {
                                 namespace,
                                 &status_patch,
                                 "NetBoxIPAddress",
-                                updated_ip.id,
+                                updated_ip_clone.id,
                             ).await?;
                             return Ok(());
                         }
@@ -1252,6 +1287,9 @@ impl Reconciler {
             resource_netbox_id,
         ).await;
         
+        // Clone resolved_tags for tag reconciliation after creation
+        let resolved_tags_for_tag_update = resolved_tags.clone();
+        
         info!("Creating IP address with address: {}, description: {:?}, comments: {:?}, dns_name: {:?}", 
             ip_net, ip_address_crd.spec.description, ip_address_crd.spec.comments, ip_address_crd.spec.dns_name);
         debug!("Creating IP address {} with tenant_id: {}, tags: {:?}", address_str, tenant_id, resolved_tags);
@@ -1274,13 +1312,46 @@ impl Reconciler {
         match netbox_client.create_ip_address(&ip_net, Some(create_request)).await {
             Ok(created_ip) => {
                 info!("Created IP address {} in NetBox (ID: {})", created_ip.address, created_ip.id);
+                
+                // Ensure tags are reconciled after creation
+                let created_ip_clone = created_ip.clone();
+                let resolved_tags_strings = crate::reconcile_helpers::convert_tags_to_strings(resolved_tags_for_tag_update);
+                let _ = crate::reconcile_helpers::update_tags_if_differ(
+                    created_ip,
+                    &ip_address_crd.spec.tags,
+                    resolved_tags_strings,
+                    |tags| {
+                        let ip_id = created_ip_clone.id;
+                        // Convert Vec<String> back to Option<Vec<serde_json::Value>>
+                        let tags_json: Option<Vec<serde_json::Value>> = tags.map(|t| {
+                            t.into_iter().map(|s| serde_json::Value::String(s)).collect()
+                        });
+                        let update_request_tags = AllocateIPRequest {
+                            address: None,
+                            description: None,
+                            comments: None,
+                            status: None,
+                            role: None,
+                            dns_name: None,
+                            tenant: None,
+                            tags: tags_json,
+                            assigned_object_type: None,
+                            assigned_object_id: None,
+                        };
+                        async move {
+                            netbox_client.update_ip_address(IpAddressId(ip_id), update_request_tags).await
+                        }
+                    },
+                    &format!("NetBoxIPAddress {}/{}", namespace, name),
+                ).await;
+                
                 use crate::events::reasons;
                 self.record_event_normal(
                     reasons::CREATED,
-                    &format!("Created IP address {} in NetBox (ID: {})", created_ip.address, created_ip.id),
+                    &format!("Created IP address {} in NetBox (ID: {})", created_ip_clone.address, created_ip_clone.id),
                     ip_address_crd,
                 ).await;
-                created_ip
+                created_ip_clone
             }
             Err(e) => {
                 if is_conflict_error(&e) {

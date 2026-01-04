@@ -1410,6 +1410,9 @@ impl HasTags for netbox_client::Vlan {
 impl HasTags for netbox_client::TenantGroup {
     fn tags(&self) -> &[netbox_client::NestedTag] { &self.tags }
 }
+impl HasTags for netbox_client::IPAddress {
+    fn tags(&self) -> &[netbox_client::NestedTag] { &self.tags }
+}
 
 /// Update tags on an existing NetBox resource if they differ
 /// 

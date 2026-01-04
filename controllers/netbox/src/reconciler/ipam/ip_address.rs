@@ -418,22 +418,56 @@ impl Reconciler {
         };
         
         // IPAddress model has description and comments as String (not Option<String>)
-        let spec_description = spec.description.as_deref().unwrap_or("");
-        let spec_comments = spec.comments.as_deref().unwrap_or("");
-        let spec_dns_name = spec.dns_name.as_deref().unwrap_or("");
+        // Convert to Option<String> for comparison with helpers
+        let spec_description = spec.description.clone();
+        let spec_comments = spec.comments.clone();
+        let spec_dns_name = spec.dns_name.clone();
+        let spec_role = spec.role.clone();
+        
+        // NetBox returns description and comments as String (empty string if not set)
+        // Convert to Option<String> for comparison
+        let netbox_description = if existing.description.is_empty() {
+            None
+        } else {
+            Some(existing.description.clone())
+        };
+        let netbox_comments = if existing.comments.is_empty() {
+            None
+        } else {
+            Some(existing.comments.clone())
+        };
+        let netbox_dns_name = if existing.dns_name.is_empty() {
+            None
+        } else {
+            Some(existing.dns_name.clone())
+        };
         
         // Note: IPAddress model doesn't have a vlan field in the response,
         // but vlan can be set via API. We can't compare vlan from existing resource,
         // so we'll update if other fields changed. Vlan updates will be handled by
         // always including vlan_id in update calls when provided.
         
-        // Compare role - both are Option<String>
+        // Compare address - if spec has address, it must match (address is immutable, but we should detect mismatch)
+        let address_mismatch = if let Some(spec_address) = &spec.address {
+            let existing_address_str = existing.address.to_string();
+            if spec_address != &existing_address_str {
+                info!("Field drift detected (address - immutable): CR='{}', NetBox='{}' (address cannot be changed, but mismatch detected)", spec_address, existing_address_str);
+                true
+            } else {
+                false
+            }
+        } else {
+            false // No address in spec, can't compare
+        };
+        
+        // Compare all fields using helpers - every field in CR spec must be checked
         compare_required_dependency_id(desired_tenant_id, existing_tenant_id)
             || compare_string_field(desired_status, existing_status)
-            || compare_optional_string_field(&spec.role, &existing.role)
-            || compare_string_field(spec_dns_name, existing.dns_name.as_str())
-            || compare_string_field(spec_description, &existing.description)
-            || compare_string_field(spec_comments, &existing.comments)
+            || compare_optional_string_field(&spec_role, &existing.role)
+            || compare_optional_string_field(&spec_dns_name, &netbox_dns_name)
+            || compare_optional_string_field(&spec_description, &netbox_description)
+            || compare_optional_string_field(&spec_comments, &netbox_comments)
+            || address_mismatch // Address mismatch detected (will log warning, can't fix as address is immutable)
         // Tags are handled separately using tags_differ helper
     }
 
@@ -874,18 +908,31 @@ impl Reconciler {
                 // Clone resolved_tags for tag reconciliation after update
                 let resolved_tags_for_tag_update = resolved_tags.clone();
                 
-                // Check if any field changed (including tags)
-                let needs_update = Self::ip_address_needs_update(
-                    &ip_address_crd.spec,
-                    &remediated_ip,
-                    tenant_id,
-                    vlan_id, // Note: vlan_id comparison not implemented in needs_update yet
-                    status_str,
-                );
+                // Check if drift detection is enabled (defaults to true)
+                let drift_detection_enabled = ip_address_crd.spec.drift_detection.unwrap_or(true);
+                debug!("NetBoxIPAddress {}/{}: drift_detection_enabled={}, netbox_id={}", namespace, name, drift_detection_enabled, remediated_ip.id);
+                
+                // Check if any field changed (including tags) - only if drift detection is enabled
+                let needs_update = if drift_detection_enabled {
+                    let result = Self::ip_address_needs_update(
+                        &ip_address_crd.spec,
+                        &remediated_ip,
+                        tenant_id,
+                        vlan_id, // Note: vlan_id comparison not implemented in needs_update yet
+                        status_str,
+                    );
+                    debug!("NetBoxIPAddress {}/{}: ip_address_needs_update returned {}", namespace, name, result);
+                    result
+                } else {
+                    debug!("NetBoxIPAddress {}/{}: drift detection disabled, skipping field comparison", namespace, name);
+                    false // Drift detection disabled, skip field comparison
+                };
                 
                 if needs_update {
-                    info!("IP address {}/{} needs update (tenant: {:?} -> {}, existing tags: {}, desired tags: {:?})", 
-                        namespace, name, 
+                    info!("IP address {}/{} needs update - drift detected, overwriting NetBox with CR spec values", namespace, name);
+                    info!("  Updating fields: tenant, status, role, dns_name, description, comments, tags");
+                    info!("  NetBox ID: {}, tenant: {:?} -> {}, tags: {} -> {:?}", 
+                        remediated_ip.id,
                         remediated_ip.tenant.as_ref().map(|t| t.id), 
                         tenant_id,
                         remediated_ip.tags.len(),

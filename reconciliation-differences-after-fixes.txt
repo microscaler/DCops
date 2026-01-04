@@ -1,0 +1,68 @@
+====================================================================================================
+NETBOX CR COMPARISON REPORT
+====================================================================================================
+
+SUMMARY
+----------------------------------------------------------------------------------------------------
+Total CRs analyzed: 26
+Found in NetBox: 0
+Not found in NetBox: 26
+Resources with inconsistencies: 26
+Total field inconsistencies: 0
+
+====================================================================================================
+RESOURCES NOT FOUND IN NETBOX
+====================================================================================================
+
+❌ NetBoxDeviceRole/kubernetes-control-plane (namespace: default)
+   Error: Resource not found in NetBox (expected ID: None)
+❌ NetBoxDeviceType/raspberry-pi-4-model-b (namespace: default)
+   Error: Resource not found in NetBox (expected ID: None)
+❌ NetBoxManufacturer/raspberry-pi (namespace: default)
+   Error: Resource not found in NetBox (expected ID: None)
+❌ NetBoxPlatform/talos-linux (namespace: default)
+   Error: Resource not found in NetBox (expected ID: None)
+❌ NetBoxAggregate/private-network-aggregate (namespace: default)
+   Error: Resource not found in NetBox (expected ID: None)
+❌ NetBoxDevice/talos-control-plane-01 (namespace: default)
+   Error: Resource not found in NetBox (expected ID: None)
+❌ NetBoxInterface/talos-control-plane-01-eth0 (namespace: default)
+   Error: Resource not found in NetBox (expected ID: None)
+❌ NetBoxIPAddress/dhcp-client-ip-static (namespace: default)
+   Error: Resource not found in NetBox (expected ID: None)
+❌ NetBoxIPAddress/dhcp-server-ip (namespace: default)
+   Error: Resource not found in NetBox (expected ID: None)
+❌ NetBoxIPAddress/dhcp-client-ip-random (namespace: default)
+   Error: Resource not found in NetBox (expected ID: None)
+❌ NetBoxIPAddress/web-server-ip (namespace: default)
+   Error: Resource not found in NetBox (expected ID: None)
+❌ NetBoxIPRange/dhcp-pool-range (namespace: default)
+   Error: Resource not found in NetBox (expected ID: None)
+❌ NetBoxLocation/datacenter-1-rack-a (namespace: default)
+   Error: Resource not found in NetBox (expected ID: None)
+❌ NetBoxMACAddress/talos-control-plane-01-eth0-mac (namespace: default)
+   Error: Resource not found in NetBox (expected ID: None)
+❌ NetBoxPrefix/control-plane-prefix (namespace: default)
+   Error: Resource not found in NetBox (expected ID: None)
+❌ NetBoxRegion/us-east (namespace: default)
+   Error: Resource not found in NetBox (expected ID: None)
+❌ NetBoxRIR/arin (namespace: default)
+   Error: Resource not found in NetBox (expected ID: None)
+❌ NetBoxRole/control-plane (namespace: default)
+   Error: Resource not found in NetBox (expected ID: None)
+❌ NetBoxRouteTarget/production-rt-65000-100 (namespace: default)
+   Error: Resource not found in NetBox (expected ID: None)
+❌ NetBoxRouteTarget/shared-services-rt-65000-200 (namespace: default)
+   Error: Resource not found in NetBox (expected ID: None)
+❌ NetBoxSite/datacenter-1 (namespace: default)
+   Error: Resource not found in NetBox (expected ID: None)
+❌ NetBoxSiteGroup/production-sites (namespace: default)
+   Error: Resource not found in NetBox (expected ID: None)
+❌ NetBoxTenant/datacenter-tenant (namespace: default)
+   Error: Resource not found in NetBox (expected ID: None)
+❌ NetBoxTenantGroup/default (namespace: default)
+   Error: Resource not found in NetBox (expected ID: None)
+❌ NetBoxVLAN/control-plane-vlan (namespace: default)
+   Error: Resource not found in NetBox (expected ID: None)
+❌ NetBoxVRF/production-vrf (namespace: default)
+   Error: Resource not found in NetBox (expected ID: None)

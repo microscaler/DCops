@@ -1611,9 +1611,11 @@ pub fn normalize_mac_address(mac: &str) -> Option<String> {
 /// 
 /// Simple helper for comparing required string fields like `name`.
 /// Returns `true` if fields differ, `false` if they match.
+/// 
+/// When drift is detected, logs at INFO level to make it visible.
 pub fn compare_string_field(spec: &str, netbox: &str) -> bool {
     if spec != netbox {
-        debug!("String field changed: '{}' -> '{}'", netbox, spec);
+        info!("Field drift detected: '{}' -> '{}' (NetBox will be overwritten with CR value)", netbox, spec);
         return true;
     }
     false
@@ -1631,10 +1633,12 @@ pub fn compare_string_field(spec: &str, netbox: &str) -> bool {
 /// 
 /// # Returns
 /// `true` if slugs differ, `false` if they match.
+/// 
+/// When drift is detected, logs at INFO level to make it visible.
 pub fn compare_slug_field(spec_slug: &Option<String>, netbox_slug: &str, auto_generated: String) -> bool {
     let expected_slug = spec_slug.as_deref().unwrap_or(&auto_generated);
     if expected_slug != netbox_slug {
-        debug!("Slug field changed: '{}' -> '{}'", netbox_slug, expected_slug);
+        info!("Field drift detected (slug): '{}' -> '{}' (NetBox will be overwritten with CR value)", netbox_slug, expected_slug);
         return true;
     }
     false
@@ -1645,12 +1649,14 @@ pub fn compare_slug_field(spec_slug: &Option<String>, netbox_slug: &str, auto_ge
 /// Helper for comparing optional string fields like `description` and `comments`.
 /// Handles `None` vs `Some("")` as equivalent (both represent empty).
 /// Returns `true` if fields differ, `false` if they match.
+/// 
+/// When drift is detected, logs at INFO level to make it visible.
 pub fn compare_optional_string_field(spec: &Option<String>, netbox: &Option<String>) -> bool {
-    let spec_value = spec.as_deref();
-    let netbox_value = netbox.as_deref();
+    let spec_value = spec.as_deref().unwrap_or("");
+    let netbox_value = netbox.as_deref().unwrap_or("");
     
     if spec_value != netbox_value {
-        debug!("Optional string field changed: {:?} -> {:?}", netbox_value, spec_value);
+        info!("Field drift detected: '{}' -> '{}' (NetBox will be overwritten with CR value)", netbox_value, spec_value);
         return true;
     }
     false
@@ -1661,9 +1667,11 @@ pub fn compare_optional_string_field(spec: &Option<String>, netbox: &Option<Stri
 /// Helper for comparing optional dependency fields (like `group`, `region`, etc.)
 /// after they've been resolved to NetBox IDs.
 /// Returns `true` if IDs differ, `false` if they match.
+/// 
+/// When drift is detected, logs at INFO level to make it visible.
 pub fn compare_optional_dependency_id(spec_id: Option<u64>, netbox_id: Option<u64>) -> bool {
     if spec_id != netbox_id {
-        debug!("Optional dependency ID changed: {:?} -> {:?}", netbox_id, spec_id);
+        info!("Field drift detected (dependency ID): {:?} -> {:?} (NetBox will be overwritten with CR value)", netbox_id, spec_id);
         return true;
     }
     false
@@ -1674,10 +1682,12 @@ pub fn compare_optional_dependency_id(spec_id: Option<u64>, netbox_id: Option<u6
 /// Helper for comparing required dependency fields (like `tenant` for most resources)
 /// after they've been resolved to NetBox IDs.
 /// Returns `true` if IDs differ, `false` if they match.
+/// 
+/// When drift is detected, logs at INFO level to make it visible.
 pub fn compare_required_dependency_id(spec_id: u64, netbox_id: Option<u64>) -> bool {
     let netbox_id_value = netbox_id.unwrap_or(0);
     if spec_id != netbox_id_value {
-        debug!("Required dependency ID changed: {:?} -> {}", netbox_id, spec_id);
+        info!("Field drift detected (required dependency ID): {:?} -> {} (NetBox will be overwritten with CR value)", netbox_id, spec_id);
         return true;
     }
     false
@@ -1687,9 +1697,11 @@ pub fn compare_required_dependency_id(spec_id: u64, netbox_id: Option<u64>) -> b
 /// 
 /// Helper for comparing optional numeric fields like `latitude`, `longitude`, `u_height`, etc.
 /// Returns `true` if fields differ, `false` if they match.
+/// 
+/// When drift is detected, logs at INFO level to make it visible.
 pub fn compare_optional_numeric_field<T: PartialEq + std::fmt::Debug>(spec: &Option<T>, netbox: &Option<T>) -> bool {
     if spec != netbox {
-        debug!("Optional numeric field changed: {:?} -> {:?}", netbox, spec);
+        info!("Field drift detected (numeric): {:?} -> {:?} (NetBox will be overwritten with CR value)", netbox, spec);
         return true;
     }
     false
@@ -1699,9 +1711,11 @@ pub fn compare_optional_numeric_field<T: PartialEq + std::fmt::Debug>(spec: &Opt
 /// 
 /// Helper for comparing enum fields like `status`, `role`, `type`, etc.
 /// Returns `true` if fields differ, `false` if they match.
+/// 
+/// When drift is detected, logs at INFO level to make it visible.
 pub fn compare_enum_field<T: PartialEq + std::fmt::Debug>(spec: &T, netbox: &T) -> bool {
     if spec != netbox {
-        debug!("Enum field changed: {:?} -> {:?}", netbox, spec);
+        info!("Field drift detected (enum): {:?} -> {:?} (NetBox will be overwritten with CR value)", netbox, spec);
         return true;
     }
     false

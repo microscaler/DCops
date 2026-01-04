@@ -14,15 +14,17 @@ spec:
     apiGroup: "dcops.microscaler.io"
     kind: "NetBoxTenant"
     name: "datacenter-tenant"
-  description: "Rack A in datacenter-1"
-  driftDetection: true
-  comments: "Rack A location in datacenter-1. Managed by DCops controller."
-  driftDetection: true
-  # Optional: parent location for nested locations
+  # Optional: parent location for nested locations (omit for top-level locations)
+  # This location is top-level (no parent), but uncomment and set if this is a nested location
   # parent:
   #   apiGroup: "dcops.microscaler.io"
   #   kind: "NetBoxLocation"
   #   name: "datacenter-1-floor-1"
+  # Optional: facility identifier (recommended for data center locations)
+  facility: "Rack-A-01"
+  description: "Rack A in datacenter-1"
+  comments: "Rack A location in datacenter-1. Managed by DCops controller."
+  driftDetection: true
   # Tag references (optional)
   # Tags must exist in NetBox before they can be referenced
   # See netbox-tag-example.yaml for creating tags

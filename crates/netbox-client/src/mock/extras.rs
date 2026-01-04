@@ -101,6 +101,35 @@ pub async fn get_tag(client: &MockNetBoxClient, id: u64) -> Result<Tag, NetBoxEr
             .ok_or_else(|| NetBoxError::NotFound(format!("Tag {} not found", id)))
 }
 
+pub async fn update_tag(client: &MockNetBoxClient, id: u64, name: Option<&str>, slug: Option<&str>, color: Option<&str>, description: Option<String>, comments: Option<String>) -> Result<Tag, NetBoxError> {
+        let mut tags = client.tags.lock().unwrap();
+        let tag = tags.get_mut(&id)
+            .ok_or_else(|| NetBoxError::NotFound(format!("Tag {} not found", id)))?;
+        
+        if let Some(name_val) = name {
+            tag.name = name_val.to_string();
+            tag.display = name_val.to_string();
+        }
+        
+        if let Some(slug_val) = slug {
+            tag.slug = slug_val.to_string();
+        }
+        
+        if let Some(color_val) = color {
+            tag.color = color_val.to_string();
+        }
+        
+        if description.is_some() {
+            tag.description = description;
+        }
+        
+        if comments.is_some() {
+            tag.comments = comments;
+        }
+        
+        Ok(tag.clone())
+    }
+
 pub async fn create_tag(client: &MockNetBoxClient, name: &str, slug: Option<&str>, color: Option<&str>, description: Option<String>, comments: Option<String>) -> Result<Tag, NetBoxError> {
         let id = client.next_id();
         let slug_value = slug.map(|s| s.to_string()).unwrap_or_else(|| name.to_lowercase().replace(' ', "-"));

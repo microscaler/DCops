@@ -115,3 +115,49 @@ pub async fn create_tag(
     response.json().await.map_err(|e| NetBoxError::Http(e))
 }
 
+/// Update an existing tag
+pub async fn update_tag(
+    core: &NetBoxClientCore,
+    id: u64,
+    name: Option<&str>,
+    slug: Option<&str>,
+    color: Option<&str>,
+    description: Option<String>,
+    comments: Option<String>,
+) -> Result<Tag, NetBoxError> {
+    let url = format!("{}/api/extras/tags/{}/", core.base_url, id);
+    debug!("Updating tag {} in NetBox", id);
+    
+    let mut body = serde_json::json!({});
+    
+    if let Some(n) = name {
+        body["name"] = serde_json::Value::String(n.to_string());
+    }
+    if let Some(s) = slug {
+        body["slug"] = serde_json::Value::String(s.to_string());
+    }
+    helpers::add_optional_string_field(&mut body, "color", color);
+    helpers::add_optional_string_field_owned(&mut body, "description", description);
+    helpers::add_optional_string_field_owned(&mut body, "comments", comments);
+    
+    let response = core.client
+        .patch(&url)
+        .header("Authorization", format!("Token {}", core.token))
+        .header("Accept", "application/json")
+        .header("Content-Type", "application/json")
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| NetBoxError::Http(e))?;
+    
+    if !response.status().is_success() {
+        let status = response.status();
+        let body = response.text().await.unwrap_or_default();
+        return Err(NetBoxError::Api(format!(
+            "Failed to update tag {}: {} - {}",
+            id, status, body
+        )));
+    }
+    
+    response.json().await.map_err(|e| NetBoxError::Http(e))
+}

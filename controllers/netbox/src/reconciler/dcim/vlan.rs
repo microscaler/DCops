@@ -4,9 +4,52 @@ use super::super::Reconciler;
 use crate::error::ControllerError;
 use tracing::{info, error, debug, warn};
 use crds::{NetBoxVLAN, ResourceState};
-use netbox_client::{VlanId, SiteId, TenantId};
+use netbox_client::{VlanId, SiteId, TenantId, RoleId, VlanGroupId};
 
 impl Reconciler {
+    fn vlan_needs_update(
+        spec: &crds::NetBoxVLANSpec,
+        existing: &netbox_client::Vlan,
+        desired_site_id: Option<u64>,
+        desired_tenant_id: u64,
+        desired_role_id: Option<u64>,
+        desired_group_id: Option<u64>,
+    ) -> bool {
+        use crate::reconcile_helpers::{
+            compare_string_field,
+            compare_optional_string_field,
+            compare_optional_dependency_id,
+            compare_enum_field,
+        };
+        
+        let existing_site_id = existing.site.as_ref().map(|s| s.id);
+        let existing_tenant_id = existing.tenant.as_ref().map(|t| t.id);
+        let existing_role_id = existing.role.as_ref().map(|r| r.id);
+        let existing_group_id = existing.group.as_ref().map(|g| g.id);
+        
+        // Note: description and comments are String in NetBox model but Option<String> in CRD
+        let existing_description = Some(existing.description.clone());
+        let existing_comments = Some(existing.comments.clone());
+        
+        // Convert NetBox VlanStatus to CRD VlanStatus for comparison
+        let existing_status = match existing.status {
+            netbox_client::VlanStatus::Active => crds::VlanStatus::Active,
+            netbox_client::VlanStatus::Reserved => crds::VlanStatus::Reserved,
+            netbox_client::VlanStatus::Deprecated => crds::VlanStatus::Deprecated,
+        };
+        
+        spec.vid != existing.vid
+            || compare_string_field(&spec.name, &existing.name)
+            || compare_optional_dependency_id(desired_site_id, existing_site_id)
+            || compare_optional_dependency_id(Some(desired_tenant_id), existing_tenant_id)
+            || compare_optional_dependency_id(desired_role_id, existing_role_id)
+            || compare_optional_dependency_id(desired_group_id, existing_group_id)
+            || compare_enum_field(&spec.status, &existing_status)
+            || compare_optional_string_field(&spec.description, &existing_description)
+            || compare_optional_string_field(&spec.comments, &existing_comments)
+        // Tags are handled separately
+    }
+
     pub async fn reconcile_netbox_vlan(&self, vlan_crd: &NetBoxVLAN) -> Result<(), ControllerError> {
         // Extract name and namespace using helper
         use crate::reconcile_helpers::extract_name_and_namespace;
@@ -36,10 +79,117 @@ impl Reconciler {
             ).await?
         };
         
+        // Resolve dependencies for drift detection
+        use crate::reconcile_helpers::{resolve_required_dependency_id, resolve_optional_dependency_id};
+        let site_id: Option<u64> = resolve_optional_dependency_id(
+            &*self.netbox_site_api,
+            vlan_crd.spec.site.as_ref(),
+            "NetBoxSite",
+            "site",
+            name,
+            |crd| crd.status.as_ref(),
+        ).await;
+        
+        let tenant_id = match resolve_required_dependency_id(
+            &*self.netbox_tenant_api,
+            &vlan_crd.spec.tenant.name,
+            "Tenant",
+            name,
+            |crd| crd.status.as_ref(),
+        ).await {
+            Ok(id) => id,
+            Err(e) => {
+                use crate::events::reasons;
+                self.record_event_warning(
+                    reasons::DEPENDENCY_NOT_FOUND,
+                    &format!("Tenant '{}' not found or not ready: {}", vlan_crd.spec.tenant.name, e),
+                    vlan_crd,
+                ).await;
+                return Err(e);
+            }
+        };
+        
+        let role_id: Option<u64> = resolve_optional_dependency_id(
+            &*self.netbox_role_api,
+            vlan_crd.spec.role.as_ref(),
+            "NetBoxRole",
+            "role",
+            name,
+            |crd| crd.status.as_ref(),
+        ).await;
+        
+        // Note: VLAN group is not yet implemented as a CRD, so we skip it for now
+        let group_id: Option<u64> = None;
+        
+        // Check if drift detection is enabled (defaults to true)
+        let drift_detection_enabled = vlan_crd.spec.drift_detection.unwrap_or(true);
+        
         let netbox_vlan = match drift_result {
             DriftCheckResult::UseExisting(vlan) => {
-                // Resource exists and is up-to-date
-                Some(vlan)
+                // Check for field drift if enabled
+                if drift_detection_enabled {
+                    if Self::vlan_needs_update(&vlan_crd.spec, &vlan, site_id, tenant_id, role_id, group_id) {
+                        // Field drift detected - update NetBox to match CRD (Git is source of truth)
+                        warn!("NetBoxVLAN {}/{} fields differ from CRD spec, updating to match Git", namespace, name);
+                        use crate::events::reasons;
+                        self.record_event_warning(
+                            reasons::DRIFT_DETECTED,
+                            &format!("NetBoxVLAN {}/{} fields differ from CRD, updating to match Git", namespace, name),
+                            vlan_crd,
+                        ).await;
+                        
+                        // Resolve tags for update
+                        let resolved_tags_json = self.resolve_tag_references(
+                            netbox_client.as_ref(),
+                            &vlan_crd.spec.tags,
+                            namespace,
+                            name,
+                            Some(vlan.id),
+                        ).await;
+                        let resolved_tags = crate::reconcile_helpers::convert_tags_to_strings(resolved_tags_json);
+                        
+                        // Convert status enum to string for API
+                        let status_str = match vlan_crd.spec.status {
+                            crds::VlanStatus::Active => Some("active"),
+                            crds::VlanStatus::Reserved => Some("reserved"),
+                            crds::VlanStatus::Deprecated => Some("deprecated"),
+                        };
+                        
+                        match netbox_client.update_vlan(
+                            VlanId(vlan.id as u32),
+                            Some(vlan_crd.spec.vid),
+                            Some(&vlan_crd.spec.name),
+                            site_id.map(SiteId),
+                            group_id.map(VlanGroupId),
+                            Some(TenantId(tenant_id)),
+                            role_id.map(RoleId),
+                            status_str,
+                            vlan_crd.spec.description.clone(),
+                            vlan_crd.spec.comments.clone(),
+                            resolved_tags,
+                        ).await {
+                            Ok(updated) => {
+                                use crate::events::reasons;
+                                self.record_event_normal(
+                                    reasons::UPDATED,
+                                    &format!("Updated NetBoxVLAN {}/{} in NetBox to match CRD (ID: {})", namespace, name, updated.id),
+                                    vlan_crd,
+                                ).await;
+                                Some(updated)
+                            }
+                            Err(e) => {
+                                error!("Failed to update NetBoxVLAN {}/{} in NetBox: {}", namespace, name, e);
+                                Some(vlan) // Use existing if update fails
+                            }
+                        }
+                    } else {
+                        // No drift - use existing
+                        Some(vlan)
+                    }
+                } else {
+                    // Drift detection disabled - use existing
+                    Some(vlan)
+                }
             }
             DriftCheckResult::StatusCleared { message } => {
                 // Emit event for drift detection
@@ -129,38 +279,7 @@ impl Reconciler {
                     }
                 };
                 
-                // Check if status needs updating
-                use crate::reconcile_helpers::status_needs_update;
-                let needs_status_update = status_needs_update(
-                    vlan_crd.status.as_ref(),
-                    vlan.id,
-                    &vlan.url,
-                    "Created",
-                    None,
-                );
-                
-                if needs_status_update {
-                    use crate::reconcile_helpers::update_resource_status;
-                    let status_patch = Self::create_resource_status_patch(
-                        vlan.id,
-                        vlan.url.clone(),
-                        ResourceState::Created,
-                        None,
-                    );
-                    update_resource_status(
-                        &*self.netbox_vlan_api,
-                        name,
-                        namespace,
-                        &status_patch,
-                        "NetBoxVLAN",
-                        vlan.id,
-                    ).await?;
-                    debug!("Updated NetBoxVLAN {}/{} status: NetBox ID {}", namespace, name, vlan.id);
-                    return Ok(());
-                } else {
-                    debug!("NetBoxVLAN {}/{} already has correct status (ID: {}), skipping update", namespace, name, vlan.id);
-                    return Ok(());
-                }
+                vlan // Return existing VLAN (status update happens at end)
             }
             None => {
                 // Need to create VLAN - resolve dependencies first using helpers

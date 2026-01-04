@@ -643,5 +643,9 @@ impl NetBoxClientTrait for MockNetBoxClient {
     async fn create_tag(&self, name: &str, slug: Option<&str>, color: Option<&str>, description: Option<String>, comments: Option<String>) -> Result<Tag, NetBoxError> {
         extras::create_tag(self, name, slug, color, description, comments).await
     }
+
+    async fn update_tag(&self, id: u64, name: Option<&str>, slug: Option<&str>, color: Option<&str>, description: Option<String>, comments: Option<String>) -> Result<Tag, NetBoxError> {
+        extras::update_tag(self, id, name, slug, color, description, comments).await
+    }
 }
 

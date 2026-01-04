@@ -159,4 +159,5 @@ pub trait NetBoxClientTrait: Send + Sync {
     async fn query_tags(&self, filters: &[(&str, &str)], fetch_all: bool) -> Result<Vec<Tag>, NetBoxError>;
     async fn get_tag(&self, id: u64) -> Result<Tag, NetBoxError>;
     async fn create_tag(&self, name: &str, slug: Option<&str>, color: Option<&str>, description: Option<String>, comments: Option<String>) -> Result<Tag, NetBoxError>;
+    async fn update_tag(&self, id: u64, name: Option<&str>, slug: Option<&str>, color: Option<&str>, description: Option<String>, comments: Option<String>) -> Result<Tag, NetBoxError>;
 }

@@ -7,9 +7,29 @@ use crate::error::ControllerError;
 use crate::reconcile_helpers::{extract_name_and_namespace, validate_status_and_drift, DriftCheckResult, status_needs_update, update_resource_status, is_conflict_error};
 use tracing::{info, error, debug, warn};
 use crds::{NetBoxRIR, ResourceState};
-use netbox_client::NetBoxClientTrait;
 
 impl Reconciler {
+    fn rir_needs_update(
+        spec: &crds::NetBoxRIRSpec,
+        existing: &netbox_client::Rir,
+    ) -> bool {
+        use crate::reconcile_helpers::{
+            compare_string_field,
+            compare_slug_field,
+            compare_optional_string_field,
+        };
+        
+        let auto_generated_slug = spec.name.to_lowercase().replace(' ', "-");
+        let spec_is_private = spec.is_private.unwrap_or(false);
+        
+        compare_string_field(&spec.name, &existing.name)
+            || compare_slug_field(&spec.slug, &existing.slug, auto_generated_slug)
+            || compare_optional_string_field(&spec.description, &existing.description)
+            || compare_optional_string_field(&spec.comments, &existing.comments)
+            || spec_is_private != existing.is_private
+        // Tags are handled separately
+    }
+
     /// Reconciles a NetBoxRIR resource.
     pub async fn reconcile_netbox_rir(&self, rir_crd: &NetBoxRIR) -> Result<(), ControllerError> {
         let (name, namespace) = extract_name_and_namespace(rir_crd, "NetBoxRIR")?;
@@ -41,8 +61,66 @@ impl Reconciler {
             ).await?
         };
         
+        // Check if drift detection is enabled (defaults to true)
+        let drift_detection_enabled = rir_crd.spec.drift_detection.unwrap_or(true);
+        
         let netbox_rir = match drift_result {
-            DriftCheckResult::UseExisting(rir) => Some(rir),
+            DriftCheckResult::UseExisting(rir) => {
+                // Check for field drift if enabled
+                if drift_detection_enabled {
+                    if Self::rir_needs_update(&rir_crd.spec, &rir) {
+                        // Field drift detected - update NetBox to match CRD (Git is source of truth)
+                        warn!("NetBoxRIR {}/{} fields differ from CRD spec, updating to match Git", namespace, name);
+                        use crate::events::reasons;
+                        self.record_event_warning(
+                            reasons::DRIFT_DETECTED,
+                            &format!("NetBoxRIR {}/{} fields differ from CRD, updating to match Git", namespace, name),
+                            rir_crd,
+                        ).await;
+                        
+                        // Resolve tags for update
+                        let resolved_tags_json = self.resolve_tag_references(
+                            netbox_client.as_ref(),
+                            &rir_crd.spec.tags,
+                            namespace,
+                            name,
+                            Some(rir.id),
+                        ).await;
+                        let resolved_tags = crate::reconcile_helpers::convert_tags_to_strings(resolved_tags_json);
+                        
+                        use netbox_client::RirId;
+                        match netbox_client.update_rir(
+                            RirId(rir.id),
+                            Some(&rir_crd.spec.name),
+                            rir_crd.spec.slug.as_deref(),
+                            rir_crd.spec.description.clone(),
+                            rir_crd.spec.comments.clone(),
+                            rir_crd.spec.is_private,
+                            resolved_tags,
+                        ).await {
+                            Ok(updated) => {
+                                use crate::events::reasons;
+                                self.record_event_normal(
+                                    reasons::UPDATED,
+                                    &format!("Updated NetBoxRIR {}/{} in NetBox to match CRD (ID: {})", namespace, name, updated.id),
+                                    rir_crd,
+                                ).await;
+                                Some(updated)
+                            }
+                            Err(e) => {
+                                error!("Failed to update NetBoxRIR {}/{} in NetBox: {}", namespace, name, e);
+                                Some(rir) // Use existing if update fails
+                            }
+                        }
+                    } else {
+                        // No drift - use existing
+                        Some(rir)
+                    }
+                } else {
+                    // Drift detection disabled - use existing
+                    Some(rir)
+                }
+            }
             DriftCheckResult::StatusCleared { message } => {
                 // Emit event for drift detection
                 use crate::events::reasons;
@@ -128,27 +206,7 @@ impl Reconciler {
                     None,
                 );
                 
-                if needs_status_update {
-                    let status_patch = Self::create_typed_rir_status_patch(
-                        rir.id,
-                        rir.url.clone(),
-                        ResourceState::Created,
-                        None,
-                    );
-                    update_resource_status(
-                        &*self.netbox_rir_api,
-                        name,
-                        namespace,
-                        &status_patch,
-                        "NetBoxRIR",
-                        rir.id,
-                    ).await?;
-                    debug!("Updated NetBoxRIR {}/{} status: NetBox ID {}", namespace, name, rir.id);
-                    return Ok(());
-                } else {
-                    debug!("NetBoxRIR {}/{} already has correct status (ID: {}), skipping update", namespace, name, rir.id);
-                    return Ok(());
-                }
+                rir // Return existing RIR (status update happens at end)
             }
             None => {
                 // Try to find existing RIR by name or slug

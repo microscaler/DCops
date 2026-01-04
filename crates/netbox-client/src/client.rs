@@ -479,6 +479,10 @@ impl NetBoxClientTrait for NetBoxClient {
         extras::create_tag(&self.core, name, slug, color, description, comments).await
     }
 
+    async fn update_tag(&self, id: u64, name: Option<&str>, slug: Option<&str>, color: Option<&str>, description: Option<String>, comments: Option<String>) -> Result<Tag, NetBoxError> {
+        extras::update_tag(&self.core, id, name, slug, color, description, comments).await
+    }
+
     // Extras operations with parameter transformations
     async fn get_role(&self, id: RoleId) -> Result<Role, NetBoxError> {
         extras::get_role(&self.core, id.into()).await

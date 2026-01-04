@@ -7,5 +7,5 @@ pub mod tag;
 
 // Re-export functions
 pub use role::{query_roles, get_role, create_role, update_role};
-pub use tag::{query_tags, get_tag, create_tag};
+pub use tag::{query_tags, get_tag, create_tag, update_tag};
 

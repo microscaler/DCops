@@ -7,6 +7,27 @@ use crds::{NetBoxRole, NetBoxTag, ResourceState};
 use netbox_client::NetBoxClientTrait;
 
 impl Reconciler {
+    fn role_needs_update(
+        spec: &crds::NetBoxRoleSpec,
+        existing: &netbox_client::Role,
+    ) -> bool {
+        use crate::reconcile_helpers::{
+            compare_string_field,
+            compare_slug_field,
+            compare_optional_string_field,
+            compare_optional_numeric_field,
+        };
+        
+        let auto_generated_slug = spec.name.to_lowercase().replace(' ', "-");
+        
+        compare_string_field(&spec.name, &existing.name)
+            || compare_slug_field(&spec.slug, &existing.slug, auto_generated_slug)
+            || compare_optional_string_field(&spec.description, &existing.description)
+            || compare_optional_numeric_field(&spec.weight, &existing.weight)
+            || compare_optional_string_field(&spec.comments, &existing.comments)
+        // Tags are handled separately
+    }
+
     /// Reconciles a NetBoxRole resource (Extras Role, not IPAM Role).
     pub async fn reconcile_netbox_role(&self, role_crd: &NetBoxRole) -> Result<(), ControllerError> {
         // Extract name and namespace using helper
@@ -42,8 +63,66 @@ impl Reconciler {
             ).await?
         };
         
+        // Check if drift detection is enabled (defaults to true)
+        let drift_detection_enabled = role_crd.spec.drift_detection.unwrap_or(true);
+        
         let netbox_role = match drift_result {
-            DriftCheckResult::UseExisting(role) => Some(role),
+            DriftCheckResult::UseExisting(role) => {
+                // Check for field drift if enabled
+                if drift_detection_enabled {
+                    if Self::role_needs_update(&role_crd.spec, &role) {
+                        // Field drift detected - update NetBox to match CRD (Git is source of truth)
+                        warn!("NetBoxRole {}/{} fields differ from CRD spec, updating to match Git", namespace, name);
+                        use crate::events::reasons;
+                        self.record_event_warning(
+                            reasons::DRIFT_DETECTED,
+                            &format!("NetBoxRole {}/{} fields differ from CRD, updating to match Git", namespace, name),
+                            role_crd,
+                        ).await;
+                        
+                        // Resolve tags for update
+                        let resolved_tags_json = self.resolve_tag_references(
+                            netbox_client.as_ref(),
+                            &role_crd.spec.tags,
+                            namespace,
+                            name,
+                            Some(role.id),
+                        ).await;
+                        let resolved_tags = crate::reconcile_helpers::convert_tags_to_strings(resolved_tags_json);
+                        
+                        use netbox_client::RoleId;
+                        match netbox_client.update_role(
+                            RoleId(role.id),
+                            Some(&role_crd.spec.name),
+                            role_crd.spec.slug.as_deref(),
+                            role_crd.spec.description.clone(),
+                            role_crd.spec.weight,
+                            role_crd.spec.comments.clone(),
+                            resolved_tags,
+                        ).await {
+                            Ok(updated) => {
+                                use crate::events::reasons;
+                                self.record_event_normal(
+                                    reasons::UPDATED,
+                                    &format!("Updated NetBoxRole {}/{} in NetBox to match CRD (ID: {})", namespace, name, updated.id),
+                                    role_crd,
+                                ).await;
+                                Some(updated)
+                            }
+                            Err(e) => {
+                                error!("Failed to update NetBoxRole {}/{} in NetBox: {}", namespace, name, e);
+                                Some(role) // Use existing if update fails
+                            }
+                        }
+                    } else {
+                        // No drift - use existing
+                        Some(role)
+                    }
+                } else {
+                    // Drift detection disabled - use existing
+                    Some(role)
+                }
+            }
             DriftCheckResult::StatusCleared { message } => {
                 // Emit event for drift detection
                 use crate::events::reasons;
@@ -130,28 +209,7 @@ impl Reconciler {
                     None,
                 );
                 
-                if needs_status_update {
-                    use crate::reconcile_helpers::update_resource_status;
-                    let status_patch = Self::create_typed_role_status_patch(
-                        role.id,
-                        role.url.clone(),
-                        ResourceState::Created,
-                        None,
-                    );
-                    update_resource_status(
-                        &*self.netbox_role_api,
-                        name,
-                        namespace,
-                        &status_patch,
-                        "NetBoxRole",
-                        role.id,
-                    ).await?;
-                    debug!("Updated NetBoxRole {}/{} status: NetBox ID {}", namespace, name, role.id);
-                    return Ok(());
-                } else {
-                    debug!("NetBoxRole {}/{} already has correct status (ID: {}), skipping update", namespace, name, role.id);
-                    return Ok(());
-                }
+                role // Return existing Role (status update happens at end)
             }
             None => {
                 let existing_role = match netbox_client.query_roles(&[("name", &role_crd.spec.name)], false).await {
@@ -332,6 +390,28 @@ impl Reconciler {
         Ok(())
     }
     
+    fn tag_needs_update(
+        spec: &crds::NetBoxTagSpec,
+        existing: &netbox_client::Tag,
+    ) -> bool {
+        use crate::reconcile_helpers::{
+            compare_string_field,
+            compare_slug_field,
+            compare_optional_string_field,
+        };
+        
+        let auto_generated_slug = spec.name.to_lowercase().replace(' ', "-");
+        // Note: color is String in NetBox model but Option<String> in CRD
+        let existing_color = Some(existing.color.clone());
+        
+        compare_string_field(&spec.name, &existing.name)
+            || compare_slug_field(&spec.slug, &existing.slug, auto_generated_slug)
+            || compare_optional_string_field(&spec.color, &existing_color)
+            || compare_optional_string_field(&spec.description, &existing.description)
+            || compare_optional_string_field(&spec.comments, &existing.comments)
+        // Tags don't have tags themselves
+    }
+
     /// Reconciles a NetBoxTag resource.
     pub async fn reconcile_netbox_tag(&self, tag_crd: &NetBoxTag) -> Result<(), ControllerError> {
         // Extract name and namespace using helper
@@ -376,8 +456,54 @@ impl Reconciler {
             ).await?
         };
         
+        // Check if drift detection is enabled (defaults to true)
+        let drift_detection_enabled = tag_crd.spec.drift_detection.unwrap_or(true);
+        
         let netbox_tag = match drift_result {
-            DriftCheckResult::UseExisting(tag) => Some(tag),
+            DriftCheckResult::UseExisting(tag) => {
+                // Check for field drift if enabled
+                if drift_detection_enabled {
+                    if Self::tag_needs_update(&tag_crd.spec, &tag) {
+                        // Field drift detected - update NetBox to match CRD (Git is source of truth)
+                        warn!("NetBoxTag {}/{} fields differ from CRD spec, updating to match Git", namespace, name);
+                        use crate::events::reasons;
+                        self.record_event_warning(
+                            reasons::DRIFT_DETECTED,
+                            &format!("NetBoxTag {}/{} fields differ from CRD, updating to match Git", namespace, name),
+                            tag_crd,
+                        ).await;
+                        
+                        match netbox_client.update_tag(
+                            tag.id,
+                            Some(&tag_crd.spec.name),
+                            tag_crd.spec.slug.as_deref(),
+                            tag_crd.spec.color.as_deref(),
+                            tag_crd.spec.description.clone(),
+                            tag_crd.spec.comments.clone(),
+                        ).await {
+                            Ok(updated) => {
+                                use crate::events::reasons;
+                                self.record_event_normal(
+                                    reasons::UPDATED,
+                                    &format!("Updated NetBoxTag {}/{} in NetBox to match CRD (ID: {})", namespace, name, updated.id),
+                                    tag_crd,
+                                ).await;
+                                Some(updated)
+                            }
+                            Err(e) => {
+                                error!("Failed to update NetBoxTag {}/{} in NetBox: {}", namespace, name, e);
+                                Some(tag) // Use existing if update fails
+                            }
+                        }
+                    } else {
+                        // No drift - use existing
+                        Some(tag)
+                    }
+                } else {
+                    // Drift detection disabled - use existing
+                    Some(tag)
+                }
+            }
             DriftCheckResult::StatusCleared { message } => {
                 // Emit event for drift detection
                 use crate::events::reasons;
@@ -414,28 +540,7 @@ impl Reconciler {
                     None,
                 );
                 
-                if needs_status_update {
-                    use crate::reconcile_helpers::update_resource_status;
-                    let status_patch = Self::create_typed_tag_status_patch(
-                        tag.id,
-                        tag.url.clone(),
-                        ResourceState::Created,
-                        None,
-                    );
-                    update_resource_status(
-                        &*self.netbox_tag_api,
-                        name,
-                        namespace,
-                        &status_patch,
-                        "NetBoxTag",
-                        tag.id,
-                    ).await?;
-                    debug!("Updated NetBoxTag {}/{} status: NetBox ID {}", namespace, name, tag.id);
-                    return Ok(());
-                } else {
-                    debug!("NetBoxTag {}/{} already has correct status (ID: {}), skipping update", namespace, name, tag.id);
-                    return Ok(());
-                }
+                tag // Return existing Tag (status update happens at end)
             }
             None => {
                 let existing_tag = match netbox_client.query_tags(&[("name", &tag_crd.spec.name)], false).await {

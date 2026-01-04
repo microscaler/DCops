@@ -1252,6 +1252,8 @@ impl Reconciler {
             resource_netbox_id,
         ).await;
         
+        info!("Creating IP address with address: {}, description: {:?}, comments: {:?}, dns_name: {:?}", 
+            ip_net, ip_address_crd.spec.description, ip_address_crd.spec.comments, ip_address_crd.spec.dns_name);
         debug!("Creating IP address {} with tenant_id: {}, tags: {:?}", address_str, tenant_id, resolved_tags);
         
         // Create IP address

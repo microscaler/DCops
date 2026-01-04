@@ -7,6 +7,29 @@ use crds::{NetBoxAggregate, ResourceState};
 use netbox_client::{NetBoxClientTrait, RirId};
 
 impl Reconciler {
+    fn aggregate_needs_update(
+        spec: &crds::NetBoxAggregateSpec,
+        existing: &netbox_client::Aggregate,
+        desired_rir_id: Option<u64>,
+    ) -> bool {
+        use crate::reconcile_helpers::{
+            compare_string_field,
+            compare_optional_string_field,
+            compare_optional_dependency_id,
+        };
+        
+        // Compare prefix - convert IpNet to String for comparison
+        let existing_prefix_str = existing.prefix.to_string();
+        let existing_rir_id = existing.rir.as_ref().map(|r| r.id);
+        
+        compare_string_field(&spec.prefix, &existing_prefix_str)
+            || compare_optional_dependency_id(desired_rir_id, existing_rir_id)
+            || compare_optional_string_field(&spec.date_allocated, &existing.date_allocated)
+            || compare_optional_string_field(&spec.description, &existing.description)
+            || compare_optional_string_field(&spec.comments, &existing.comments)
+        // Tags are handled separately
+    }
+
     pub async fn reconcile_netbox_aggregate(&self, aggregate_crd: &NetBoxAggregate) -> Result<(), ControllerError> {
         // Extract name and namespace using helper
         use crate::reconcile_helpers::extract_name_and_namespace;
@@ -115,8 +138,64 @@ impl Reconciler {
             ).await?
         };
         
+        // Check if drift detection is enabled (defaults to true)
+        let drift_detection_enabled = aggregate_crd.spec.drift_detection.unwrap_or(true);
+        
         let netbox_aggregate = match drift_result {
-            DriftCheckResult::UseExisting(aggregate) => Some(aggregate),
+            DriftCheckResult::UseExisting(aggregate) => {
+                // Check for field drift if enabled
+                if drift_detection_enabled {
+                    if Self::aggregate_needs_update(&aggregate_crd.spec, &aggregate, rir_id) {
+                        // Field drift detected - update NetBox to match CRD (Git is source of truth)
+                        warn!("NetBoxAggregate {}/{} fields differ from CRD spec, updating to match Git", namespace, name);
+                        use crate::events::reasons;
+                        self.record_event_warning(
+                            reasons::DRIFT_DETECTED,
+                            &format!("NetBoxAggregate {}/{} fields differ from CRD, updating to match Git", namespace, name),
+                            aggregate_crd,
+                        ).await;
+                        
+                        // Resolve tags for update
+                        let resolved_tags_json = self.resolve_tag_references(
+                            netbox_client.as_ref(),
+                            &aggregate_crd.spec.tags,
+                            namespace,
+                            name,
+                            Some(aggregate.id),
+                        ).await;
+                        let resolved_tags = crate::reconcile_helpers::convert_tags_to_strings(resolved_tags_json);
+                        
+                        match netbox_client.update_aggregate(
+                            netbox_client::AggregateId(aggregate.id),
+                            rir_id.map(netbox_client::RirId),
+                            aggregate_crd.spec.date_allocated.as_deref(),
+                            aggregate_crd.spec.description.clone(),
+                            aggregate_crd.spec.comments.clone(),
+                            resolved_tags,
+                        ).await {
+                            Ok(updated) => {
+                                use crate::events::reasons;
+                                self.record_event_normal(
+                                    reasons::UPDATED,
+                                    &format!("Updated NetBoxAggregate {}/{} in NetBox to match CRD (ID: {})", namespace, name, updated.id),
+                                    aggregate_crd,
+                                ).await;
+                                Some(updated)
+                            }
+                            Err(e) => {
+                                error!("Failed to update NetBoxAggregate {}/{} in NetBox: {}", namespace, name, e);
+                                Some(aggregate) // Use existing if update fails
+                            }
+                        }
+                    } else {
+                        // No drift - use existing
+                        Some(aggregate)
+                    }
+                } else {
+                    // Drift detection disabled - use existing
+                    Some(aggregate)
+                }
+            }
             DriftCheckResult::StatusCleared { message } => {
                 // Emit event for drift detection
                 use crate::events::reasons;
@@ -144,75 +223,62 @@ impl Reconciler {
         
         let netbox_aggregate = match netbox_aggregate {
             Some(aggregate) => {
-                // Check if tags need updating
-                let tags_need_update = crate::reconcile_helpers::tags_differ(&aggregate.tags, &aggregate_crd.spec.tags);
-                
-                let aggregate = if tags_need_update {
-                    info!("Aggregate {}/{} tags differ, updating in NetBox", namespace, name);
-                    // Resolve tags
-                    let resolved_tags_json = self.resolve_tag_references(
-                        netbox_client.as_ref(),
-                        &aggregate_crd.spec.tags,
-                        namespace,
-                        name,
-                    None,
+                // Update tags if they differ (tags are handled separately from field drift)
+                let aggregate_id = aggregate.id;
+                let aggregate_clone = aggregate.clone();
+                let rir_id_clone = rir_id;
+                let date_allocated = aggregate_crd.spec.date_allocated.clone();
+                let description = aggregate_crd.spec.description.clone();
+                let comments = aggregate_crd.spec.comments.clone();
+                let resolved_tags_json = self.resolve_tag_references(
+                    netbox_client.as_ref(),
+                    &aggregate_crd.spec.tags,
+                    namespace,
+                    name,
+                    Some(aggregate_id),
                 ).await;
-                    let resolved_tags = crate::reconcile_helpers::convert_tags_to_strings(resolved_tags_json);
-                    
-                    match netbox_client.as_ref().update_aggregate(
-                        netbox_client::AggregateId(aggregate.id),
-                        rir_id.map(netbox_client::RirId),
-                        aggregate_crd.spec.date_allocated.as_deref(),
-                        aggregate_crd.spec.description.clone(),
-                        aggregate_crd.spec.comments.clone(),
-                        resolved_tags,
-                    ).await {
-                        Ok(updated) => {
-                            info!("Updated aggregate {} tags in NetBox (ID: {})", updated.prefix, updated.id);
-                            updated
+                let resolved_tags = crate::reconcile_helpers::convert_tags_to_strings(resolved_tags_json);
+                
+                let aggregate = match crate::reconcile_helpers::update_tags_if_differ(
+                    aggregate,
+                    &aggregate_crd.spec.tags,
+                    resolved_tags.clone(),
+                    |tags| {
+                        let aggregate_id_clone = aggregate_id;
+                        let rir_id_clone2 = rir_id_clone;
+                        let date_allocated_clone = date_allocated.clone();
+                        let description_clone = description.clone();
+                        let comments_clone = comments.clone();
+                        async move {
+                            netbox_client.update_aggregate(
+                                netbox_client::AggregateId(aggregate_id_clone),
+                                rir_id_clone2.map(netbox_client::RirId),
+                                date_allocated_clone.as_deref(),
+                                description_clone,
+                                comments_clone,
+                                tags,
+                            ).await
                         }
-                        Err(e) => {
-                            warn!("Failed to update aggregate tags: {}", e);
-                            // Continue with existing aggregate - tag update failure is non-fatal
-                            aggregate
-                        }
+                    },
+                    &format!("NetBoxAggregate {}/{}", namespace, name),
+                ).await {
+                    Ok(Some(updated)) => {
+                        use crate::events::reasons;
+                        self.record_event_normal(
+                            reasons::UPDATED,
+                            &format!("Updated NetBoxAggregate {}/{} tags in NetBox", namespace, name),
+                            aggregate_crd,
+                        ).await;
+                        updated
                     }
-                } else {
-                    debug!("Aggregate {}/{} tags are up-to-date, skipping update", namespace, name);
-                    aggregate
+                    Ok(None) => aggregate_clone, // Tags are up-to-date
+                    Err(e) => {
+                        warn!("Failed to update NetBoxAggregate {}/{} tags: {}", namespace, name, e);
+                        aggregate_clone // Use existing if update fails
+                    }
                 };
                 
-                use crate::reconcile_helpers::status_needs_update;
-                let needs_status_update = status_needs_update(
-                    aggregate_crd.status.as_ref(),
-                    aggregate.id,
-                    &aggregate.url,
-                    "Created",
-                    None,
-                );
-                
-                if needs_status_update {
-                    use crate::reconcile_helpers::update_resource_status;
-                    let status_patch = Self::create_resource_status_patch(
-                        aggregate.id,
-                        aggregate.url.clone(),
-                        ResourceState::Created,
-                        None,
-                    );
-                    update_resource_status(
-                        &*self.netbox_aggregate_api,
-                        name,
-                        namespace,
-                        &status_patch,
-                        "NetBoxAggregate",
-                        aggregate.id,
-                    ).await?;
-                    debug!("Updated NetBoxAggregate {}/{} status: NetBox ID {}", namespace, name, aggregate.id);
-                    return Ok(());
-                } else {
-                    debug!("NetBoxAggregate {}/{} already has correct status (ID: {}), skipping update", namespace, name, aggregate.id);
-                    return Ok(());
-                }
+                aggregate // Return existing Aggregate (status update happens at end)
             }
             None => {
                 // Try to find existing aggregate by prefix

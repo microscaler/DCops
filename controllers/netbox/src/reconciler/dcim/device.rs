@@ -7,6 +7,61 @@ use crds::{NetBoxDevice, ResourceState};
 use netbox_client::{NetBoxClientTrait, DeviceId, DeviceTypeId, DeviceRoleId, SiteId, TenantId, PlatformId, LocationId, IpAddressId};
 
 impl Reconciler {
+    fn device_needs_update(
+        spec: &crds::NetBoxDeviceSpec,
+        existing: &netbox_client::Device,
+        desired_device_type_id: u64,
+        desired_device_role_id: u64,
+        desired_site_id: u64,
+        desired_location_id: Option<u64>,
+        desired_tenant_id: u64,
+        desired_platform_id: Option<u64>,
+        desired_primary_ip4_id: Option<u64>,
+        desired_primary_ip6_id: Option<u64>,
+    ) -> bool {
+        use crate::reconcile_helpers::{
+            compare_optional_string_field,
+            compare_optional_dependency_id,
+            compare_enum_field,
+        };
+        
+        let existing_device_type_id = existing.device_type.id;
+        let existing_device_role_id = existing.device_role.as_ref().map(|r| r.id);
+        let existing_site_id = existing.site.as_ref().map(|s| s.id);
+        let existing_location_id = existing.location.as_ref().map(|l| l.id);
+        let existing_tenant_id = existing.tenant.as_ref().map(|t| t.id);
+        let existing_platform_id = existing.platform.as_ref().map(|p| p.id);
+        let existing_primary_ip4_id = existing.primary_ip4.as_ref().map(|ip| ip.id);
+        let existing_primary_ip6_id = existing.primary_ip6.as_ref().map(|ip| ip.id);
+        
+        // Convert DeviceStatus enum for comparison
+        let existing_status = match existing.status {
+            netbox_client::DeviceStatus::Active => crds::DeviceStatus::Active,
+            netbox_client::DeviceStatus::Offline => crds::DeviceStatus::Offline,
+            netbox_client::DeviceStatus::Planned => crds::DeviceStatus::Planned,
+            netbox_client::DeviceStatus::Staged => crds::DeviceStatus::Staged,
+            netbox_client::DeviceStatus::Failed => crds::DeviceStatus::Failed,
+            netbox_client::DeviceStatus::Inventory => crds::DeviceStatus::Inventory,
+            netbox_client::DeviceStatus::Decommissioning => crds::DeviceStatus::Decommissioning,
+        };
+        
+        compare_optional_string_field(&spec.name, &existing.name)
+            || existing_device_type_id != desired_device_type_id
+            || compare_optional_dependency_id(Some(desired_device_role_id), existing_device_role_id)
+            || compare_optional_dependency_id(Some(desired_site_id), existing_site_id)
+            || compare_optional_dependency_id(desired_location_id, existing_location_id)
+            || compare_optional_dependency_id(Some(desired_tenant_id), existing_tenant_id)
+            || compare_optional_dependency_id(desired_platform_id, existing_platform_id)
+            || compare_optional_string_field(&spec.serial, &existing.serial)
+            || compare_optional_string_field(&spec.asset_tag, &existing.asset_tag)
+            || compare_enum_field(&spec.status, &existing_status)
+            || compare_optional_dependency_id(desired_primary_ip4_id, existing_primary_ip4_id)
+            || compare_optional_dependency_id(desired_primary_ip6_id, existing_primary_ip6_id)
+            || compare_optional_string_field(&spec.description, &existing.description)
+            || compare_optional_string_field(&spec.comments, &existing.comments)
+        // Tags are handled separately
+    }
+
     pub async fn reconcile_netbox_device(&self, device_crd: &NetBoxDevice) -> Result<(), ControllerError> {
         // Extract name and namespace using helper
         use crate::reconcile_helpers::extract_name_and_namespace;
@@ -23,6 +78,140 @@ impl Reconciler {
         // Check if already created - use shared helper for drift detection and status validation
         use crate::reconcile_helpers::{validate_status_and_drift, DriftCheckResult};
         
+        // Resolve dependencies once at the top level (needed for both drift detection and creation)
+        use crate::reconcile_helpers::{validate_reference_kind, resolve_required_dependency_id, resolve_optional_dependency_id};
+        
+        // Validate and resolve DeviceType (required)
+        validate_reference_kind(&device_crd.spec.device_type, "NetBoxDeviceType", "device_type", name)?;
+        let device_type_id = match resolve_required_dependency_id(
+            &*self.netbox_device_type_api,
+            &device_crd.spec.device_type.name,
+            "DeviceType",
+            name,
+            |crd| crd.status.as_ref(),
+        ).await {
+            Ok(id) => id,
+            Err(e) => {
+                use crate::events::reasons;
+                self.record_event_warning(
+                    reasons::DEPENDENCY_NOT_FOUND,
+                    &format!("DeviceType '{}' not found or not ready: {}", device_crd.spec.device_type.name, e),
+                    device_crd,
+                ).await;
+                return Err(e);
+            }
+        };
+        
+        // Validate and resolve DeviceRole (required)
+        validate_reference_kind(&device_crd.spec.device_role, "NetBoxDeviceRole", "device_role", name)?;
+        let device_role_id = match resolve_required_dependency_id(
+            &*self.netbox_device_role_api,
+            &device_crd.spec.device_role.name,
+            "DeviceRole",
+            name,
+            |crd| crd.status.as_ref(),
+        ).await {
+            Ok(id) => id,
+            Err(e) => {
+                use crate::events::reasons;
+                self.record_event_warning(
+                    reasons::DEPENDENCY_NOT_FOUND,
+                    &format!("DeviceRole '{}' not found or not ready: {}", device_crd.spec.device_role.name, e),
+                    device_crd,
+                ).await;
+                return Err(e);
+            }
+        };
+        
+        // Validate and resolve Site (required)
+        validate_reference_kind(&device_crd.spec.site, "NetBoxSite", "site", name)?;
+        let site_id = match resolve_required_dependency_id(
+            &*self.netbox_site_api,
+            &device_crd.spec.site.name,
+            "Site",
+            name,
+            |crd| crd.status.as_ref(),
+        ).await {
+            Ok(id) => id,
+            Err(e) => {
+                use crate::events::reasons;
+                self.record_event_warning(
+                    reasons::DEPENDENCY_NOT_FOUND,
+                    &format!("Site '{}' not found or not ready: {}", device_crd.spec.site.name, e),
+                    device_crd,
+                ).await;
+                return Err(e);
+            }
+        };
+        
+        // Validate and resolve Tenant (required)
+        validate_reference_kind(&device_crd.spec.tenant, "NetBoxTenant", "tenant", name)?;
+        let tenant_id = match resolve_required_dependency_id(
+            &*self.netbox_tenant_api,
+            &device_crd.spec.tenant.name,
+            "Tenant",
+            name,
+            |crd| crd.status.as_ref(),
+        ).await {
+            Ok(id) => id,
+            Err(e) => {
+                use crate::events::reasons;
+                self.record_event_warning(
+                    reasons::DEPENDENCY_NOT_FOUND,
+                    &format!("Tenant '{}' not found or not ready: {}", device_crd.spec.tenant.name, e),
+                    device_crd,
+                ).await;
+                return Err(e);
+            }
+        };
+        
+        // Resolve optional dependencies
+        let platform_id: Option<u64> = resolve_optional_dependency_id(
+            &*self.netbox_platform_api,
+            device_crd.spec.platform.as_ref(),
+            "NetBoxPlatform",
+            "platform",
+            name,
+            |crd| crd.status.as_ref(),
+        ).await;
+        
+        let location_id: Option<u64> = resolve_optional_dependency_id(
+            &*self.netbox_location_api,
+            device_crd.spec.location.as_ref(),
+            "NetBoxLocation",
+            "location",
+            name,
+            |crd| crd.status.as_ref(),
+        ).await;
+        
+        // Resolve primary IP addresses (if specified)
+        let primary_ip4_id = if let Some(ip_ref) = &device_crd.spec.primary_ip4 {
+            if let Some(ip_addr) = &ip_ref.ip_address {
+                match netbox_client.query_ip_addresses(&[("address", ip_addr)], false).await {
+                    Ok(ips) => ips.first().map(|ip| ip.id),
+                    Err(_) => None,
+                }
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+        
+        let primary_ip6_id = if let Some(ip_ref) = &device_crd.spec.primary_ip6 {
+            if let Some(ip_addr) = &ip_ref.ip_address {
+                match netbox_client.query_ip_addresses(&[("address", ip_addr)], false).await {
+                    Ok(ips) => ips.first().map(|ip| ip.id),
+                    Err(_) => None,
+                }
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+        
+        // Check if already created - use shared helper for drift detection and status validation
         let drift_result = {
             let netbox_client_ref = &netbox_client;
             validate_status_and_drift(
@@ -36,14 +225,95 @@ impl Reconciler {
             ).await?
         };
         
+        // Check if drift detection is enabled (defaults to true)
+        let drift_detection_enabled = device_crd.spec.drift_detection.unwrap_or(true);
+        
         let netbox_device = match drift_result {
             DriftCheckResult::UseExisting(device) => {
-                // Resource exists and is up-to-date
-                Some(device)
+                // Check for field drift if enabled
+                if drift_detection_enabled {
+                    if Self::device_needs_update(
+                        &device_crd.spec,
+                        &device,
+                        device_type_id,
+                        device_role_id,
+                        site_id,
+                        location_id,
+                        tenant_id,
+                        platform_id,
+                        primary_ip4_id,
+                        primary_ip6_id,
+                    ) {
+                        // Field drift detected - update NetBox to match CRD (Git is source of truth)
+                        warn!("NetBoxDevice {}/{} fields differ from CRD spec, updating to match Git", namespace, name);
+                        use crate::events::reasons;
+                        self.record_event_warning(
+                            reasons::DRIFT_DETECTED,
+                            &format!("NetBoxDevice {}/{} fields differ from CRD, updating to match Git", namespace, name),
+                            device_crd,
+                        ).await;
+                        
+                        // Resolve tags for update
+                        let resolved_tags_json = self.resolve_tag_references(
+                            netbox_client.as_ref(),
+                            &device_crd.spec.tags,
+                            namespace,
+                            name,
+                            Some(device.id),
+                        ).await;
+                        let resolved_tags = crate::reconcile_helpers::convert_tags_to_strings(resolved_tags_json);
+                        
+                        // Convert device status to NetBox format
+                        let status_str = match device_crd.spec.status {
+                            crds::DeviceStatus::Active => "active",
+                            crds::DeviceStatus::Offline => "offline",
+                            crds::DeviceStatus::Planned => "planned",
+                            crds::DeviceStatus::Staged => "staged",
+                            crds::DeviceStatus::Failed => "failed",
+                            crds::DeviceStatus::Inventory => "inventory",
+                            crds::DeviceStatus::Decommissioning => "decommissioning",
+                        };
+                        
+                        match netbox_client.update_device(
+                            DeviceId(device.id),
+                            device_crd.spec.name.as_deref(),
+                            Some(TenantId(tenant_id)),
+                            platform_id.map(PlatformId),
+                            location_id.map(LocationId),
+                            device_crd.spec.serial.as_deref(),
+                            device_crd.spec.asset_tag.as_deref(),
+                            Some(status_str),
+                            primary_ip4_id.map(IpAddressId),
+                            primary_ip6_id.map(IpAddressId),
+                            device_crd.spec.description.clone(),
+                            device_crd.spec.comments.clone(),
+                            resolved_tags,
+                        ).await {
+                            Ok(updated) => {
+                                use crate::events::reasons;
+                                self.record_event_normal(
+                                    reasons::UPDATED,
+                                    &format!("Updated NetBoxDevice {}/{} in NetBox to match CRD (ID: {})", namespace, name, updated.id),
+                                    device_crd,
+                                ).await;
+                                Some(updated)
+                            }
+                            Err(e) => {
+                                error!("Failed to update NetBoxDevice {}/{} in NetBox: {}", namespace, name, e);
+                                Some(device) // Use existing if update fails
+                            }
+                        }
+                    } else {
+                        // No drift - use existing
+                        Some(device)
+                    }
+                } else {
+                    // Drift detection disabled - use existing
+                    Some(device)
+                }
             }
             DriftCheckResult::StatusCleared { message } => {
                 // Status was cleared - drift detected
-                // Emit event for drift detection
                 use crate::events::reasons;
                 self.record_event_warning(
                     reasons::DRIFT_DETECTED,
@@ -53,8 +323,8 @@ impl Reconciler {
                 
                 // Status was cleared - update it to Pending
                 let status_patch = Self::create_resource_status_patch(
-                    0, // Clear netbox_id
-                    String::new(), // Clear URL
+                    0,
+                    String::new(),
                     ResourceState::Pending,
                     Some(message),
                 );
@@ -77,8 +347,80 @@ impl Reconciler {
         // Handle existing device (from helper) or create new
         let netbox_device = match netbox_device {
             Some(device) => {
-                // Resource exists and is up-to-date - only update status if it changed
-                // Use trait-based helper to check if status needs updating
+                // Update tags if they differ (tags are handled separately from field drift)
+                let device_id = device.id;
+                let device_clone = device.clone();
+                let resolved_tags_json = self.resolve_tag_references(
+                    netbox_client.as_ref(),
+                    &device_crd.spec.tags,
+                    namespace,
+                    name,
+                    Some(device_id),
+                ).await;
+                let resolved_tags = crate::reconcile_helpers::convert_tags_to_strings(resolved_tags_json);
+                
+                let device = match crate::reconcile_helpers::update_tags_if_differ(
+                    device,
+                    &device_crd.spec.tags,
+                    resolved_tags.clone(),
+                    |tags| {
+                        let device_id_clone = device_id;
+                        let name_clone = device_crd.spec.name.clone();
+                        let tenant_id_clone = tenant_id;
+                        let platform_id_clone = platform_id;
+                        let location_id_clone = location_id;
+                        let serial_clone = device_crd.spec.serial.clone();
+                        let asset_tag_clone = device_crd.spec.asset_tag.clone();
+                        let status_str = match device_crd.spec.status {
+                            crds::DeviceStatus::Active => "active",
+                            crds::DeviceStatus::Offline => "offline",
+                            crds::DeviceStatus::Planned => "planned",
+                            crds::DeviceStatus::Staged => "staged",
+                            crds::DeviceStatus::Failed => "failed",
+                            crds::DeviceStatus::Inventory => "inventory",
+                            crds::DeviceStatus::Decommissioning => "decommissioning",
+                        };
+                        let primary_ip4_id_clone = primary_ip4_id;
+                        let primary_ip6_id_clone = primary_ip6_id;
+                        let description_clone = device_crd.spec.description.clone();
+                        let comments_clone = device_crd.spec.comments.clone();
+                        async move {
+                            netbox_client.update_device(
+                                DeviceId(device_id_clone),
+                                name_clone.as_deref(),
+                                Some(TenantId(tenant_id_clone)),
+                                platform_id_clone.map(PlatformId),
+                                location_id_clone.map(LocationId),
+                                serial_clone.as_deref(),
+                                asset_tag_clone.as_deref(),
+                                Some(status_str),
+                                primary_ip4_id_clone.map(IpAddressId),
+                                primary_ip6_id_clone.map(IpAddressId),
+                                description_clone,
+                                comments_clone,
+                                tags,
+                            ).await
+                        }
+                    },
+                    &format!("NetBoxDevice {}/{}", namespace, name),
+                ).await {
+                    Ok(Some(updated)) => {
+                        use crate::events::reasons;
+                        self.record_event_normal(
+                            reasons::UPDATED,
+                            &format!("Updated NetBoxDevice {}/{} tags in NetBox", namespace, name),
+                            device_crd,
+                        ).await;
+                        updated
+                    }
+                    Ok(None) => device_clone, // Tags are up-to-date
+                    Err(e) => {
+                        warn!("Failed to update NetBoxDevice {}/{} tags: {}", namespace, name, e);
+                        device_clone // Use existing if update fails
+                    }
+                };
+                
+                // Update status if needed
                 use crate::reconcile_helpers::status_needs_update;
                 let needs_status_update = status_needs_update(
                     device_crd.status.as_ref(),
@@ -105,174 +447,11 @@ impl Reconciler {
                         device.id,
                     ).await?;
                     debug!("Updated NetBoxDevice {}/{} status: NetBox ID {}", namespace, name, device.id);
-                    return Ok(());
-                } else {
-                    // Status is already correct - no update needed, skip reconciliation
-                    debug!("NetBoxDevice {}/{} already has correct status (ID: {}), skipping update", namespace, name, device.id);
-                    return Ok(());
                 }
+                return Ok(());
             }
             None => {
-                // Need to create device - resolve dependencies first using helpers
-                use crate::reconcile_helpers::{validate_reference_kind, resolve_required_dependency_id, resolve_optional_dependency_id};
-                
-                // Validate and resolve DeviceType (required)
-                validate_reference_kind(&device_crd.spec.device_type, "NetBoxDeviceType", "device_type", name)?;
-                let device_type_id = match resolve_required_dependency_id(
-                    &*self.netbox_device_type_api,
-                    &device_crd.spec.device_type.name,
-                    "DeviceType",
-                    name,
-                    |crd| crd.status.as_ref(),
-                ).await {
-                    Ok(id) => id,
-                    Err(e) => {
-                        // Emit event for dependency not found
-                        use crate::events::reasons;
-                        self.record_event_warning(
-                            reasons::DEPENDENCY_NOT_FOUND,
-                            &format!("DeviceType '{}' not found or not ready: {}", device_crd.spec.device_type.name, e),
-                            device_crd,
-                        ).await;
-                        return Err(e);
-                    }
-                };
-                
-                // Validate and resolve DeviceRole (required)
-                validate_reference_kind(&device_crd.spec.device_role, "NetBoxDeviceRole", "device_role", name)?;
-                let device_role_id = match resolve_required_dependency_id(
-                    &*self.netbox_device_role_api,
-                    &device_crd.spec.device_role.name,
-                    "DeviceRole",
-                    name,
-                    |crd| crd.status.as_ref(),
-                ).await {
-                    Ok(id) => id,
-                    Err(e) => {
-                        // Emit event for dependency not found
-                        use crate::events::reasons;
-                        self.record_event_warning(
-                            reasons::DEPENDENCY_NOT_FOUND,
-                            &format!("DeviceRole '{}' not found or not ready: {}", device_crd.spec.device_role.name, e),
-                            device_crd,
-                        ).await;
-                        return Err(e);
-                    }
-                };
-                
-                // Validate and resolve Site (required)
-                validate_reference_kind(&device_crd.spec.site, "NetBoxSite", "site", name)?;
-                let site_id = match resolve_required_dependency_id(
-                    &*self.netbox_site_api,
-                    &device_crd.spec.site.name,
-                    "Site",
-                    name,
-                    |crd| crd.status.as_ref(),
-                ).await {
-                    Ok(id) => id,
-                    Err(e) => {
-                        // Emit event for dependency not found
-                        use crate::events::reasons;
-                        self.record_event_warning(
-                            reasons::DEPENDENCY_NOT_FOUND,
-                            &format!("Site '{}' not found or not ready: {}", device_crd.spec.site.name, e),
-                            device_crd,
-                        ).await;
-                        return Err(e);
-                    }
-                };
-                
-                // Validate and resolve Tenant (required)
-                validate_reference_kind(&device_crd.spec.tenant, "NetBoxTenant", "tenant", name)?;
-                let tenant_id = match resolve_required_dependency_id(
-                    &*self.netbox_tenant_api,
-                    &device_crd.spec.tenant.name,
-                    "Tenant",
-                    name,
-                    |crd| crd.status.as_ref(),
-                ).await {
-                    Ok(id) => id,
-                    Err(e) => {
-                        // Emit event for dependency not found
-                        use crate::events::reasons;
-                        self.record_event_warning(
-                            reasons::DEPENDENCY_NOT_FOUND,
-                            &format!("Tenant '{}' not found or not ready: {}", device_crd.spec.tenant.name, e),
-                            device_crd,
-                        ).await;
-                        return Err(e);
-                    }
-                };
-                
-                // Resolve optional dependencies using helper
-                let platform_id: Option<u64> = resolve_optional_dependency_id(
-                    &*self.netbox_platform_api,
-                    device_crd.spec.platform.as_ref(),
-                    "NetBoxPlatform",
-                    "platform",
-                    name,
-                    |crd| crd.status.as_ref(),
-                ).await;
-                
-                let location_id: Option<u64> = resolve_optional_dependency_id(
-                    &*self.netbox_location_api,
-                    device_crd.spec.location.as_ref(),
-                    "NetBoxLocation",
-                    "location",
-                    name,
-                    |crd| crd.status.as_ref(),
-                ).await;
-                
-                // Resolve primary IP addresses (if specified)
-                let primary_ip4_id = if let Some(ip_ref) = &device_crd.spec.primary_ip4 {
-                    if let Some(ip_addr) = &ip_ref.ip_address {
-                        // Query NetBox by IP address (fallback)
-                        match netbox_client.query_ip_addresses(&[("address", ip_addr)], false).await {
-                            Ok(ips) => {
-                                if let Some(ip) = ips.first() {
-                                    debug!("Resolved primary_ip4 from IP address {} to NetBox IP ID {}", ip_addr, ip.id);
-                                    Some(ip.id)
-                                } else {
-                                    warn!("IP address {} not found in NetBox", ip_addr);
-                                    None
-                                }
-                            }
-                            Err(e) => {
-                                warn!("Failed to query IP address {} in NetBox: {}", ip_addr, e);
-                                None
-                            }
-                        }
-                    } else {
-                        None
-                    }
-                } else {
-                    None
-                };
-                
-                let primary_ip6_id = if let Some(ip_ref) = &device_crd.spec.primary_ip6 {
-                    if let Some(ip_addr) = &ip_ref.ip_address {
-                        // Query NetBox by IP address (fallback)
-                        match netbox_client.query_ip_addresses(&[("address", ip_addr)], false).await {
-                            Ok(ips) => {
-                                if let Some(ip) = ips.first() {
-                                    debug!("Resolved primary_ip6 from IP address {} to NetBox IP ID {}", ip_addr, ip.id);
-                                    Some(ip.id)
-                                } else {
-                                    warn!("IP address {} not found in NetBox", ip_addr);
-                                    None
-                                }
-                            }
-                            Err(e) => {
-                                warn!("Failed to query IP address {} in NetBox: {}", ip_addr, e);
-                                None
-                            }
-                        }
-                    } else {
-                        None
-                    }
-                } else {
-                    None
-                };
+                // Need to create device - dependencies already resolved above
                 
                 // Convert device status to NetBox format
                 let status_str = match device_crd.spec.status {

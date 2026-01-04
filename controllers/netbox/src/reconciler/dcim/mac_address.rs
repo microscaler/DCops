@@ -7,6 +7,25 @@ use crds::{NetBoxMACAddress, ResourceState};
 use netbox_client::NetBoxClientTrait;
 
 impl Reconciler {
+    fn mac_address_needs_update(
+        spec: &crds::NetBoxMACAddressSpec,
+        existing: &netbox_client::MACAddress,
+        desired_interface_id: u64,
+    ) -> bool {
+        use crate::reconcile_helpers::{
+            compare_optional_string_field,
+            compare_optional_dependency_id,
+        };
+        
+        let existing_interface_id = existing.assigned_object_id;
+        
+        compare_optional_dependency_id(Some(desired_interface_id), existing_interface_id)
+            || compare_optional_string_field(&spec.description, &existing.description)
+            || compare_optional_string_field(&spec.comments, &existing.comments)
+        // Tags are handled separately
+        // Note: mac_address field is immutable in NetBox
+    }
+
     pub async fn reconcile_netbox_mac_address(&self, mac_address_crd: &NetBoxMACAddress) -> Result<(), ControllerError> {
         // Extract name and namespace using helper
         use crate::reconcile_helpers::extract_name_and_namespace;
@@ -125,8 +144,64 @@ impl Reconciler {
             ).await?
         };
         
+        // Check if drift detection is enabled (defaults to true)
+        let drift_detection_enabled = mac_address_crd.spec.drift_detection.unwrap_or(true);
+        
         let netbox_mac_address = match drift_result {
-            DriftCheckResult::UseExisting(mac_address) => Some(mac_address),
+            DriftCheckResult::UseExisting(mac_address) => {
+                // Check for field drift if enabled
+                if drift_detection_enabled {
+                    if Self::mac_address_needs_update(&mac_address_crd.spec, &mac_address, interface_id) {
+                        // Field drift detected - update NetBox to match CRD (Git is source of truth)
+                        warn!("NetBoxMACAddress {}/{} fields differ from CRD spec, updating to match Git", namespace, name);
+                        use crate::events::reasons;
+                        self.record_event_warning(
+                            reasons::DRIFT_DETECTED,
+                            &format!("NetBoxMACAddress {}/{} fields differ from CRD, updating to match Git", namespace, name),
+                            mac_address_crd,
+                        ).await;
+                        
+                        // Resolve tags for update
+                        let resolved_tags_json = self.resolve_tag_references(
+                            netbox_client.as_ref(),
+                            &mac_address_crd.spec.tags,
+                            namespace,
+                            name,
+                            Some(mac_address.id),
+                        ).await;
+                        let resolved_tags = crate::reconcile_helpers::convert_tags_to_strings(resolved_tags_json);
+                        
+                        match netbox_client.update_mac_address(
+                            mac_address.id,
+                            Some("dcim.interface"),
+                            Some(interface_id),
+                            mac_address_crd.spec.description.clone(),
+                            mac_address_crd.spec.comments.clone(),
+                            resolved_tags,
+                        ).await {
+                            Ok(updated) => {
+                                use crate::events::reasons;
+                                self.record_event_normal(
+                                    reasons::UPDATED,
+                                    &format!("Updated NetBoxMACAddress {}/{} in NetBox to match CRD (ID: {})", namespace, name, updated.id),
+                                    mac_address_crd,
+                                ).await;
+                                Some(updated)
+                            }
+                            Err(e) => {
+                                error!("Failed to update NetBoxMACAddress {}/{} in NetBox: {}", namespace, name, e);
+                                Some(mac_address) // Use existing if update fails
+                            }
+                        }
+                    } else {
+                        // No drift - use existing
+                        Some(mac_address)
+                    }
+                } else {
+                    // Drift detection disabled - use existing
+                    Some(mac_address)
+                }
+            }
             DriftCheckResult::StatusCleared { message } => {
                 // Emit event for drift detection
                 use crate::events::reasons;
@@ -154,6 +229,57 @@ impl Reconciler {
         
         let netbox_mac_address = match netbox_mac_address {
             Some(mac_address) => {
+                // Update tags if they differ (tags are handled separately from field drift)
+                let mac_address_id = mac_address.id;
+                let mac_address_clone = mac_address.clone();
+                let resolved_tags_json = self.resolve_tag_references(
+                    netbox_client.as_ref(),
+                    &mac_address_crd.spec.tags,
+                    namespace,
+                    name,
+                    Some(mac_address_id),
+                ).await;
+                let resolved_tags = crate::reconcile_helpers::convert_tags_to_strings(resolved_tags_json);
+                
+                let mac_address = match crate::reconcile_helpers::update_tags_if_differ(
+                    mac_address,
+                    &mac_address_crd.spec.tags,
+                    resolved_tags.clone(),
+                    |tags| {
+                        let mac_address_id_clone = mac_address_id;
+                        let interface_id_clone = interface_id;
+                        let description_clone = mac_address_crd.spec.description.clone();
+                        let comments_clone = mac_address_crd.spec.comments.clone();
+                        async move {
+                            netbox_client.update_mac_address(
+                                mac_address_id_clone,
+                                Some("dcim.interface"),
+                                Some(interface_id_clone),
+                                description_clone,
+                                comments_clone,
+                                tags,
+                            ).await
+                        }
+                    },
+                    &format!("NetBoxMACAddress {}/{}", namespace, name),
+                ).await {
+                    Ok(Some(updated)) => {
+                        use crate::events::reasons;
+                        self.record_event_normal(
+                            reasons::UPDATED,
+                            &format!("Updated NetBoxMACAddress {}/{} tags in NetBox", namespace, name),
+                            mac_address_crd,
+                        ).await;
+                        updated
+                    }
+                    Ok(None) => mac_address_clone, // Tags are up-to-date
+                    Err(e) => {
+                        warn!("Failed to update NetBoxMACAddress {}/{} tags: {}", namespace, name, e);
+                        mac_address_clone // Use existing if update fails
+                    }
+                };
+                
+                // Update status if needed
                 use crate::reconcile_helpers::status_needs_update;
                 let needs_status_update = status_needs_update(
                     mac_address_crd.status.as_ref(),
@@ -180,11 +306,8 @@ impl Reconciler {
                         mac_address.id,
                     ).await?;
                     debug!("Updated NetBoxMACAddress {}/{} status: NetBox ID {}", namespace, name, mac_address.id);
-                    return Ok(());
-                } else {
-                    debug!("NetBoxMACAddress {}/{} already has correct status (ID: {}), skipping update", namespace, name, mac_address.id);
-                    return Ok(());
                 }
+                return Ok(());
             }
             None => {
                 // Try to find existing MAC address

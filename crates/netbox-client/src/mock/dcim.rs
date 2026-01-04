@@ -87,7 +87,7 @@ pub async fn create_device(client: &MockNetBoxClient, device_type_id: u64, devic
         Ok(device)
     }
 
-pub async fn update_device(client: &MockNetBoxClient, id: u64, name: Option<&str>, tenant_id: Option<u64>, platform_id: Option<u64>, location_id: Option<u64>, serial: Option<&str>, asset_tag: Option<&str>, status: Option<&str>, primary_ip4_id: Option<u64>, primary_ip6_id: Option<u64>, description: Option<String>, comments: Option<String>) -> Result<Device, NetBoxError> {
+pub async fn update_device(client: &MockNetBoxClient, id: u64, name: Option<&str>, tenant_id: Option<u64>, platform_id: Option<u64>, location_id: Option<u64>, serial: Option<&str>, asset_tag: Option<&str>, status: Option<&str>, primary_ip4_id: Option<u64>, primary_ip6_id: Option<u64>, description: Option<String>, comments: Option<String>, tags: Option<Vec<String>>) -> Result<Device, NetBoxError> {
         let mut devices = client.devices.lock().unwrap();
         let device = devices
             .get_mut(&id)
@@ -134,11 +134,20 @@ pub async fn update_device(client: &MockNetBoxClient, id: u64, name: Option<&str
                 .get(&ip_id)
                 .map(|ip| client.helpers().create_nested_ip_address(ip_id, ip.address));
         }
-        if let Some(desc) = description {
-            device.description = Some(desc);
+        if description.is_some() {
+            device.description = description;
         }
-        if let Some(comm) = comments {
-            device.comments = Some(comm);
+        if comments.is_some() {
+            device.comments = comments;
+        }
+        if let Some(tags_vec) = tags {
+            device.tags = tags_vec.into_iter().map(|t| NestedTag {
+                id: 0,
+                url: String::new(),
+                display: t.clone(),
+                name: t,
+                slug: String::new(),
+            }).collect();
         }
         
         device.last_updated = chrono::Utc::now().to_rfc3339();
@@ -223,8 +232,45 @@ pub async fn create_interface(client: &MockNetBoxClient, device_id: u64, name: &
         Ok(interface)
     }
 
-pub async fn update_interface(_client: &MockNetBoxClient, _id: u64, _name: Option<&str>, _interface_type: Option<&str>, _enabled: Option<bool>, _mac_address: Option<&str>, _mtu: Option<u16>, _description: Option<String>, _comments: Option<String>) -> Result<Interface, NetBoxError> {
-        Err(NetBoxError::Api("Not implemented in mock".to_string()))
+pub async fn update_interface(client: &MockNetBoxClient, id: u64, name: Option<&str>, interface_type: Option<&str>, enabled: Option<bool>, mac_address: Option<&str>, mtu: Option<u16>, description: Option<String>, comments: Option<String>, tags: Option<Vec<String>>) -> Result<Interface, NetBoxError> {
+        let mut interfaces = client.interfaces.lock().unwrap();
+        let interface = interfaces
+            .get_mut(&id)
+            .ok_or_else(|| NetBoxError::NotFound(format!("Interface {} not found", id)))?;
+        
+        if let Some(name_str) = name {
+            interface.name = name_str.to_string();
+            interface.display = name_str.to_string();
+        }
+        if let Some(if_type) = interface_type {
+            interface.r#type = if_type.to_string();
+        }
+        if let Some(enabled_val) = enabled {
+            interface.enabled = enabled_val;
+        }
+        if mac_address.is_some() {
+            interface.mac_address = mac_address.map(|s| s.to_string());
+        }
+        if mtu.is_some() {
+            interface.mtu = mtu;
+        }
+        if description.is_some() {
+            interface.description = description;
+        }
+        if comments.is_some() {
+            interface.comments = comments;
+        }
+        if let Some(tags_vec) = tags {
+            interface.tags = tags_vec.into_iter().map(|t| NestedTag {
+                id: 0,
+                url: String::new(),
+                display: t.clone(),
+                name: t,
+                slug: String::new(),
+            }).collect();
+        }
+        
+        Ok(interface.clone())
     }
 
 pub async fn query_mac_addresses(_client: &MockNetBoxClient, _filters: &[(&str, &str)], _fetch_all: bool) -> Result<Vec<MACAddress>, NetBoxError> {
@@ -264,6 +310,41 @@ pub async fn create_mac_address(client: &MockNetBoxClient, mac_address: &str, _a
         
         client.mac_addresses.lock().unwrap().insert(mac_address.to_string(), mac.clone());
         Ok(mac)
+    }
+
+pub async fn update_mac_address(client: &MockNetBoxClient, id: u64, assigned_object_type: Option<&str>, assigned_object_id: Option<u64>, description: Option<String>, comments: Option<String>, tags: Option<Vec<String>>) -> Result<MACAddress, NetBoxError> {
+        let mac_addresses = client.mac_addresses.lock().unwrap();
+        let mac_address = mac_addresses.values()
+            .find(|ma| ma.id == id)
+            .ok_or_else(|| NetBoxError::NotFound(format!("MAC address {} not found", id)))?;
+        let mut updated = mac_address.clone();
+        
+        if let Some(obj_type) = assigned_object_type {
+            updated.assigned_object_type = Some(obj_type.to_string());
+        }
+        if let Some(obj_id) = assigned_object_id {
+            updated.assigned_object_id = Some(obj_id);
+        }
+        if description.is_some() {
+            updated.description = description;
+        }
+        if comments.is_some() {
+            updated.comments = comments;
+        }
+        if let Some(tags_vec) = tags {
+            updated.tags = tags_vec.into_iter().map(|t| NestedTag {
+                id: 0,
+                url: String::new(),
+                display: t.clone(),
+                name: t,
+                slug: String::new(),
+            }).collect();
+        }
+        
+        updated.last_updated = chrono::Utc::now().to_rfc3339();
+        drop(mac_addresses);
+        client.mac_addresses.lock().unwrap().insert(updated.mac_address.clone(), updated.clone());
+        Ok(updated)
     }
 
 pub async fn query_sites(client: &MockNetBoxClient, _filters: &[(&str, &str)], _fetch_all: bool) -> Result<Vec<Site>, NetBoxError> {

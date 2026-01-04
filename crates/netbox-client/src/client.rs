@@ -253,8 +253,8 @@ impl NetBoxClientTrait for NetBoxClient {
         dcim::create_interface(&self.core, device_id, name, interface_type, enabled, mac_address, mtu, description, comments).await
     }
 
-    async fn update_interface(&self, id: InterfaceId, name: Option<&str>, interface_type: Option<&str>, enabled: Option<bool>, mac_address: Option<&str>, mtu: Option<u16>, description: Option<String>, comments: Option<String>) -> Result<Interface, NetBoxError> {
-        dcim::update_interface(&self.core, id, name, interface_type, enabled, mac_address, mtu, description, comments).await
+    async fn update_interface(&self, id: InterfaceId, name: Option<&str>, interface_type: Option<&str>, enabled: Option<bool>, mac_address: Option<&str>, mtu: Option<u16>, description: Option<String>, comments: Option<String>, tags: Option<Vec<String>>) -> Result<Interface, NetBoxError> {
+        dcim::update_interface(&self.core, id, name, interface_type, enabled, mac_address, mtu, description, comments, tags).await
     }
 
     async fn query_mac_addresses(&self, filters: &[(&str, &str)], fetch_all: bool) -> Result<Vec<MACAddress>, NetBoxError> {
@@ -269,9 +269,13 @@ impl NetBoxClientTrait for NetBoxClient {
         dcim::create_mac_address(&self.core, mac_address, assigned_object_type, assigned_object_id, description, comments).await
     }
 
+    async fn update_mac_address(&self, id: u64, assigned_object_type: Option<&str>, assigned_object_id: Option<u64>, description: Option<String>, comments: Option<String>, tags: Option<Vec<String>>) -> Result<MACAddress, NetBoxError> {
+        dcim::update_mac_address(&self.core, id, assigned_object_type, assigned_object_id, description, comments, tags).await
+    }
+
     // Device update with parameter transformations
-    async fn update_device(&self, id: DeviceId, name: Option<&str>, tenant_id: Option<TenantId>, platform_id: Option<PlatformId>, location_id: Option<LocationId>, serial: Option<&str>, asset_tag: Option<&str>, status: Option<&str>, primary_ip4_id: Option<IpAddressId>, primary_ip6_id: Option<IpAddressId>, description: Option<String>, comments: Option<String>) -> Result<Device, NetBoxError> {
-        dcim::update_device(&self.core, id.into(), name, tenant_id.map(|id| id.into()), platform_id.map(|id| id.into()), location_id.map(|id| id.into()), serial, asset_tag, status, primary_ip4_id.map(|id| id.into()), primary_ip6_id.map(|id| id.into()), description, comments).await
+    async fn update_device(&self, id: DeviceId, name: Option<&str>, tenant_id: Option<TenantId>, platform_id: Option<PlatformId>, location_id: Option<LocationId>, serial: Option<&str>, asset_tag: Option<&str>, status: Option<&str>, primary_ip4_id: Option<IpAddressId>, primary_ip6_id: Option<IpAddressId>, description: Option<String>, comments: Option<String>, tags: Option<Vec<String>>) -> Result<Device, NetBoxError> {
+        dcim::update_device(&self.core, id.into(), name, tenant_id.map(|id| id.into()), platform_id.map(|id| id.into()), location_id.map(|id| id.into()), serial, asset_tag, status, primary_ip4_id.map(|id| id.into()), primary_ip6_id.map(|id| id.into()), description, comments, tags).await
     }
 
     // Site operations

@@ -1359,7 +1359,19 @@ pub trait HasTags {
 }
 
 // Implement for common NetBox resource types
+impl HasTags for netbox_client::Interface {
+    fn tags(&self) -> &[netbox_client::NestedTag] { &self.tags }
+}
+
+impl HasTags for netbox_client::Device {
+    fn tags(&self) -> &[netbox_client::NestedTag] { &self.tags }
+}
+
 impl HasTags for netbox_client::DeviceRole {
+    fn tags(&self) -> &[netbox_client::NestedTag] { &self.tags }
+}
+
+impl HasTags for netbox_client::MACAddress {
     fn tags(&self) -> &[netbox_client::NestedTag] { &self.tags }
 }
 impl HasTags for netbox_client::DeviceType {

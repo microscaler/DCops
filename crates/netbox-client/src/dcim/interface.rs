@@ -150,6 +150,7 @@ pub async fn update_interface(
     mtu: Option<u16>,
     description: Option<String>,
     comments: Option<String>,
+    tags: Option<Vec<String>>,
 ) -> Result<Interface, NetBoxError> {
     let id_value: u64 = id.into();
     let url = format!("{}/api/dcim/interfaces/{}/", core.base_url, id_value);
@@ -170,6 +171,14 @@ pub async fn update_interface(
     helpers::add_optional_number_field(&mut body, "mtu", mtu);
     helpers::add_optional_string_field_owned(&mut body, "description", description);
     helpers::add_optional_string_field_owned(&mut body, "comments", comments);
+    
+    if let Some(tags_vec) = tags {
+        body["tags"] = serde_json::Value::Array(
+            tags_vec.into_iter()
+                .map(|t| serde_json::Value::String(t))
+                .collect()
+        );
+    }
     
     let response = core.client
         .patch(&url)

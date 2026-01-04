@@ -7,6 +7,30 @@ use crds::{NetBoxInterface, ResourceState};
 use netbox_client::{NetBoxClientTrait, InterfaceId, DeviceId};
 
 impl Reconciler {
+    fn interface_needs_update(
+        spec: &crds::NetBoxInterfaceSpec,
+        existing: &netbox_client::Interface,
+        desired_device_id: u64,
+    ) -> bool {
+        use crate::reconcile_helpers::{
+            compare_string_field,
+            compare_optional_string_field,
+            compare_optional_numeric_field,
+        };
+        
+        let existing_device_id = existing.device.id;
+        
+        existing_device_id != desired_device_id
+            || compare_string_field(&spec.name, &existing.name)
+            || compare_string_field(&spec.r#type, &existing.r#type)
+            || spec.enabled != existing.enabled
+            || compare_optional_string_field(&spec.mac_address, &existing.mac_address)
+            || compare_optional_numeric_field(&spec.mtu, &existing.mtu)
+            || compare_optional_string_field(&spec.description, &existing.description)
+            || compare_optional_string_field(&spec.comments, &existing.comments)
+        // Tags are handled separately
+    }
+
     pub async fn reconcile_netbox_interface(&self, interface_crd: &NetBoxInterface) -> Result<(), ControllerError> {
         // Extract name and namespace using helper
         use crate::reconcile_helpers::extract_name_and_namespace;
@@ -66,10 +90,66 @@ impl Reconciler {
             ).await?
         };
         
+        // Check if drift detection is enabled (defaults to true)
+        let drift_detection_enabled = interface_crd.spec.drift_detection.unwrap_or(true);
+        
         let netbox_interface = match drift_result {
             DriftCheckResult::UseExisting(interface) => {
-                // Resource exists and is up-to-date
-                Some(interface)
+                // Check for field drift if enabled
+                if drift_detection_enabled {
+                    if Self::interface_needs_update(&interface_crd.spec, &interface, device_id) {
+                        // Field drift detected - update NetBox to match CRD (Git is source of truth)
+                        warn!("NetBoxInterface {}/{} fields differ from CRD spec, updating to match Git", namespace, name);
+                        use crate::events::reasons;
+                        self.record_event_warning(
+                            reasons::DRIFT_DETECTED,
+                            &format!("NetBoxInterface {}/{} fields differ from CRD, updating to match Git", namespace, name),
+                            interface_crd,
+                        ).await;
+                        
+                        // Resolve tags for update
+                        let resolved_tags_json = self.resolve_tag_references(
+                            netbox_client.as_ref(),
+                            &interface_crd.spec.tags,
+                            namespace,
+                            name,
+                            Some(interface.id),
+                        ).await;
+                        let resolved_tags = crate::reconcile_helpers::convert_tags_to_strings(resolved_tags_json);
+                        
+                        match netbox_client.update_interface(
+                            InterfaceId(interface.id),
+                            Some(&interface_crd.spec.name),
+                            Some(&interface_crd.spec.r#type),
+                            Some(interface_crd.spec.enabled),
+                            interface_crd.spec.mac_address.as_deref(),
+                            interface_crd.spec.mtu,
+                            interface_crd.spec.description.clone(),
+                            interface_crd.spec.comments.clone(),
+                            resolved_tags,
+                        ).await {
+                            Ok(updated) => {
+                                use crate::events::reasons;
+                                self.record_event_normal(
+                                    reasons::UPDATED,
+                                    &format!("Updated NetBoxInterface {}/{} in NetBox to match CRD (ID: {})", namespace, name, updated.id),
+                                    interface_crd,
+                                ).await;
+                                Some(updated)
+                            }
+                            Err(e) => {
+                                error!("Failed to update NetBoxInterface {}/{} in NetBox: {}", namespace, name, e);
+                                Some(interface) // Use existing if update fails
+                            }
+                        }
+                    } else {
+                        // No drift - use existing
+                        Some(interface)
+                    }
+                } else {
+                    // Drift detection disabled - use existing
+                    Some(interface)
+                }
             }
             DriftCheckResult::StatusCleared { message } => {
                 // Status was cleared - update it to Pending
@@ -95,37 +175,64 @@ impl Reconciler {
         
         let netbox_interface = match netbox_interface {
             Some(interface) => {
-                use crate::reconcile_helpers::status_needs_update;
-                let needs_status_update = status_needs_update(
-                    interface_crd.status.as_ref(),
-                    interface.id,
-                    &interface.url,
-                    "Created",
-                    None,
-                );
+                // Update tags if they differ (tags are handled separately from field drift)
+                let interface_id = interface.id;
+                let interface_clone = interface.clone();
+                let resolved_tags_json = self.resolve_tag_references(
+                    netbox_client.as_ref(),
+                    &interface_crd.spec.tags,
+                    namespace,
+                    name,
+                    Some(interface_id),
+                ).await;
+                let resolved_tags = crate::reconcile_helpers::convert_tags_to_strings(resolved_tags_json);
                 
-                if needs_status_update {
-                    use crate::reconcile_helpers::update_resource_status;
-                    let status_patch = Self::create_typed_interface_status_patch(
-                        interface.id,
-                        interface.url.clone(),
-                        ResourceState::Created,
-                        None,
-                    );
-                    update_resource_status(
-                        &*self.netbox_interface_api,
-                        name,
-                        namespace,
-                        &status_patch,
-                        "NetBoxInterface",
-                        interface.id,
-                    ).await?;
-                    debug!("Updated NetBoxInterface {}/{} status: NetBox ID {}", namespace, name, interface.id);
-                    return Ok(());
-                } else {
-                    debug!("NetBoxInterface {}/{} already has correct status (ID: {}), skipping update", namespace, name, interface.id);
-                    return Ok(());
-                }
+                let interface = match crate::reconcile_helpers::update_tags_if_differ(
+                    interface,
+                    &interface_crd.spec.tags,
+                    resolved_tags.clone(),
+                    |tags| {
+                        let device_id_clone = device_id;
+                        let name_clone = interface_crd.spec.name.clone();
+                        let type_clone = interface_crd.spec.r#type.clone();
+                        let enabled_clone = interface_crd.spec.enabled;
+                        let mac_address_clone = interface_crd.spec.mac_address.clone();
+                        let mtu_clone = interface_crd.spec.mtu;
+                        let description_clone = interface_crd.spec.description.clone();
+                        let comments_clone = interface_crd.spec.comments.clone();
+                        async move {
+                            netbox_client.update_interface(
+                                InterfaceId(interface_id),
+                                Some(&name_clone),
+                                Some(&type_clone),
+                                Some(enabled_clone),
+                                mac_address_clone.as_deref(),
+                                mtu_clone,
+                                description_clone,
+                                comments_clone,
+                                tags,
+                            ).await
+                        }
+                    },
+                    &format!("NetBoxInterface {}/{}", namespace, name),
+                ).await {
+                    Ok(Some(updated)) => {
+                        use crate::events::reasons;
+                        self.record_event_normal(
+                            reasons::UPDATED,
+                            &format!("Updated NetBoxInterface {}/{} tags in NetBox", namespace, name),
+                            interface_crd,
+                        ).await;
+                        updated
+                    }
+                    Ok(None) => interface_clone, // Tags are up-to-date
+                    Err(e) => {
+                        warn!("Failed to update NetBoxInterface {}/{} tags: {}", namespace, name, e);
+                        interface_clone // Use existing if update fails
+                    }
+                };
+                
+                interface // Return existing Interface (status update happens at end)
             }
             None => {
                 // Try to find existing interface by querying device interfaces

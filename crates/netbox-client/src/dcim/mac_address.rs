@@ -120,3 +120,60 @@ pub async fn create_mac_address(
     response.json().await.map_err(|e| NetBoxError::Http(e))
 }
 
+/// Update a MAC address
+pub async fn update_mac_address(
+    core: &NetBoxClientCore,
+    id: u64,
+    assigned_object_type: Option<&str>,
+    assigned_object_id: Option<u64>,
+    description: Option<String>,
+    comments: Option<String>,
+    tags: Option<Vec<String>>,
+) -> Result<MACAddress, NetBoxError> {
+    let url = format!("{}/api/dcim/mac-addresses/{}/", core.base_url, id);
+    debug!("Updating MAC address {} in NetBox", id);
+    
+    let mut body = serde_json::json!({});
+    
+    if let Some(obj_type) = assigned_object_type {
+        body["assigned_object_type"] = serde_json::Value::String(obj_type.to_string());
+    }
+    if let Some(obj_id) = assigned_object_id {
+        body["assigned_object_id"] = serde_json::json!(obj_id);
+    }
+    if description.is_some() {
+        body["description"] = serde_json::json!(description);
+    }
+    if comments.is_some() {
+        body["comments"] = serde_json::json!(comments);
+    }
+    if let Some(tags_vec) = tags {
+        body["tags"] = serde_json::Value::Array(
+            tags_vec.into_iter()
+                .map(|t| serde_json::Value::String(t))
+                .collect()
+        );
+    }
+    
+    let response = core.client
+        .patch(&url)
+        .header("Authorization", format!("Token {}", core.token))
+        .header("Accept", "application/json")
+        .header("Content-Type", "application/json")
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| NetBoxError::Http(e))?;
+    
+    if !response.status().is_success() {
+        let status = response.status();
+        let body = response.text().await.unwrap_or_default();
+        return Err(NetBoxError::Api(format!(
+            "Failed to update MAC address {}: {} - {}",
+            id, status, body
+        )));
+    }
+    
+    response.json().await.map_err(|e| NetBoxError::Http(e))
+}
+

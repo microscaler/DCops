@@ -20,7 +20,7 @@ pub use device_role::{query_device_roles, get_device_role_by_name, create_device
 pub use device_type::{query_device_types, get_device_type_by_model, create_device_type, update_device_type};
 pub use interface::{query_interfaces, get_interface, create_interface, update_interface};
 pub use location::{query_locations, get_location, get_location_by_name, create_location, update_location};
-pub use mac_address::{query_mac_addresses, get_mac_address_by_address, create_mac_address};
+pub use mac_address::{query_mac_addresses, get_mac_address_by_address, create_mac_address, update_mac_address};
 pub use manufacturer::{query_manufacturers, get_manufacturer_by_name, create_manufacturer, update_manufacturer};
 pub use platform::{query_platforms, get_platform_by_name, create_platform, update_platform};
 pub use region::{query_regions, get_region, get_region_by_name, create_region, update_region};

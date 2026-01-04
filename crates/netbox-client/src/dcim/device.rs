@@ -178,6 +178,7 @@ pub async fn update_device(
     primary_ip6_id: Option<u64>,
     description: Option<String>,
     comments: Option<String>,
+    tags: Option<Vec<String>>,
 ) -> Result<Device, NetBoxError> {
     let url = format!("{}/api/dcim/devices/{}/", core.base_url, id);
     debug!("Updating device {} in NetBox", id);
@@ -196,6 +197,14 @@ pub async fn update_device(
     
     if let Some(serial_str) = serial {
         body["serial"] = serde_json::Value::String(serial_str.to_string());
+    }
+    
+    if let Some(tags_vec) = tags {
+        body["tags"] = serde_json::Value::Array(
+            tags_vec.into_iter()
+                .map(|t| serde_json::Value::String(t))
+                .collect()
+        );
     }
     
     if let Some(asset) = asset_tag {

@@ -895,6 +895,7 @@ impl Reconciler {
                     let update_request = AllocateIPRequest {
                         address: None, // Address cannot be changed
                         description: ip_address_crd.spec.description.clone(),
+                        comments: ip_address_crd.spec.comments.clone(),
                         status: Some(match ip_address_crd.spec.status {
                             crds::IPAddressStatus::Active => netbox_client::IPAddressStatus::Active,
                             crds::IPAddressStatus::Reserved => netbox_client::IPAddressStatus::Reserved,
@@ -1258,6 +1259,7 @@ impl Reconciler {
         let create_request = AllocateIPRequest {
             address: Some(ip_net), // Specify the exact IP address
             description: ip_address_crd.spec.description.clone(),
+            comments: ip_address_crd.spec.comments.clone(),
             status: Some(netbox_status),
             role: ip_address_crd.spec.role.clone(),
             dns_name: ip_address_crd.spec.dns_name.clone(),

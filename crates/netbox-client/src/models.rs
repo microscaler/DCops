@@ -296,6 +296,7 @@ pub struct AllocateIPRequest {
     #[serde(serialize_with = "serialize_option_ipnet", deserialize_with = "deserialize_option_ipnet", skip_serializing_if = "Option::is_none")]
     pub address: Option<IpNet>, // Optional: specific IP to allocate
     pub description: Option<String>,
+    pub comments: Option<String>, // Comments field for IP address
     pub status: Option<IPAddressStatus>,
     pub role: Option<String>,
     pub dns_name: Option<String>,

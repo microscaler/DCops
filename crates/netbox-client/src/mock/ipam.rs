@@ -65,7 +65,7 @@ pub async fn allocate_ip(client: &MockNetBoxClient, prefix_id: PrefixId, request
             nat_outside: vec![],
             dns_name: request.as_ref().and_then(|r| r.dns_name.clone()).unwrap_or_default(),
             description: request.as_ref().and_then(|r| r.description.clone()).unwrap_or_default(),
-            comments: String::new(),
+            comments: request.as_ref().and_then(|r| r.comments.clone()).unwrap_or_default(),
             tags: request.as_ref().and_then(|r| r.tags.clone())
                 .map(|tags_vec| {
                     tags_vec.into_iter()
@@ -153,7 +153,7 @@ pub async fn create_ip_address(client: &MockNetBoxClient, address: &str, request
             nat_outside: vec![],
             dns_name: request.as_ref().and_then(|r| r.dns_name.clone()).unwrap_or_default(),
             description: request.as_ref().and_then(|r| r.description.clone()).unwrap_or_default(),
-            comments: String::new(),
+            comments: request.as_ref().and_then(|r| r.comments.clone()).unwrap_or_default(),
             tags: request.as_ref().and_then(|r| r.tags.clone())
                 .map(|tags_vec| {
                     tags_vec.into_iter()
@@ -179,6 +179,9 @@ pub async fn update_ip_address(client: &MockNetBoxClient, id: IpAddressId, reque
 
         if let Some(description) = request.description {
             ip.description = description;
+        }
+        if let Some(comments) = request.comments {
+            ip.comments = comments;
         }
         if let Some(status) = request.status {
             ip.status = status;

@@ -100,6 +100,9 @@ pub async fn create_ip_address(
         if let Some(desc) = req.description {
             body["description"] = serde_json::Value::String(desc);
         }
+        if let Some(comments) = req.comments {
+            body["comments"] = serde_json::Value::String(comments);
+        }
         if let Some(status) = req.status {
             body["status"] = serde_json::to_value(status)
                 .map_err(|e| NetBoxError::Serialization(e))?;
@@ -168,6 +171,7 @@ pub async fn update_ip_address(
     let mut body = serde_json::json!({});
     
     helpers::add_optional_string_field_owned(&mut body, "description", request.description);
+    helpers::add_optional_string_field_owned(&mut body, "comments", request.comments);
     helpers::add_optional_enum_field(&mut body, "status", request.status)?;
     helpers::add_optional_string_field(&mut body, "role", request.role.as_deref());
     helpers::add_optional_string_field(&mut body, "dns_name", request.dns_name.as_deref());
@@ -272,6 +276,9 @@ pub async fn allocate_ip(
     if let Some(req) = request {
         if let Some(desc) = req.description {
             body["description"] = serde_json::Value::String(desc);
+        }
+        if let Some(comments) = req.comments {
+            body["comments"] = serde_json::Value::String(comments);
         }
         if let Some(status) = req.status {
             body["status"] = serde_json::to_value(status)

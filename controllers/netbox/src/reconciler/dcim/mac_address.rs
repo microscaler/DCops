@@ -133,18 +133,20 @@ impl Reconciler {
         // Check if already created - use shared helper for drift detection and status validation
         use crate::reconcile_helpers::{validate_status_and_drift, DriftCheckResult};
         
-        let mac_address = mac_address_crd.spec.mac_address.clone();
+        // Normalize MAC address to lowercase for case-insensitive comparison
+        let mac_address = mac_address_crd.spec.mac_address.to_lowercase();
         let drift_result = {
             let netbox_client_ref = &netbox_client;
+            let mac_address_lower = mac_address.clone();
             validate_status_and_drift(
                 mac_address_crd.status.as_ref(),
                 "NetBoxMACAddress",
                 namespace,
                 name,
                 |_netbox_id| async move {
-                    netbox_client_ref.get_mac_address_by_address(&mac_address)
+                    netbox_client_ref.get_mac_address_by_address(&mac_address_lower)
                         .await
-                        .and_then(|opt| opt.ok_or_else(|| netbox_client::NetBoxError::NotFound(format!("MAC address {} not found", mac_address))))
+                        .and_then(|opt| opt.ok_or_else(|| netbox_client::NetBoxError::NotFound(format!("MAC address {} not found", mac_address_lower))))
                 },
             ).await?
         };

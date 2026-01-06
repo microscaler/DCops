@@ -1090,6 +1090,27 @@ All showing `dhcp-server.example.com` instead of their spec values:
    - markPopulated field
    - Tenant name/slug
 
+### Diagnostic Tools
+
+**New Diagnostic Script:**
+```bash
+# Diagnose all missing resources
+python3 scripts/diagnose_missing_resources.py
+
+# Diagnose a specific resource
+python3 scripts/diagnose_missing_resources.py --kind NetBoxDeviceRole --name kubernetes-control-plane
+
+# Check resources in a specific namespace
+python3 scripts/diagnose_missing_resources.py --namespace default
+```
+
+This script checks:
+- CR existence in Kubernetes
+- Status field presence and state
+- netbox_id presence
+- RBAC permissions
+- Common issues and provides recommendations
+
 ### Testing After Each Fix
 
 ```bash

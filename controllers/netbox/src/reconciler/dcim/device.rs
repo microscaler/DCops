@@ -300,6 +300,8 @@ impl Reconciler {
                                     &format!("Updated NetBoxDevice {}/{} in NetBox to match CRD (ID: {})", namespace, name, updated.id),
                                     device_crd,
                                 ).await;
+                                // Tags are already updated via update_device call above, so we can skip the separate tag reconciliation here
+                                // The later tag reconciliation step (line ~424) will handle any tag-only changes
                                 Some(updated)
                             }
                             Err(e) => {

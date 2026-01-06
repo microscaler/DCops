@@ -1449,9 +1449,18 @@ impl Reconciler {
         // Clone resolved_tags for tag reconciliation after creation
         let resolved_tags_for_tag_update = resolved_tags.clone();
         
-        info!("Creating IP address with address: {}, description: {:?}, comments: {:?}, dns_name: {:?}", 
-            ip_net, ip_address_crd.spec.description, ip_address_crd.spec.comments, ip_address_crd.spec.dns_name);
-        debug!("Creating IP address {} with tenant_id: {}, tags: {:?}", address_str, tenant_id, resolved_tags);
+        info!("Creating IP address with address: {} (from spec: {:?}, status: {:?}), description: {:?}, comments: {:?}, dns_name: {:?}", 
+            ip_net, 
+            ip_address_crd.spec.address,
+            ip_address_crd.status.as_ref().and_then(|s| s.address.as_ref()),
+            ip_address_crd.spec.description, 
+            ip_address_crd.spec.comments, 
+            ip_address_crd.spec.dns_name);
+        debug!("Creating IP address {} (parsed from: {}) with tenant_id: {}, tags: {:?}", 
+            address_str, 
+            ip_address_crd.spec.address.as_ref().or_else(|| ip_address_crd.status.as_ref().and_then(|s| s.address.as_ref())).unwrap_or(&"unknown".to_string()),
+            tenant_id, 
+            resolved_tags);
         
         // Create IP address
         use netbox_client::AllocateIPRequest;

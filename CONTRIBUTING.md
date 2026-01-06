@@ -833,12 +833,47 @@ When adding a new NetBox CRD reconciler, follow this **complete** checklist. **C
 - [ ] Implement token resolution via `token_resolver.resolve_token_for_tenant()`
 - [ ] Implement drift detection using `validate_status_and_drift()` helper
 - [ ] Implement create logic with GitOps conflict handling
-- [ ] **⚠️ CRITICAL: Implement COMPLETE field-level drift detection** (if `driftDetection` is enabled):
+  - [ ] **⚠️ CRITICAL: Implement COMPLETE field-level drift detection** (if `driftDetection` is enabled):
   - [ ] Create `<resource>_needs_update()` helper function
   - [ ] **MANDATORY: Check EVERY field in the CRD spec that maps to a NetBox field**
   - [ ] **MANDATORY: Compare ALL CRD spec fields with ALL NetBox resource fields**
   - [ ] **MANDATORY: Include ALL dependency fields (tenant, region, group, etc.) in comparison**
   - [ ] **MANDATORY: Do NOT skip any fields - GitOps requires complete reconciliation**
+  - [ ] **⚠️ CRITICAL: Evaluate ALL comparisons without short-circuit evaluation**:
+    - [ ] **MANDATORY: Do NOT use `||` (OR) operator for field comparisons** - This causes short-circuit evaluation
+    - [ ] **MANDATORY: Evaluate each comparison separately** - Store each result in a variable
+    - [ ] **MANDATORY: OR all results at the end** - This ensures all comparisons are evaluated and all field-level logs are emitted
+    - [ ] **Why:** Short-circuit evaluation (`||`) skips subsequent comparisons if the first one is `true`, preventing field-level drift detection logs from appearing
+    - [ ] **Pattern to follow:**
+      ```rust
+      // ✅ CORRECT: Evaluate all comparisons
+      let name_diff = compare_string_field(&spec.name, &existing.name);
+      let slug_diff = compare_slug_field(&spec.slug, &existing.slug, auto_generated_slug);
+      let description_diff = compare_optional_string_field(&spec.description, &existing.description);
+      let comments_diff = compare_optional_string_field(&spec.comments, &existing.comments);
+      let tenant_diff = compare_required_dependency_id(desired_tenant_id, existing_tenant_id);
+      // ... evaluate ALL field comparisons ...
+      
+      // OR all results at the end
+      name_diff || slug_diff || description_diff || comments_diff || tenant_diff || /* ... all other fields ... */
+      ```
+      ```rust
+      // ❌ WRONG: Short-circuit evaluation prevents all comparisons from being evaluated
+      compare_string_field(&spec.name, &existing.name)
+          || compare_slug_field(&spec.slug, &existing.slug, auto_generated_slug)
+          || compare_optional_string_field(&spec.description, &existing.description)
+          || compare_optional_string_field(&spec.comments, &existing.comments)
+          // If name differs, subsequent comparisons are skipped!
+      ```
+  - [ ] **⚠️ CRITICAL: Evaluate ALL tag comparisons**:
+    - [ ] **MANDATORY: Always call `tags_differ()` to check if tags need updating** - Even if other fields don't differ
+    - [ ] **MANDATORY: Always call `update_tags_if_differ()` after create/update operations** - Tags are handled separately from other fields
+    - [ ] **MANDATORY: Resolve tag references before comparison** - Use `resolve_tag_references()` to convert CRD tag references to NetBox tag IDs
+    - [ ] **MANDATORY: Handle empty tag lists correctly** - `Some(vec![])` means "clear all tags", `None` means "don't update tags"
+  - [ ] **⚠️ CRITICAL: Evaluate ALL dependency reference comparisons**:
+    - [ ] **MANDATORY: Resolve ALL dependency references before comparison** - Don't compare CRD references directly, resolve to NetBox IDs first
+    - [ ] **MANDATORY: Compare ALL resolved dependency IDs** - Required and optional dependencies must all be compared
+    - [ ] **MANDATORY: Handle None vs Some() correctly** - Optional dependencies need special comparison logic
   - [ ] **MANDATORY: Fields to check (verify against CRD spec and NetBox model):**
     - [ ] `name` (if applicable)
     - [ ] `slug` (if applicable)
@@ -878,36 +913,56 @@ When adding a new NetBox CRD reconciler, follow this **complete** checklist. **C
 5. [ ] Test that changing ANY field in NetBox UI triggers drift detection
 6. [ ] Test that changing ANY field in CRD spec updates NetBox
 
-**Example: Complete Field Check Pattern**
+**Example: Complete Field Check Pattern (WITHOUT Short-Circuit Evaluation)**
 ```rust
 fn resource_needs_update(
     spec: &NetBoxResourceSpec,
     existing: &netbox_client::Resource,
     resolved_dependency_ids: ResolvedDependencies,
 ) -> bool {
+    use crate::reconcile_helpers::{
+        compare_string_field,
+        compare_slug_field,
+        compare_optional_string_field,
+        compare_required_dependency_id,
+        compare_optional_dependency_id,
+        compare_enum_field,
+        compare_optional_numeric_field,
+    };
+    
+    // ⚠️ CRITICAL: Evaluate ALL comparisons separately (no short-circuit)
+    // This ensures all field-level drift detection logs are emitted
+    
     // 1. Check name (if applicable)
-    let name_changed = spec.name != existing.name;
+    let name_diff = compare_string_field(&spec.name, &existing.name);
     
     // 2. Check slug (if applicable)
-    let slug_changed = /* ... */;
+    let auto_generated_slug = spec.name.to_lowercase().replace(' ', "-");
+    let slug_diff = compare_slug_field(&spec.slug, &existing.slug, auto_generated_slug);
     
     // 3. Check description (if applicable)
-    let description_changed = spec.description.as_deref() != existing.description.as_deref();
+    let description_diff = compare_optional_string_field(&spec.description, &existing.description);
     
     // 4. Check comments (if applicable)
-    let comments_changed = spec.comments.as_deref() != existing.comments.as_deref();
+    let comments_diff = compare_optional_string_field(&spec.comments, &existing.comments);
     
     // 5. Check ALL dependencies (tenant, region, group, etc.)
-    let tenant_changed = resolved_dependency_ids.tenant_id != existing.tenant.as_ref().map(|t| t.id);
-    let region_changed = resolved_dependency_ids.region_id != existing.region.as_ref().map(|r| r.id);
+    let tenant_diff = compare_required_dependency_id(
+        resolved_dependency_ids.tenant_id,
+        existing.tenant.as_ref().map(|t| t.id)
+    );
+    let region_diff = compare_optional_dependency_id(
+        resolved_dependency_ids.region_id,
+        existing.region.as_ref().map(|r| r.id)
+    );
     // ... check ALL dependencies
     
     // 6. Check ALL enum fields (status, role, type, etc.)
-    let status_changed = /* ... */;
+    let status_diff = compare_enum_field(&spec.status, &existing_status);
     
     // 7. Check ALL optional fields
-    let latitude_changed = spec.latitude != existing.latitude;
-    let longitude_changed = spec.longitude != existing.longitude;
+    let latitude_diff = compare_optional_numeric_field(&spec.latitude, &existing.latitude);
+    let longitude_diff = compare_optional_numeric_field(&spec.longitude, &existing.longitude);
     // ... check ALL optional fields
     
     // 8. Check ALL resource-specific fields
@@ -915,10 +970,10 @@ fn resource_needs_update(
     
     // Tags are handled separately via update_tags_if_differ()
     
-    // Return true if ANY field changed
-    name_changed || slug_changed || description_changed || comments_changed
-        || tenant_changed || region_changed || status_changed
-        || latitude_changed || longitude_changed
+    // Return true if ANY field changed (OR all results at the end)
+    name_diff || slug_diff || description_diff || comments_diff
+        || tenant_diff || region_diff || status_diff
+        || latitude_diff || longitude_diff
         || /* ... all other fields ... */
 }
 ```
@@ -929,6 +984,9 @@ fn resource_needs_update(
 - ❌ **Assuming fields "rarely change"** - Check EVERY field, always
 - ❌ **Only checking "important" fields** - GitOps requires ALL fields
 - ❌ **Forgetting to handle None vs Some()** - Optional fields need special comparison logic
+- ❌ **Using short-circuit evaluation (`||`)** - Prevents all comparisons from being evaluated and all field-level logs from appearing
+- ❌ **Not evaluating tag comparisons** - Tags must be checked separately via `tags_differ()` and `update_tags_if_differ()`
+- ❌ **Not resolving dependency references** - Must resolve CRD references to NetBox IDs before comparison
 
 #### 4.4. Trait Implementations (`controllers/netbox/src/reconcile_helpers.rs`)
 

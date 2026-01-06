@@ -247,13 +247,15 @@ impl Reconciler {
                 };
                 
                 let auto_generated_slug = tenant_crd.spec.name.to_lowercase().replace(' ', "-");
-                let needs_update = 
-                    compare_string_field(&tenant_crd.spec.name, &tenant.name)
-                    || compare_slug_field(&tenant_crd.spec.slug, &tenant.slug, auto_generated_slug)
-                    || compare_optional_string_field(&tenant_crd.spec.description, &tenant.description)
-                    || compare_optional_string_field(&tenant_crd.spec.comments, &tenant.comments)
-                    || compare_optional_dependency_id(spec_group_id, netbox_group_id);
+                // Evaluate all comparisons to log all field differences (no short-circuit)
+                let name_diff = compare_string_field(&tenant_crd.spec.name, &tenant.name);
+                let slug_diff = compare_slug_field(&tenant_crd.spec.slug, &tenant.slug, auto_generated_slug);
+                let description_diff = compare_optional_string_field(&tenant_crd.spec.description, &tenant.description);
+                let comments_diff = compare_optional_string_field(&tenant_crd.spec.comments, &tenant.comments);
+                let group_diff = compare_optional_dependency_id(spec_group_id, netbox_group_id);
                 // Note: Tags are handled separately using update_tags_if_differ helper
+                
+                let needs_update = name_diff || slug_diff || description_diff || comments_diff || group_diff;
                 
                 // Update other fields if they changed
                 let mut tenant = if needs_update {
@@ -310,8 +312,9 @@ impl Reconciler {
                         &tenant_crd.spec.tags,
                         namespace,
                         name,
-                    None,
-                ).await;
+                        None,
+                        "NetBoxTenant",
+                    ).await;
                     let resolved_tags = crate::reconcile_helpers::convert_tags_to_strings(resolved_tags_json);
                     
                     // Prepare slug for update

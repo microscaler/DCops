@@ -23,15 +23,18 @@ impl Reconciler {
         let auto_generated_slug = spec.model.to_lowercase().replace(' ', "-");
         let existing_manufacturer_id = existing.manufacturer.id;
         
-        compare_required_dependency_id(desired_manufacturer_id, Some(existing_manufacturer_id))
-            || compare_string_field(&spec.model, &existing.model)
-            || compare_slug_field(&spec.slug, &existing.slug, auto_generated_slug)
-            || compare_optional_string_field(&spec.part_number, &existing.part_number)
-            || compare_optional_numeric_field(&Some(spec.u_height), &Some(existing.u_height))
-            || spec.is_full_depth != existing.is_full_depth
-            || compare_optional_string_field(&spec.description, &existing.description)
-            || compare_optional_string_field(&spec.comments, &existing.comments)
+        // Evaluate all comparisons to log all field differences (no short-circuit)
+        let manufacturer_diff = compare_required_dependency_id(desired_manufacturer_id, Some(existing_manufacturer_id));
+        let model_diff = compare_string_field(&spec.model, &existing.model);
+        let slug_diff = compare_slug_field(&spec.slug, &existing.slug, auto_generated_slug);
+        let part_number_diff = compare_optional_string_field(&spec.part_number, &existing.part_number);
+        let u_height_diff = compare_optional_numeric_field(&Some(spec.u_height), &Some(existing.u_height));
+        let is_full_depth_diff = spec.is_full_depth != existing.is_full_depth;
+        let description_diff = compare_optional_string_field(&spec.description, &existing.description);
+        let comments_diff = compare_optional_string_field(&spec.comments, &existing.comments);
         // Tags are handled separately
+        
+        manufacturer_diff || model_diff || slug_diff || part_number_diff || u_height_diff || is_full_depth_diff || description_diff || comments_diff
     }
 
     pub async fn reconcile_netbox_device_type(&self, device_type_crd: &NetBoxDeviceType) -> Result<(), ControllerError> {
@@ -141,6 +144,7 @@ impl Reconciler {
                             namespace,
                             name,
                             Some(device_type.id),
+                            "NetBoxDeviceType",
                         ).await;
                         let resolved_tags = crate::reconcile_helpers::convert_tags_to_strings(resolved_tags_json);
                         
@@ -187,6 +191,7 @@ impl Reconciler {
                             namespace,
                             name,
                             Some(device_type.id),
+                            "NetBoxDeviceType",
                         ).await;
                         let resolved_tags = crate::reconcile_helpers::convert_tags_to_strings(resolved_tags_json);
                         
@@ -237,6 +242,7 @@ impl Reconciler {
                         namespace,
                         name,
                         Some(device_type.id),
+                        "NetBoxDeviceType",
                     ).await;
                     let resolved_tags = crate::reconcile_helpers::convert_tags_to_strings(resolved_tags_json);
                     
@@ -296,13 +302,14 @@ impl Reconciler {
                 
                 if let Some(existing) = existing_device_type {
                     // Resource exists but no status - check if tags need updating
-                    let resolved_tags_json = self.resolve_tag_references(
-                        netbox_client.as_ref(),
-                        &device_type_crd.spec.tags,
-                        namespace,
-                        name,
-                    None,
-                ).await;
+                        let resolved_tags_json = self.resolve_tag_references(
+                            netbox_client.as_ref(),
+                            &device_type_crd.spec.tags,
+                            namespace,
+                            name,
+                            None,
+                            "NetBoxDeviceType",
+                        ).await;
                     let resolved_tags = crate::reconcile_helpers::convert_tags_to_strings(resolved_tags_json);
                     
                     // Update tags if they differ
@@ -346,13 +353,14 @@ impl Reconciler {
                     }
                 } else {
                     // Resolve tags before create
-                    let resolved_tags_json = self.resolve_tag_references(
-                        netbox_client.as_ref(),
-                        &device_type_crd.spec.tags,
-                        namespace,
-                        name,
-                    None,
-                ).await;
+                        let resolved_tags_json = self.resolve_tag_references(
+                            netbox_client.as_ref(),
+                            &device_type_crd.spec.tags,
+                            namespace,
+                            name,
+                            None,
+                            "NetBoxDeviceType",
+                        ).await;
                     let resolved_tags = crate::reconcile_helpers::convert_tags_to_strings(resolved_tags_json);
                     
                     debug!("Attempting to create device type {} in NetBox", device_type_crd.spec.model);

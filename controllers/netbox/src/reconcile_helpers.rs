@@ -1305,6 +1305,32 @@ where
 /// - Tag resolution happens later when actually updating
 /// - Comparing by name is sufficient to detect changes
 /// 
+/// # Tag Reconciliation Scenarios
+/// 
+/// This function handles three scenarios where tags need to be reconciled:
+/// 
+/// 1. **0 tags → x tags** (Adding tags):
+///    - Existing: `[]` (no tags in NetBox)
+///    - Desired: `Some([tag1, tag2])` (tags specified in CR)
+///    - Result: Returns `true` (tags differ, need to add tags)
+/// 
+/// 2. **x tags → 0 tags** (Removing all tags):
+///    - Existing: `[tag1, tag2]` (tags in NetBox)
+///    - Desired: `Some([])` (empty list in CR - explicitly clear all tags)
+///    - Result: Returns `true` (tags differ, need to clear all tags)
+/// 
+/// 3. **x tags → y tags where y < x** (Removing some tags):
+///    - Existing: `[tag1, tag2, tag3]` (3 tags in NetBox)
+///    - Desired: `Some([tag1, tag2])` (2 tags in CR - removed tag3)
+///    - Result: Returns `true` (tags differ, need to update tags)
+/// 
+/// # Special Cases
+/// 
+/// - **`None` vs existing tags**: If `desired_tag_refs` is `None`, it means tags are not specified
+///   in the CR, so we should NOT update tags (returns `false`).
+/// - **`Some(vec![])` vs existing tags**: If `desired_tag_refs` is `Some(vec![])`, it means tags
+///   are explicitly set to empty in the CR, so we SHOULD clear all tags (returns `true` if existing has tags).
+/// 
 /// Returns `true` if tags differ, `false` if they match.
 pub fn tags_differ(
     existing_tags: &[netbox_client::NestedTag],
@@ -1317,26 +1343,55 @@ pub fn tags_differ(
         .map(|t| t.name.clone())
         .collect();
     
-    // Extract tag names from desired CRD spec
-    let desired_tag_names: HashSet<String> = desired_tag_refs.as_ref()
-        .map(|tags| tags.iter().map(|t| t.name.clone()).collect())
-        .unwrap_or_default();
+    // Handle three scenarios:
+    // 1. desired_tag_refs is None → don't update tags (return false if existing has tags, but we shouldn't update)
+    //    Actually, if None, we should NOT update tags, so return false
+    // 2. desired_tag_refs is Some(vec![]) → clear all tags (return true if existing has any tags)
+    // 3. desired_tag_refs is Some([tags]) → update to specific tags (compare sets)
     
-    // Compare sets
-    if existing_tag_names != desired_tag_names {
-        debug!("Tags differ: existing {:?} vs desired {:?}", existing_tag_names, desired_tag_names);
-        return true;
+    match desired_tag_refs {
+        None => {
+            // Tags not specified in CR → don't update tags
+            // Return false (no update needed) regardless of existing tags
+            false
+        }
+        Some(refs) if refs.is_empty() => {
+            // Explicitly empty list → clear all tags
+            // Return true if existing has any tags
+            if !existing_tag_names.is_empty() {
+                info!("Tags differ: existing {:?} vs desired [] (clearing all tags)", existing_tag_names);
+                return true;
+            }
+            false
+        }
+        Some(refs) => {
+            // Specific tags specified → compare sets
+            let desired_tag_names: HashSet<String> = refs.iter()
+                .map(|t| t.name.clone())
+                .collect();
+            
+            if existing_tag_names != desired_tag_names {
+                info!("Tags differ: existing {:?} vs desired {:?} (NetBox will be updated with CR tags)", existing_tag_names, desired_tag_names);
+                return true;
+            }
+            false
+        }
     }
-    
-    false
 }
 
 /// Convert resolved tag references from Vec<serde_json::Value> to Vec<String>
 /// 
 /// This helper converts tag IDs or dictionaries to string format expected by NetBox API.
 /// Tag IDs are converted to strings, and dictionaries with "slug" are extracted.
+/// 
+/// IMPORTANT: If tags_json is Some(vec![]) (empty vector), it returns Some(vec![]) to clear all tags.
+/// If tags_json is None, it returns None (don't update tags).
 pub fn convert_tags_to_strings(tags_json: Option<Vec<serde_json::Value>>) -> Option<Vec<String>> {
     tags_json.map(|tags| {
+        // If tags is empty vec, return empty vec to clear all tags
+        if tags.is_empty() {
+            return vec![];
+        }
         tags.into_iter()
             .filter_map(|tag_value| {
                 if let Some(id) = tag_value.as_u64() {
@@ -1445,7 +1500,20 @@ where
     Resource: Clone + HasTags,
 {
     // Check if tags need updating
+    let existing_tag_names: Vec<String> = existing.tags().iter().map(|t| t.name.clone()).collect();
+    let desired_tag_names: Vec<String> = desired_tag_refs.as_ref()
+        .map(|tags| tags.iter().map(|t| t.name.clone()).collect())
+        .unwrap_or_default();
+    
     let tags_need_update = tags_differ(existing.tags(), desired_tag_refs);
+    
+    info!("{} tag check: existing_tags={:?}, desired_tag_refs={:?}, resolved_tags={:?}, tags_need_update={}", 
+        resource_name, 
+        existing_tag_names,
+        desired_tag_names,
+        resolved_tags.as_ref().map(|tags| tags.clone()),
+        tags_need_update
+    );
     
     if tags_need_update {
         info!("{} tags differ, updating in NetBox", resource_name);
@@ -1508,12 +1576,30 @@ mod tests {
     }
     
     #[test]
-    fn test_tags_differ_some_vs_empty() {
+    fn test_tags_differ_some_vs_none() {
         let existing = vec![create_nested_tag(1, "tag1")];
         let desired: Option<Vec<crds::NetBoxResourceReference>> = None;
         
+        assert!(!tags_differ(&existing, &desired), 
+            "Some existing vs None desired should NOT differ (None means don't update)");
+    }
+    
+    #[test]
+    fn test_tags_differ_some_vs_empty_list() {
+        let existing = vec![create_nested_tag(1, "tag1")];
+        let desired = Some(vec![]); // Explicitly empty list
+        
         assert!(tags_differ(&existing, &desired), 
-            "Some existing vs empty desired should differ");
+            "Some existing vs Some(vec![]) desired should differ (empty list means clear all tags)");
+    }
+    
+    #[test]
+    fn test_tags_differ_empty_vs_empty_list() {
+        let existing: Vec<NestedTag> = vec![];
+        let desired = Some(vec![]); // Explicitly empty list
+        
+        assert!(!tags_differ(&existing, &desired), 
+            "Empty existing vs Some(vec![]) desired should NOT differ (both are empty)");
     }
     
     #[test]

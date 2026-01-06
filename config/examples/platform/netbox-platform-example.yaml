@@ -11,7 +11,7 @@ spec:
     kind: "NetBoxManufacturer"
     name: "raspberry-pi"
   description: "Talos Linux for Kubernetes on Raspberry Pi"
-  comments: "Managed by DCops for Pi cluster deployments"
+  comments: "DRIFT TEST: Modified comments and tags to test drift detection - 2026-01-04"
   driftDetection: true
   # Tag references (optional)
   # Tags must exist in NetBox before they can be referenced
@@ -20,9 +20,5 @@ spec:
     - apiGroup: dcops.microscaler.io
       kind: NetBoxTag
       name: managed-by-dcops
-      namespace: default
-    - apiGroup: dcops.microscaler.io
-      kind: NetBoxTag
-      name: production
       namespace: default
 

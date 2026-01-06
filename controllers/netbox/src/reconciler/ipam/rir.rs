@@ -22,12 +22,15 @@ impl Reconciler {
         let auto_generated_slug = spec.name.to_lowercase().replace(' ', "-");
         let spec_is_private = spec.is_private.unwrap_or(false);
         
-        compare_string_field(&spec.name, &existing.name)
-            || compare_slug_field(&spec.slug, &existing.slug, auto_generated_slug)
-            || compare_optional_string_field(&spec.description, &existing.description)
-            || compare_optional_string_field(&spec.comments, &existing.comments)
-            || spec_is_private != existing.is_private
+        // Evaluate all comparisons to log all field differences (no short-circuit)
+        let name_diff = compare_string_field(&spec.name, &existing.name);
+        let slug_diff = compare_slug_field(&spec.slug, &existing.slug, auto_generated_slug);
+        let description_diff = compare_optional_string_field(&spec.description, &existing.description);
+        let comments_diff = compare_optional_string_field(&spec.comments, &existing.comments);
+        let is_private_diff = spec_is_private != existing.is_private;
         // Tags are handled separately
+        
+        name_diff || slug_diff || description_diff || comments_diff || is_private_diff
     }
 
     /// Reconciles a NetBoxRIR resource.
@@ -85,6 +88,7 @@ impl Reconciler {
                             namespace,
                             name,
                             Some(rir.id),
+                            "NetBoxRIR",
                         ).await;
                         let resolved_tags = crate::reconcile_helpers::convert_tags_to_strings(resolved_tags_json);
                         
@@ -154,7 +158,8 @@ impl Reconciler {
                     &rir_crd.spec.tags,
                     namespace,
                     name,
-                None,
+                    None,
+                    "NetBoxRIR",
                 ).await;
                 
                 // Convert resolved tags from Vec<serde_json::Value> to Vec<String>
@@ -230,8 +235,9 @@ impl Reconciler {
                         &rir_crd.spec.tags,
                         namespace,
                         name,
-                    None,
-                ).await;
+                        None,
+                        "NetBoxRIR",
+                    ).await;
                     let resolved_tags = crate::reconcile_helpers::convert_tags_to_strings(resolved_tags_json);
                     
                     // Update tags if they differ
@@ -277,8 +283,9 @@ impl Reconciler {
                         &rir_crd.spec.tags,
                         namespace,
                         name,
-                    None,
-                ).await;
+                        None,
+                        "NetBoxRIR",
+                    ).await;
                     let resolved_tags = crate::reconcile_helpers::convert_tags_to_strings(resolved_tags_json);
                     
                     debug!("Attempting to create RIR {} in NetBox", rir_crd.spec.name);

@@ -38,16 +38,19 @@ impl Reconciler {
             netbox_client::VlanStatus::Deprecated => crds::VlanStatus::Deprecated,
         };
         
-        spec.vid != existing.vid
-            || compare_string_field(&spec.name, &existing.name)
-            || compare_optional_dependency_id(desired_site_id, existing_site_id)
-            || compare_optional_dependency_id(Some(desired_tenant_id), existing_tenant_id)
-            || compare_optional_dependency_id(desired_role_id, existing_role_id)
-            || compare_optional_dependency_id(desired_group_id, existing_group_id)
-            || compare_enum_field(&spec.status, &existing_status)
-            || compare_optional_string_field(&spec.description, &existing_description)
-            || compare_optional_string_field(&spec.comments, &existing_comments)
+        // Evaluate all comparisons to log all field differences (no short-circuit)
+        let vid_diff = spec.vid != existing.vid;
+        let name_diff = compare_string_field(&spec.name, &existing.name);
+        let site_diff = compare_optional_dependency_id(desired_site_id, existing_site_id);
+        let tenant_diff = compare_optional_dependency_id(Some(desired_tenant_id), existing_tenant_id);
+        let role_diff = compare_optional_dependency_id(desired_role_id, existing_role_id);
+        let group_diff = compare_optional_dependency_id(desired_group_id, existing_group_id);
+        let status_diff = compare_enum_field(&spec.status, &existing_status);
+        let description_diff = compare_optional_string_field(&spec.description, &existing_description);
+        let comments_diff = compare_optional_string_field(&spec.comments, &existing_comments);
         // Tags are handled separately
+        
+        vid_diff || name_diff || site_diff || tenant_diff || role_diff || group_diff || status_diff || description_diff || comments_diff
     }
 
     pub async fn reconcile_netbox_vlan(&self, vlan_crd: &NetBoxVLAN) -> Result<(), ControllerError> {
@@ -145,6 +148,7 @@ impl Reconciler {
                             namespace,
                             name,
                             Some(vlan.id),
+                            "NetBoxVLAN",
                         ).await;
                         let resolved_tags = crate::reconcile_helpers::convert_tags_to_strings(resolved_tags_json);
                         
@@ -232,7 +236,8 @@ impl Reconciler {
                     &vlan_crd.spec.tags,
                     namespace,
                     name,
-                None,
+                    None,
+                    "NetBoxVLAN",
                 ).await;
                 
                 // Convert resolved tags from Vec<serde_json::Value> to Vec<String>
@@ -346,7 +351,8 @@ impl Reconciler {
                     &vlan_crd.spec.tags,
                     namespace,
                     name,
-                None,
+                    None,
+                    "NetBoxVLAN",
                 ).await;
                 
                 // Convert resolved tags from Vec<serde_json::Value> to Vec<String>

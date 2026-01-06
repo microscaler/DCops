@@ -18,7 +18,7 @@ spec:
   status: active
   role: vip
   dnsName: web-server.example.com
-  description: Web server primary IP address
+  description: "Web server IP description for monitoring"
   tags:
   - apiGroup: dcops.microscaler.io
     kind: NetBoxTag
@@ -30,7 +30,7 @@ spec:
     namespace: default
   - apiGroup: dcops.microscaler.io
     kind: NetBoxTag
-    name: web-tier
+    name: web-server
     namespace: default
   comments: Assigned to web-server-01 for production traffic
   driftDetection: true

@@ -31,11 +31,14 @@ impl Reconciler {
         
         let existing_tenant_id = existing.tenant.as_ref().map(|t| t.id);
         
-        compare_string_field(&spec.name, &existing.name)
-            || compare_optional_dependency_id(desired_tenant_id, existing_tenant_id)
-            || compare_string_field(spec_description, &existing.description)
-            || compare_string_field(spec_comments, &existing.comments)
+        // Evaluate all comparisons to log all field differences (no short-circuit)
+        let name_diff = compare_string_field(&spec.name, &existing.name);
+        let tenant_diff = compare_optional_dependency_id(desired_tenant_id, existing_tenant_id);
+        let description_diff = compare_string_field(spec_description, &existing.description);
+        let comments_diff = compare_string_field(spec_comments, &existing.comments);
         // Tags are handled separately using tags_differ helper
+        
+        name_diff || tenant_diff || description_diff || comments_diff
     }
 
     pub async fn reconcile_netbox_route_target(&self, route_target_crd: &NetBoxRouteTarget) -> Result<(), ControllerError> {
@@ -125,7 +128,8 @@ impl Reconciler {
                     &route_target_crd.spec.tags,
                     namespace,
                     name,
-                None,
+                    None,
+                    "NetBoxRouteTarget",
                 ).await;
                 
                 // Convert resolved tags from Vec<serde_json::Value> to Vec<String>
@@ -273,8 +277,9 @@ impl Reconciler {
             &route_target_crd.spec.tags,
             namespace,
             name,
-        None,
-                ).await;
+            None,
+            "NetBoxRouteTarget",
+        ).await;
         
         // Convert resolved tags from Vec<serde_json::Value> to Vec<String>
         let resolved_tags: Option<Vec<String>> = resolved_tags_json.map(|tags| {

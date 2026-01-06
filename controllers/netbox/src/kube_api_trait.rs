@@ -47,6 +47,14 @@ where
         patch: &Patch<serde_json::Value>,
     ) -> Result<T, kube::Error>;
 
+    /// Patch the resource (not status subresource)
+    async fn patch(
+        &self,
+        name: &str,
+        params: &PatchParams,
+        patch: &Patch<serde_json::Value>,
+    ) -> Result<T, kube::Error>;
+
     /// List resources with optional parameters
     async fn list(&self, params: &ListParams) -> Result<kube::api::ObjectList<T>, kube::Error>;
 }
@@ -103,6 +111,15 @@ where
         patch: &Patch<serde_json::Value>,
     ) -> Result<T, kube::Error> {
         self.api.patch_status(name, params, patch).await
+    }
+
+    async fn patch(
+        &self,
+        name: &str,
+        params: &PatchParams,
+        patch: &Patch<serde_json::Value>,
+    ) -> Result<T, kube::Error> {
+        self.api.patch(name, params, patch).await
     }
 
     async fn list(&self, params: &ListParams) -> Result<kube::api::ObjectList<T>, kube::Error> {

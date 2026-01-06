@@ -45,21 +45,24 @@ impl Reconciler {
             netbox_client::DeviceStatus::Decommissioning => crds::DeviceStatus::Decommissioning,
         };
         
-        compare_optional_string_field(&spec.name, &existing.name)
-            || existing_device_type_id != desired_device_type_id
-            || compare_optional_dependency_id(Some(desired_device_role_id), existing_device_role_id)
-            || compare_optional_dependency_id(Some(desired_site_id), existing_site_id)
-            || compare_optional_dependency_id(desired_location_id, existing_location_id)
-            || compare_optional_dependency_id(Some(desired_tenant_id), existing_tenant_id)
-            || compare_optional_dependency_id(desired_platform_id, existing_platform_id)
-            || compare_optional_string_field(&spec.serial, &existing.serial)
-            || compare_optional_string_field(&spec.asset_tag, &existing.asset_tag)
-            || compare_enum_field(&spec.status, &existing_status)
-            || compare_optional_dependency_id(desired_primary_ip4_id, existing_primary_ip4_id)
-            || compare_optional_dependency_id(desired_primary_ip6_id, existing_primary_ip6_id)
-            || compare_optional_string_field(&spec.description, &existing.description)
-            || compare_optional_string_field(&spec.comments, &existing.comments)
+        // Evaluate all comparisons to log all field differences (no short-circuit)
+        let name_diff = compare_optional_string_field(&spec.name, &existing.name);
+        let device_type_diff = existing_device_type_id != desired_device_type_id;
+        let device_role_diff = compare_optional_dependency_id(Some(desired_device_role_id), existing_device_role_id);
+        let site_diff = compare_optional_dependency_id(Some(desired_site_id), existing_site_id);
+        let location_diff = compare_optional_dependency_id(desired_location_id, existing_location_id);
+        let tenant_diff = compare_optional_dependency_id(Some(desired_tenant_id), existing_tenant_id);
+        let platform_diff = compare_optional_dependency_id(desired_platform_id, existing_platform_id);
+        let serial_diff = compare_optional_string_field(&spec.serial, &existing.serial);
+        let asset_tag_diff = compare_optional_string_field(&spec.asset_tag, &existing.asset_tag);
+        let status_diff = compare_enum_field(&spec.status, &existing_status);
+        let primary_ip4_diff = compare_optional_dependency_id(desired_primary_ip4_id, existing_primary_ip4_id);
+        let primary_ip6_diff = compare_optional_dependency_id(desired_primary_ip6_id, existing_primary_ip6_id);
+        let description_diff = compare_optional_string_field(&spec.description, &existing.description);
+        let comments_diff = compare_optional_string_field(&spec.comments, &existing.comments);
         // Tags are handled separately
+        
+        name_diff || device_type_diff || device_role_diff || site_diff || location_diff || tenant_diff || platform_diff || serial_diff || asset_tag_diff || status_diff || primary_ip4_diff || primary_ip6_diff || description_diff || comments_diff
     }
 
     pub async fn reconcile_netbox_device(&self, device_crd: &NetBoxDevice) -> Result<(), ControllerError> {
@@ -260,6 +263,7 @@ impl Reconciler {
                             namespace,
                             name,
                             Some(device.id),
+                            "NetBoxDevice",
                         ).await;
                         let resolved_tags = crate::reconcile_helpers::convert_tags_to_strings(resolved_tags_json);
                         
@@ -356,6 +360,7 @@ impl Reconciler {
                     namespace,
                     name,
                     Some(device_id),
+                    "NetBoxDevice",
                 ).await;
                 let resolved_tags = crate::reconcile_helpers::convert_tags_to_strings(resolved_tags_json);
                 

@@ -41,15 +41,18 @@ impl Reconciler {
         // IPRange model has description as String (not Option<String>), comments as Option<String>
         let spec_description = spec.description.as_deref().unwrap_or("");
         
-        compare_required_dependency_id(desired_tenant_id, existing_tenant_id)
-            || compare_optional_dependency_id(desired_role_id, existing_role_id)
-            || compare_optional_dependency_id(desired_vrf_id, existing_vrf_id)
-            || compare_string_field(desired_status, existing_status)
-            || compare_string_field(spec_description, &existing.description)
-            || compare_optional_string_field(&spec.comments, &existing.comments)
-            || spec.mark_utilized != existing.mark_utilized
-            || spec.mark_populated != existing.mark_populated
+        // Evaluate all comparisons to log all field differences (no short-circuit)
+        let tenant_diff = compare_required_dependency_id(desired_tenant_id, existing_tenant_id);
+        let role_diff = compare_optional_dependency_id(desired_role_id, existing_role_id);
+        let vrf_diff = compare_optional_dependency_id(desired_vrf_id, existing_vrf_id);
+        let status_diff = compare_string_field(desired_status, existing_status);
+        let description_diff = compare_string_field(spec_description, &existing.description);
+        let comments_diff = compare_optional_string_field(&spec.comments, &existing.comments);
+        let mark_utilized_diff = spec.mark_utilized != existing.mark_utilized;
+        let mark_populated_diff = spec.mark_populated != existing.mark_populated;
         // Tags are handled separately using tags_differ helper
+        
+        tenant_diff || role_diff || vrf_diff || status_diff || description_diff || comments_diff || mark_utilized_diff || mark_populated_diff
     }
 
     pub async fn reconcile_netbox_ip_range(&self, ip_range_crd: &NetBoxIPRange) -> Result<(), ControllerError> {
@@ -174,7 +177,8 @@ impl Reconciler {
                     &ip_range_crd.spec.tags,
                     namespace,
                     name,
-                None,
+                    None,
+                    "NetBoxIPRange",
                 ).await;
                 
                 // Convert resolved tags from Vec<serde_json::Value> to Vec<String>
@@ -378,8 +382,9 @@ impl Reconciler {
             &ip_range_crd.spec.tags,
             namespace,
             name,
-        None,
-                ).await;
+            None,
+            "NetBoxIPRange",
+        ).await;
         
         // Convert resolved tags from Vec<serde_json::Value> to Vec<String>
         // IPRange client expects Vec<String> (tag IDs as strings)

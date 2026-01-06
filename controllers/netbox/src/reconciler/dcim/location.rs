@@ -27,15 +27,18 @@ impl Reconciler {
         let existing_tenant_id = existing.tenant.as_ref().map(|t| t.id);
         let existing_parent_id = existing.parent.as_ref().map(|p| p.id);
         
-        compare_string_field(&spec.name, &existing.name)
-            || compare_slug_field(&spec.slug, &existing.slug, auto_generated_slug)
-            || compare_required_dependency_id(desired_site_id, Some(existing_site_id))
-            || compare_optional_dependency_id(Some(desired_tenant_id), existing_tenant_id)
-            || compare_optional_dependency_id(desired_parent_id, existing_parent_id)
-            || compare_optional_string_field(&spec.facility, &existing.facility)
-            || compare_optional_string_field(&spec.description, &existing.description)
-            || compare_optional_string_field(&spec.comments, &existing.comments)
+        // Evaluate all comparisons to log all field differences (no short-circuit)
+        let name_diff = compare_string_field(&spec.name, &existing.name);
+        let slug_diff = compare_slug_field(&spec.slug, &existing.slug, auto_generated_slug);
+        let site_diff = compare_required_dependency_id(desired_site_id, Some(existing_site_id));
+        let tenant_diff = compare_optional_dependency_id(Some(desired_tenant_id), existing_tenant_id);
+        let parent_diff = compare_optional_dependency_id(desired_parent_id, existing_parent_id);
+        let facility_diff = compare_optional_string_field(&spec.facility, &existing.facility);
+        let description_diff = compare_optional_string_field(&spec.description, &existing.description);
+        let comments_diff = compare_optional_string_field(&spec.comments, &existing.comments);
         // Tags are handled separately
+        
+        name_diff || slug_diff || site_diff || tenant_diff || parent_diff || facility_diff || description_diff || comments_diff
     }
 
     pub async fn reconcile_netbox_location(&self, location_crd: &NetBoxLocation) -> Result<(), ControllerError> {
@@ -140,6 +143,7 @@ impl Reconciler {
                             namespace,
                             name,
                             Some(location.id),
+                            "NetBoxLocation",
                         ).await;
                         let resolved_tags = crate::reconcile_helpers::convert_tags_to_strings(resolved_tags_json);
                         
@@ -226,7 +230,8 @@ impl Reconciler {
                     &location_crd.spec.tags,
                     namespace,
                     name,
-                None,
+                    None,
+                    "NetBoxLocation",
                 ).await;
                 
                 // Convert resolved tags from Vec<serde_json::Value> to Vec<String>
@@ -386,12 +391,13 @@ impl Reconciler {
                     info!("Location {} already exists in NetBox (ID: {})", location_crd.spec.name, existing.id);
                     
                     // Resource exists but no status - check if tags need updating
-                    let resolved_tags_json = self.resolve_tag_references(
-                        netbox_client.as_ref(),
-                        &location_crd.spec.tags,
-                        namespace,
-                        name,
+                let resolved_tags_json = self.resolve_tag_references(
+                    netbox_client.as_ref(),
+                    &location_crd.spec.tags,
+                    namespace,
+                    name,
                     None,
+                    "NetBoxLocation",
                 ).await;
                     let resolved_tags = crate::reconcile_helpers::convert_tags_to_strings(resolved_tags_json);
                     
@@ -454,12 +460,13 @@ impl Reconciler {
                 } else {
                     // Resolve tags before creation
                     info!("Resolving tags for location {}/{}: {:?}", namespace, name, location_crd.spec.tags);
-                    let resolved_tags_json = self.resolve_tag_references(
-                        netbox_client.as_ref(),
-                        &location_crd.spec.tags,
-                        namespace,
-                        name,
+                let resolved_tags_json = self.resolve_tag_references(
+                    netbox_client.as_ref(),
+                    &location_crd.spec.tags,
+                    namespace,
+                    name,
                     None,
+                    "NetBoxLocation",
                 ).await;
                     
                     let resolved_tags = crate::reconcile_helpers::convert_tags_to_strings(resolved_tags_json);

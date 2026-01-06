@@ -20,15 +20,20 @@ impl Reconciler {
         
         let existing_device_id = existing.device.id;
         
-        existing_device_id != desired_device_id
-            || compare_string_field(&spec.name, &existing.name)
-            || compare_string_field(&spec.r#type, &existing.r#type)
-            || spec.enabled != existing.enabled
-            || compare_optional_string_field(&spec.mac_address, &existing.mac_address)
-            || compare_optional_numeric_field(&spec.mtu, &existing.mtu)
-            || compare_optional_string_field(&spec.description, &existing.description)
-            || compare_optional_string_field(&spec.comments, &existing.comments)
+        // Evaluate all comparisons to log all field differences (no short-circuit)
+        // Store each result in a variable, then OR them at the end to ensure all comparisons are evaluated
+        let device_diff = existing_device_id != desired_device_id;
+        let name_diff = compare_string_field(&spec.name, &existing.name);
+        let type_diff = compare_string_field(&spec.r#type, &existing.r#type);
+        let enabled_diff = spec.enabled != existing.enabled;
+        let mac_diff = compare_optional_string_field(&spec.mac_address, &existing.mac_address);
+        let mtu_diff = compare_optional_numeric_field(&spec.mtu, &existing.mtu);
+        let description_diff = compare_optional_string_field(&spec.description, &existing.description);
+        let comments_diff = compare_optional_string_field(&spec.comments, &existing.comments);
         // Tags are handled separately
+        
+        // OR all results together (all comparisons already evaluated above)
+        device_diff || name_diff || type_diff || enabled_diff || mac_diff || mtu_diff || description_diff || comments_diff
     }
 
     pub async fn reconcile_netbox_interface(&self, interface_crd: &NetBoxInterface) -> Result<(), ControllerError> {
@@ -114,6 +119,7 @@ impl Reconciler {
                             namespace,
                             name,
                             Some(interface.id),
+                            "NetBoxInterface",
                         ).await;
                         let resolved_tags = crate::reconcile_helpers::convert_tags_to_strings(resolved_tags_json);
                         
@@ -184,6 +190,7 @@ impl Reconciler {
                     namespace,
                     name,
                     Some(interface_id),
+                    "NetBoxInterface",
                 ).await;
                 let resolved_tags = crate::reconcile_helpers::convert_tags_to_strings(resolved_tags_json);
                 

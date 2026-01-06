@@ -177,7 +177,26 @@ pub async fn update_ip_address(
     helpers::add_optional_string_field(&mut body, "dns_name", request.dns_name.as_deref());
     // Use nested reference helper like Prefix does - NetBox requires {"id": X} not just X
     helpers::add_nested_reference(&mut body, "tenant", request.tenant);
-    helpers::add_optional_enum_field(&mut body, "tags", request.tags)?;
+    // Use add_optional_tags_field to properly handle empty tag arrays (clearing tags)
+    // Convert Option<Vec<serde_json::Value>> to Option<Vec<String>> for the helper
+    let tags_strings: Option<Vec<String>> = request.tags.map(|tags| {
+        tags.into_iter()
+            .filter_map(|tag_value| {
+                if let Some(id) = tag_value.as_u64() {
+                    Some(id.to_string())
+                } else if let Some(dict) = tag_value.as_object() {
+                    dict.get("slug")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string())
+                } else if let Some(s) = tag_value.as_str() {
+                    Some(s.to_string())
+                } else {
+                    None
+                }
+            })
+            .collect()
+    });
+    helpers::add_optional_tags_field(&mut body, tags_strings)?;
     
     // Add assigned object (interface assignment)
     if let Some(obj_type) = &request.assigned_object_type {

@@ -47,12 +47,15 @@ impl Reconciler {
         // Prefix model has description as String (not Option<String>)
         let spec_description = spec.description.as_deref().unwrap_or("");
         
-        compare_required_dependency_id(desired_tenant_id, existing_tenant_id)
-            || compare_optional_dependency_id(desired_vlan_id.map(|id| id as u64), existing_vlan_id.map(|id| id as u64))
-            || compare_optional_dependency_id(desired_role_id, existing_role_id)
-            || compare_string_field(desired_status, existing_status)
-            || compare_string_field(spec_description, &existing.description)
+        // Evaluate all comparisons to log all field differences (no short-circuit)
+        let tenant_diff = compare_required_dependency_id(desired_tenant_id, existing_tenant_id);
+        let vlan_diff = compare_optional_dependency_id(desired_vlan_id.map(|id| id as u64), existing_vlan_id.map(|id| id as u64));
+        let role_diff = compare_optional_dependency_id(desired_role_id, existing_role_id);
+        let status_diff = compare_string_field(desired_status, existing_status);
+        let description_diff = compare_string_field(spec_description, &existing.description);
         // Tags are handled separately using tags_differ helper
+        
+        tenant_diff || vlan_diff || role_diff || status_diff || description_diff
     }
 
     pub async fn reconcile_netbox_prefix(&self, prefix_crd: &NetBoxPrefix) -> Result<(), ControllerError> {
@@ -187,8 +190,9 @@ impl Reconciler {
                         &prefix_crd.spec.tags,
                         namespace,
                         name,
-                    None,
-                ).await;
+                        None,
+                        "NetBoxPrefix",
+                    ).await;
                     
                     info!("Resolved tags JSON for prefix {}/{}: {:?}", namespace, name, resolved_tags_json);
                     
@@ -433,7 +437,8 @@ impl Reconciler {
                     &prefix_crd.spec.tags,
                     namespace,
                     name,
-                None,
+                    None,
+                    "NetBoxPrefix",
                 ).await;
                 
                 // Convert resolved tags from Vec<serde_json::Value> to Vec<String>

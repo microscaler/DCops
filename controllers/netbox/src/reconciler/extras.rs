@@ -20,12 +20,15 @@ impl Reconciler {
         
         let auto_generated_slug = spec.name.to_lowercase().replace(' ', "-");
         
-        compare_string_field(&spec.name, &existing.name)
-            || compare_slug_field(&spec.slug, &existing.slug, auto_generated_slug)
-            || compare_optional_string_field(&spec.description, &existing.description)
-            || compare_optional_numeric_field(&spec.weight, &existing.weight)
-            || compare_optional_string_field(&spec.comments, &existing.comments)
+        // Evaluate all comparisons to log all field differences (no short-circuit)
+        let name_diff = compare_string_field(&spec.name, &existing.name);
+        let slug_diff = compare_slug_field(&spec.slug, &existing.slug, auto_generated_slug);
+        let description_diff = compare_optional_string_field(&spec.description, &existing.description);
+        let weight_diff = compare_optional_numeric_field(&spec.weight, &existing.weight);
+        let comments_diff = compare_optional_string_field(&spec.comments, &existing.comments);
         // Tags are handled separately
+        
+        name_diff || slug_diff || description_diff || weight_diff || comments_diff
     }
 
     /// Reconciles a NetBoxRole resource (Extras Role, not IPAM Role).
@@ -87,6 +90,7 @@ impl Reconciler {
                             namespace,
                             name,
                             Some(role.id),
+                            "NetBoxRole",
                         ).await;
                         let resolved_tags = crate::reconcile_helpers::convert_tags_to_strings(resolved_tags_json);
                         
@@ -157,6 +161,7 @@ impl Reconciler {
                     namespace,
                     name,
                     role_crd.status.as_ref().and_then(|s| s.netbox_id).filter(|&id| id != 0),
+                    "NetBoxRole",
                 ).await;
                 
                 // Convert resolved tags from Vec<serde_json::Value> to Vec<String>
@@ -233,8 +238,9 @@ impl Reconciler {
                         &role_crd.spec.tags,
                         namespace,
                         name,
-                    None,
-                ).await;
+                        None,
+                        "NetBoxRole",
+                    ).await;
                     let resolved_tags = crate::reconcile_helpers::convert_tags_to_strings(resolved_tags_json);
                     
                     // Update tags if they differ
@@ -280,8 +286,9 @@ impl Reconciler {
                         &role_crd.spec.tags,
                         namespace,
                         name,
-                    None,
-                ).await;
+                        None,
+                        "NetBoxRole",
+                    ).await;
                     let resolved_tags = crate::reconcile_helpers::convert_tags_to_strings(resolved_tags_json);
                     
                     debug!("Attempting to create role {} in NetBox", role_crd.spec.name);
@@ -404,12 +411,15 @@ impl Reconciler {
         // Note: color is String in NetBox model but Option<String> in CRD
         let existing_color = Some(existing.color.clone());
         
-        compare_string_field(&spec.name, &existing.name)
-            || compare_slug_field(&spec.slug, &existing.slug, auto_generated_slug)
-            || compare_optional_string_field(&spec.color, &existing_color)
-            || compare_optional_string_field(&spec.description, &existing.description)
-            || compare_optional_string_field(&spec.comments, &existing.comments)
+        // Evaluate all comparisons to log all field differences (no short-circuit)
+        let name_diff = compare_string_field(&spec.name, &existing.name);
+        let slug_diff = compare_slug_field(&spec.slug, &existing.slug, auto_generated_slug);
+        let color_diff = compare_optional_string_field(&spec.color, &existing_color);
+        let description_diff = compare_optional_string_field(&spec.description, &existing.description);
+        let comments_diff = compare_optional_string_field(&spec.comments, &existing.comments);
         // Tags don't have tags themselves
+        
+        name_diff || slug_diff || color_diff || description_diff || comments_diff
     }
 
     /// Reconciles a NetBoxTag resource.
@@ -488,6 +498,11 @@ impl Reconciler {
                                     &format!("Updated NetBoxTag {}/{} in NetBox to match CRD (ID: {})", namespace, name, updated.id),
                                     tag_crd,
                                 ).await;
+                                
+                                // Tag was successfully updated - trigger reconciliation of dependent resources
+                                // (Will be called again at the end, but calling here ensures immediate trigger)
+                                self.trigger_dependent_resource_reconciliation(namespace, name).await;
+                                
                                 Some(updated)
                             }
                             Err(e) => {
@@ -570,6 +585,10 @@ impl Reconciler {
                     ).await {
                         Ok(created) => {
                             info!("Created tag {} in NetBox (ID: {})", created.name, created.id);
+                            
+                            // Tag was successfully created - trigger reconciliation of dependent resources
+                            self.trigger_dependent_resource_reconciliation(namespace, name).await;
+                            
                             created
                         }
                         Err(e) => {
@@ -655,6 +674,10 @@ impl Reconciler {
             netbox_tag.id,
         ).await?;
         info!("Updated NetBoxTag {}/{} status: NetBox ID {}", namespace, name, netbox_tag.id);
+        
+        // Tag was successfully reconciled - trigger reconciliation of dependent resources
+        self.trigger_dependent_resource_reconciliation(namespace, name).await;
+        
         Ok(())
     }
 }

@@ -32,7 +32,7 @@ use crds::{
     NetBoxRIR, NetBoxIPAddress, NetBoxIPRange, NetBoxVRF, NetBoxRouteTarget, PrefixState, ResourceState,
 };
 use tracing::{info, error, debug, warn};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
 
 /// Backoff state for a resource
@@ -93,6 +93,9 @@ pub struct Reconciler {
     pub(crate) netbox_location_api: Box<dyn KubeApiTrait<NetBoxLocation> + Send + Sync>,
     /// Error count tracking per resource (namespace/name -> BackoffState)
     backoff_states: Arc<Mutex<HashMap<String, BackoffState>>>,
+    /// Tag dependency tracking: tag namespace/name -> set of resources waiting for it
+    /// Resource format: "kind:namespace/name" (e.g., "NetBoxIPAddress:default/web-server-ip")
+    tag_dependencies: Arc<Mutex<HashMap<String, HashSet<String>>>>,
 }
 
 impl Reconciler {
@@ -447,6 +450,325 @@ impl Reconciler {
             netbox_site_group_api: Box::new(netbox_site_group_api),
             netbox_location_api: Box::new(netbox_location_api),
             backoff_states: Arc::new(Mutex::new(HashMap::new())),
+            tag_dependencies: Arc::new(Mutex::new(HashMap::new())),
+        }
+    }
+    
+    /// Register a resource as waiting for a tag
+    /// 
+    /// When a resource references a tag that doesn't exist yet, this method
+    /// registers the dependency so that when the tag becomes available, the
+    /// resource can be automatically requeued for reconciliation.
+    /// 
+    /// # Arguments
+    /// - `tag_namespace`: Namespace of the tag
+    /// - `tag_name`: Name of the tag
+    /// - `resource_kind`: Kind of the resource waiting for the tag (e.g., "NetBoxIPAddress")
+    /// - `resource_namespace`: Namespace of the resource
+    /// - `resource_name`: Name of the resource
+    pub(crate) fn register_tag_dependency(
+        &self,
+        tag_namespace: &str,
+        tag_name: &str,
+        resource_kind: &str,
+        resource_namespace: &str,
+        resource_name: &str,
+    ) {
+        let tag_key = format!("{}/{}", tag_namespace, tag_name);
+        let resource_key = format!("{}:{}/{}", resource_kind, resource_namespace, resource_name);
+        
+        let tag_key_clone = tag_key.clone();
+        let resource_key_clone = resource_key.clone();
+        
+        let mut deps = self.tag_dependencies.lock().unwrap();
+        deps.entry(tag_key).or_insert_with(HashSet::new).insert(resource_key);
+        
+        debug!("Registered tag dependency: {} -> {}", tag_key_clone, resource_key_clone);
+    }
+    
+    /// Unregister a resource from waiting for a tag
+    /// 
+    /// When a resource successfully resolves all its tags, this method
+    /// removes it from the dependency tracking to prevent unnecessary requeues.
+    /// 
+    /// # Arguments
+    /// - `tag_namespace`: Namespace of the tag
+    /// - `tag_name`: Name of the tag
+    /// - `resource_kind`: Kind of the resource
+    /// - `resource_namespace`: Namespace of the resource
+    /// - `resource_name`: Name of the resource
+    pub(crate) fn unregister_tag_dependency(
+        &self,
+        tag_namespace: &str,
+        tag_name: &str,
+        resource_kind: &str,
+        resource_namespace: &str,
+        resource_name: &str,
+    ) {
+        let tag_key = format!("{}/{}", tag_namespace, tag_name);
+        let resource_key = format!("{}:{}/{}", resource_kind, resource_namespace, resource_name);
+        
+        let tag_key_clone = tag_key.clone();
+        let resource_key_clone = resource_key.clone();
+        
+        let mut deps = self.tag_dependencies.lock().unwrap();
+        if let Some(resources) = deps.get_mut(&tag_key) {
+            resources.remove(&resource_key);
+            if resources.is_empty() {
+                deps.remove(&tag_key);
+            }
+            debug!("Unregistered tag dependency: {} -> {}", tag_key_clone, resource_key_clone);
+        }
+    }
+    
+    /// Trigger reconciliation of all resources waiting for a tag
+    /// 
+    /// When a tag is successfully created or updated, this method finds all
+    /// resources that were waiting for it and triggers their reconciliation.
+    /// 
+    /// # Arguments
+    /// - `tag_namespace`: Namespace of the tag that became available
+    /// - `tag_name`: Name of the tag that became available
+    pub(crate) async fn trigger_dependent_resource_reconciliation(
+        &self,
+        tag_namespace: &str,
+        tag_name: &str,
+    ) {
+        let tag_key = format!("{}/{}", tag_namespace, tag_name);
+        
+        let dependent_resources: Vec<String> = {
+            let deps = self.tag_dependencies.lock().unwrap();
+            deps.get(&tag_key)
+                .map(|resources| resources.iter().cloned().collect())
+                .unwrap_or_default()
+        };
+        
+        if dependent_resources.is_empty() {
+            debug!("No resources waiting for tag {}", tag_key);
+            return;
+        }
+        
+        info!("Tag {} became available, triggering reconciliation of {} dependent resource(s)", tag_key, dependent_resources.len());
+        
+        // Trigger reconciliation for each dependent resource by patching the resource
+        // This causes the watcher to detect a change and requeue the resource
+        for resource_key in dependent_resources {
+            let parts: Vec<&str> = resource_key.split(':').collect();
+            if parts.len() != 2 {
+                warn!("Invalid resource key format: {}", resource_key);
+                continue;
+            }
+            
+            let resource_kind = parts[0];
+            let resource_path: Vec<&str> = parts[1].split('/').collect();
+            if resource_path.len() != 2 {
+                warn!("Invalid resource path format: {}", parts[1]);
+                continue;
+            }
+            
+            let resource_namespace = resource_path[0];
+            let resource_name = resource_path[1];
+            
+            info!("Triggering reconciliation of {} {}/{} (was waiting for tag {})", 
+                resource_kind, resource_namespace, resource_name, tag_key);
+            
+            // Trigger requeue by patching the resource with a timestamp-based annotation
+            // This causes the watcher to detect a change and requeue immediately
+            let annotation_key = "dcops.microscaler.io/tag-triggered-reconcile";
+            let annotation_value = format!("{}", chrono::Utc::now().timestamp());
+            
+            // Trigger requeue by patching the resource with an annotation
+            // This causes the watcher to detect a change and requeue immediately
+            let patch_result = match resource_kind {
+                "NetBoxIPAddress" => {
+                    self.trigger_resource_requeue_via_annotation_api(
+                        &*self.netbox_ip_address_api,
+                        resource_name, resource_namespace, &annotation_key, &annotation_value
+                    ).await
+                }
+                "NetBoxDevice" => {
+                    self.trigger_resource_requeue_via_annotation_api(
+                        &*self.netbox_device_api,
+                        resource_name, resource_namespace, &annotation_key, &annotation_value
+                    ).await
+                }
+                "NetBoxInterface" => {
+                    self.trigger_resource_requeue_via_annotation_api(
+                        &*self.netbox_interface_api,
+                        resource_name, resource_namespace, &annotation_key, &annotation_value
+                    ).await
+                }
+                "NetBoxMACAddress" => {
+                    self.trigger_resource_requeue_via_annotation_api(
+                        &*self.netbox_mac_address_api,
+                        resource_name, resource_namespace, &annotation_key, &annotation_value
+                    ).await
+                }
+                "NetBoxPrefix" => {
+                    self.trigger_resource_requeue_via_annotation_api(
+                        &*self.netbox_prefix_api,
+                        resource_name, resource_namespace, &annotation_key, &annotation_value
+                    ).await
+                }
+                "NetBoxIPRange" => {
+                    self.trigger_resource_requeue_via_annotation_api(
+                        &*self.netbox_ip_range_api,
+                        resource_name, resource_namespace, &annotation_key, &annotation_value
+                    ).await
+                }
+                "NetBoxVRF" => {
+                    self.trigger_resource_requeue_via_annotation_api(
+                        &*self.netbox_vrf_api,
+                        resource_name, resource_namespace, &annotation_key, &annotation_value
+                    ).await
+                }
+                "NetBoxRouteTarget" => {
+                    self.trigger_resource_requeue_via_annotation_api(
+                        &*self.netbox_route_target_api,
+                        resource_name, resource_namespace, &annotation_key, &annotation_value
+                    ).await
+                }
+                "NetBoxTenant" => {
+                    self.trigger_resource_requeue_via_annotation_api(
+                        &*self.netbox_tenant_api,
+                        resource_name, resource_namespace, &annotation_key, &annotation_value
+                    ).await
+                }
+                "NetBoxTenantGroup" => {
+                    self.trigger_resource_requeue_via_annotation_api(
+                        &*self.netbox_tenant_group_api,
+                        resource_name, resource_namespace, &annotation_key, &annotation_value
+                    ).await
+                }
+                "NetBoxSite" => {
+                    self.trigger_resource_requeue_via_annotation_api(
+                        &*self.netbox_site_api,
+                        resource_name, resource_namespace, &annotation_key, &annotation_value
+                    ).await
+                }
+                "NetBoxVLAN" => {
+                    self.trigger_resource_requeue_via_annotation_api(
+                        &*self.netbox_vlan_api,
+                        resource_name, resource_namespace, &annotation_key, &annotation_value
+                    ).await
+                }
+                "NetBoxAggregate" => {
+                    self.trigger_resource_requeue_via_annotation_api(
+                        &*self.netbox_aggregate_api,
+                        resource_name, resource_namespace, &annotation_key, &annotation_value
+                    ).await
+                }
+                "NetBoxRole" => {
+                    self.trigger_resource_requeue_via_annotation_api(
+                        &*self.netbox_role_api,
+                        resource_name, resource_namespace, &annotation_key, &annotation_value
+                    ).await
+                }
+                "NetBoxPlatform" => {
+                    self.trigger_resource_requeue_via_annotation_api(
+                        &*self.netbox_platform_api,
+                        resource_name, resource_namespace, &annotation_key, &annotation_value
+                    ).await
+                }
+                "NetBoxManufacturer" => {
+                    self.trigger_resource_requeue_via_annotation_api(
+                        &*self.netbox_manufacturer_api,
+                        resource_name, resource_namespace, &annotation_key, &annotation_value
+                    ).await
+                }
+                "NetBoxDeviceType" => {
+                    self.trigger_resource_requeue_via_annotation_api(
+                        &*self.netbox_device_type_api,
+                        resource_name, resource_namespace, &annotation_key, &annotation_value
+                    ).await
+                }
+                "NetBoxDeviceRole" => {
+                    self.trigger_resource_requeue_via_annotation_api(
+                        &*self.netbox_device_role_api,
+                        resource_name, resource_namespace, &annotation_key, &annotation_value
+                    ).await
+                }
+                "NetBoxRegion" => {
+                    self.trigger_resource_requeue_via_annotation_api(
+                        &*self.netbox_region_api,
+                        resource_name, resource_namespace, &annotation_key, &annotation_value
+                    ).await
+                }
+                "NetBoxSiteGroup" => {
+                    self.trigger_resource_requeue_via_annotation_api(
+                        &*self.netbox_site_group_api,
+                        resource_name, resource_namespace, &annotation_key, &annotation_value
+                    ).await
+                }
+                "NetBoxLocation" => {
+                    self.trigger_resource_requeue_via_annotation_api(
+                        &*self.netbox_location_api,
+                        resource_name, resource_namespace, &annotation_key, &annotation_value
+                    ).await
+                }
+                "NetBoxRIR" => {
+                    self.trigger_resource_requeue_via_annotation_api(
+                        &*self.netbox_rir_api,
+                        resource_name, resource_namespace, &annotation_key, &annotation_value
+                    ).await
+                }
+                _ => {
+                    warn!("Unsupported resource kind for tag-triggered reconciliation: {} (will be picked up by periodic requeue)", resource_kind);
+                    Ok(())
+                }
+            };
+            
+            if let Err(e) = patch_result {
+                warn!("Failed to trigger requeue for {} {}/{}: {} (will be picked up by periodic requeue)", 
+                    resource_kind, resource_namespace, resource_name, e);
+            }
+        }
+    }
+    
+    /// Helper to trigger resource requeue by adding/updating an annotation via KubeApiTrait
+    /// 
+    /// This patches the resource with a timestamp-based annotation, which causes
+    /// the Kubernetes watcher to detect a change and immediately requeue the resource
+    /// for reconciliation. This is much faster than waiting for the 10-second periodic requeue.
+    async fn trigger_resource_requeue_via_annotation_api<K>(
+        &self,
+        api: &dyn KubeApiTrait<K>,
+        name: &str,
+        namespace: &str,
+        annotation_key: &str,
+        annotation_value: &str,
+    ) -> Result<(), ControllerError>
+    where
+        K: kube::Resource + Clone + Send + Sync + std::fmt::Debug + serde::de::DeserializeOwned + 'static,
+        K::DynamicType: Default,
+    {
+        use kube::api::{Patch, PatchParams};
+        
+        // Create a patch that adds/updates the annotation
+        let patch_body = serde_json::json!({
+            "metadata": {
+                "annotations": {
+                    annotation_key: annotation_value
+                }
+            }
+        });
+        
+        let patch = Patch::Merge(patch_body);
+        let params = PatchParams::default();
+        
+        // Patch the resource to trigger watcher
+        match api.patch(name, &params, &patch).await {
+            Ok(_) => {
+                debug!("Successfully triggered requeue for {}/{} via annotation {}={}", 
+                    namespace, name, annotation_key, annotation_value);
+                Ok(())
+            }
+            Err(e) => {
+                // If patching fails, log but don't error - periodic requeue will pick it up
+                debug!("Failed to patch annotation for {}/{}: {} (will be picked up by periodic requeue)", 
+                    namespace, name, e);
+                Ok(()) // Return Ok to continue with other resources
+            }
         }
     }
     

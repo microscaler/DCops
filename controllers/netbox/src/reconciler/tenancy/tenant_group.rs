@@ -70,6 +70,7 @@ impl Reconciler {
                             namespace,
                             name,
                             Some(tenant_group.id),
+                            "NetBoxTenantGroup",
                         ).await;
                         let resolved_tags = crate::reconcile_helpers::convert_tags_to_strings(resolved_tags_json);
                         
@@ -149,6 +150,7 @@ impl Reconciler {
                     namespace,
                     name,
                     Some(tenant_group.id),
+                    "NetBoxTenantGroup",
                 ).await;
                 
                 let resolved_tags = crate::reconcile_helpers::convert_tags_to_strings(resolved_tags_json);
@@ -229,6 +231,7 @@ impl Reconciler {
                     namespace,
                     name,
                     None,
+                    "NetBoxTenantGroup",
                 ).await;
                 
                 let resolved_tags = crate::reconcile_helpers::convert_tags_to_strings(resolved_tags_json);
@@ -305,12 +308,15 @@ impl Reconciler {
         let auto_generated_slug = spec.name.to_lowercase().replace(' ', "-");
         let existing_parent_id = existing.parent.as_ref().map(|p| p.id);
         
-        compare_string_field(&spec.name, &existing.name)
-            || compare_slug_field(&spec.slug, &existing.slug, auto_generated_slug)
-            || compare_optional_dependency_id(desired_parent_id, existing_parent_id)
-            || compare_optional_string_field(&spec.description, &existing.description)
-            || compare_optional_string_field(&spec.comments, &existing.comments)
+        // Evaluate all comparisons to log all field differences (no short-circuit)
+        let name_diff = compare_string_field(&spec.name, &existing.name);
+        let slug_diff = compare_slug_field(&spec.slug, &existing.slug, auto_generated_slug);
+        let parent_diff = compare_optional_dependency_id(desired_parent_id, existing_parent_id);
+        let description_diff = compare_optional_string_field(&spec.description, &existing.description);
+        let comments_diff = compare_optional_string_field(&spec.comments, &existing.comments);
         // Note: Tags are handled separately using update_tags_if_differ helper
+        
+        name_diff || slug_diff || parent_diff || description_diff || comments_diff
     }
 }
 

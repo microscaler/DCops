@@ -38,21 +38,24 @@ impl Reconciler {
             netbox_client::SiteStatus::Staging => "staging",
         };
         
-        compare_string_field(&spec.name, &existing.name)
-            || compare_slug_field(&spec.slug, &existing.slug, auto_generated_slug)
-            || compare_optional_string_field(&spec.description, &existing.description)
-            || compare_optional_string_field(&spec.physical_address, &existing.physical_address)
-            || compare_optional_string_field(&spec.shipping_address, &existing.shipping_address)
-            || compare_optional_numeric_field(&spec.latitude, &existing.latitude)
-            || compare_optional_numeric_field(&spec.longitude, &existing.longitude)
-            || compare_required_dependency_id(desired_tenant_id, existing_tenant_id)
-            || compare_optional_dependency_id(desired_region_id, existing_region_id)
-            || compare_optional_dependency_id(desired_site_group_id, existing_site_group_id)
-            || compare_string_field(desired_status, existing_status)
-            || compare_optional_string_field(&spec.facility, &existing.facility)
-            || compare_optional_string_field(&spec.time_zone, &existing.time_zone)
-            || compare_optional_string_field(&spec.comments, &existing.comments)
+        // Evaluate all comparisons to log all field differences (no short-circuit)
+        let name_diff = compare_string_field(&spec.name, &existing.name);
+        let slug_diff = compare_slug_field(&spec.slug, &existing.slug, auto_generated_slug);
+        let description_diff = compare_optional_string_field(&spec.description, &existing.description);
+        let physical_address_diff = compare_optional_string_field(&spec.physical_address, &existing.physical_address);
+        let shipping_address_diff = compare_optional_string_field(&spec.shipping_address, &existing.shipping_address);
+        let latitude_diff = compare_optional_numeric_field(&spec.latitude, &existing.latitude);
+        let longitude_diff = compare_optional_numeric_field(&spec.longitude, &existing.longitude);
+        let tenant_diff = compare_required_dependency_id(desired_tenant_id, existing_tenant_id);
+        let region_diff = compare_optional_dependency_id(desired_region_id, existing_region_id);
+        let site_group_diff = compare_optional_dependency_id(desired_site_group_id, existing_site_group_id);
+        let status_diff = compare_string_field(desired_status, existing_status);
+        let facility_diff = compare_optional_string_field(&spec.facility, &existing.facility);
+        let time_zone_diff = compare_optional_string_field(&spec.time_zone, &existing.time_zone);
+        let comments_diff = compare_optional_string_field(&spec.comments, &existing.comments);
         // Tags are handled separately
+        
+        name_diff || slug_diff || description_diff || physical_address_diff || shipping_address_diff || latitude_diff || longitude_diff || tenant_diff || region_diff || site_group_diff || status_diff || facility_diff || time_zone_diff || comments_diff
     }
 
     // DCIM reconciler functions

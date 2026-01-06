@@ -76,15 +76,18 @@ impl Reconciler {
         let mut desired_export_ids = desired_export_target_ids.as_ref().cloned().unwrap_or_default();
         desired_export_ids.sort();
         
-        compare_string_field(&spec.name, &existing.name)
-            || compare_optional_string_field(&spec.rd, &existing.rd)
-            || spec.enforce_unique != existing.enforce_unique
-            || compare_optional_dependency_id(desired_tenant_id, existing_tenant_id)
-            || compare_string_field(spec_description, &existing.description)
-            || compare_string_field(spec_comments, &existing.comments)
-            || existing_import_ids != desired_import_ids
-            || existing_export_ids != desired_export_ids
+        // Evaluate all comparisons to log all field differences (no short-circuit)
+        let name_diff = compare_string_field(&spec.name, &existing.name);
+        let rd_diff = compare_optional_string_field(&spec.rd, &existing.rd);
+        let enforce_unique_diff = spec.enforce_unique != existing.enforce_unique;
+        let tenant_diff = compare_optional_dependency_id(desired_tenant_id, existing_tenant_id);
+        let description_diff = compare_string_field(spec_description, &existing.description);
+        let comments_diff = compare_string_field(spec_comments, &existing.comments);
+        let import_ids_diff = existing_import_ids != desired_import_ids;
+        let export_ids_diff = existing_export_ids != desired_export_ids;
         // Tags are handled separately using tags_differ helper
+        
+        name_diff || rd_diff || enforce_unique_diff || tenant_diff || description_diff || comments_diff || import_ids_diff || export_ids_diff
     }
 
     pub async fn reconcile_netbox_vrf(&self, vrf_crd: &NetBoxVRF) -> Result<(), ControllerError> {
@@ -193,7 +196,8 @@ impl Reconciler {
                     &vrf_crd.spec.tags,
                     namespace,
                     name,
-                None,
+                    None,
+                    "NetBoxVRF",
                 ).await;
                 
                 // Convert resolved tags from Vec<serde_json::Value> to Vec<String>
@@ -348,8 +352,9 @@ impl Reconciler {
             &vrf_crd.spec.tags,
             namespace,
             name,
-        None,
-                ).await;
+            None,
+            "NetBoxVRF",
+        ).await;
         
         // Convert resolved tags from Vec<serde_json::Value> to Vec<String>
         let resolved_tags: Option<Vec<String>> = resolved_tags_json.map(|tags| {

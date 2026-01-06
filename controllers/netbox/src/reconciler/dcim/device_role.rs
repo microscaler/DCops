@@ -18,13 +18,16 @@ impl Reconciler {
         
         let auto_generated_slug = spec.name.to_lowercase().replace(' ', "-");
         
-        compare_string_field(&spec.name, &existing.name)
-            || compare_slug_field(&spec.slug, &existing.slug, auto_generated_slug)
-            || compare_optional_string_field(&spec.color, &existing.color)
-            || spec.vm_role != existing.vm_role
-            || compare_optional_string_field(&spec.description, &existing.description)
-            || compare_optional_string_field(&spec.comments, &existing.comments)
+        // Evaluate all comparisons to log all field differences (no short-circuit)
+        let name_diff = compare_string_field(&spec.name, &existing.name);
+        let slug_diff = compare_slug_field(&spec.slug, &existing.slug, auto_generated_slug);
+        let color_diff = compare_optional_string_field(&spec.color, &existing.color);
+        let vm_role_diff = spec.vm_role != existing.vm_role;
+        let description_diff = compare_optional_string_field(&spec.description, &existing.description);
+        let comments_diff = compare_optional_string_field(&spec.comments, &existing.comments);
         // Tags are handled separately
+        
+        name_diff || slug_diff || color_diff || vm_role_diff || description_diff || comments_diff
     }
 
     pub async fn reconcile_netbox_device_role(&self, device_role_crd: &NetBoxDeviceRole) -> Result<(), ControllerError> {
@@ -112,6 +115,7 @@ impl Reconciler {
                             namespace,
                             name,
                             Some(device_role.id),
+                            "NetBoxDeviceRole",
                         ).await;
                         let resolved_tags = crate::reconcile_helpers::convert_tags_to_strings(resolved_tags_json);
                         
@@ -156,6 +160,7 @@ impl Reconciler {
                             namespace,
                             name,
                             Some(device_role.id),
+                            "NetBoxDeviceRole",
                         ).await;
                         let resolved_tags = crate::reconcile_helpers::convert_tags_to_strings(resolved_tags_json);
                         
@@ -204,6 +209,7 @@ impl Reconciler {
                         namespace,
                         name,
                         Some(device_role.id),
+                        "NetBoxDeviceRole",
                     ).await;
                     let resolved_tags = crate::reconcile_helpers::convert_tags_to_strings(resolved_tags_json);
                     
@@ -265,8 +271,9 @@ impl Reconciler {
                         &device_role_crd.spec.tags,
                         namespace,
                         name,
-                    None,
-                ).await;
+                        None,
+                        "NetBoxDeviceRole",
+                    ).await;
                     let resolved_tags = crate::reconcile_helpers::convert_tags_to_strings(resolved_tags_json);
                     
                     // Update tags if they differ
@@ -313,8 +320,9 @@ impl Reconciler {
                         &device_role_crd.spec.tags,
                         namespace,
                         name,
-                    None,
-                ).await;
+                        None,
+                        "NetBoxDeviceRole",
+                    ).await;
                     let resolved_tags = crate::reconcile_helpers::convert_tags_to_strings(resolved_tags_json);
                     
                     debug!("Attempting to create device role {} in NetBox", device_role_crd.spec.name);

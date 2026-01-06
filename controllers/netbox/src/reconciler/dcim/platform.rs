@@ -23,14 +23,17 @@ impl Reconciler {
         let auto_generated_slug = spec.name.to_lowercase().replace(' ', "-");
         let existing_manufacturer_id = existing.manufacturer.as_ref().map(|m| m.id);
         
-        compare_string_field(&spec.name, &existing.name)
-            || compare_slug_field(&spec.slug, &existing.slug, auto_generated_slug)
-            || compare_optional_dependency_id(desired_manufacturer_id, existing_manufacturer_id)
-            || compare_optional_string_field(&spec.napalm_driver, &existing.napalm_driver)
-            || compare_optional_string_field(&spec.napalm_args, &existing.napalm_args)
-            || compare_optional_string_field(&spec.description, &existing.description)
-            || compare_optional_string_field(&spec.comments, &existing.comments)
+        // Evaluate all comparisons to log all field differences (no short-circuit)
+        let name_diff = compare_string_field(&spec.name, &existing.name);
+        let slug_diff = compare_slug_field(&spec.slug, &existing.slug, auto_generated_slug);
+        let manufacturer_diff = compare_optional_dependency_id(desired_manufacturer_id, existing_manufacturer_id);
+        let napalm_driver_diff = compare_optional_string_field(&spec.napalm_driver, &existing.napalm_driver);
+        let napalm_args_diff = compare_optional_string_field(&spec.napalm_args, &existing.napalm_args);
+        let description_diff = compare_optional_string_field(&spec.description, &existing.description);
+        let comments_diff = compare_optional_string_field(&spec.comments, &existing.comments);
         // Tags are handled separately
+        
+        name_diff || slug_diff || manufacturer_diff || napalm_driver_diff || napalm_args_diff || description_diff || comments_diff
     }
 
     pub async fn reconcile_netbox_platform(&self, platform_crd: &NetBoxPlatform) -> Result<(), ControllerError> {
@@ -101,8 +104,15 @@ impl Reconciler {
                             namespace,
                             name,
                             Some(platform.id),
+                            "NetBoxPlatform",
                         ).await;
                         let resolved_tags = crate::reconcile_helpers::convert_tags_to_strings(resolved_tags_json);
+                        
+                        info!("NetBoxPlatform {}/{} drift update: resolved_tags={:?}, spec.tags={:?}", 
+                            namespace, name, 
+                            resolved_tags.as_ref().map(|tags| tags.clone()),
+                            platform_crd.spec.tags.as_ref().map(|tags| tags.iter().map(|t| t.name.clone()).collect::<Vec<_>>())
+                        );
                         
                         match netbox_client.update_platform(
                             netbox_client::PlatformId(platform.id),
@@ -173,7 +183,8 @@ impl Reconciler {
                     &platform_crd.spec.tags,
                     namespace,
                     name,
-                None,
+                    None,
+                    "NetBoxPlatform",
                 ).await;
                 
                 // Convert resolved tags from Vec<serde_json::Value> to Vec<String>
@@ -269,8 +280,9 @@ impl Reconciler {
                         &platform_crd.spec.tags,
                         namespace,
                         name,
-                    None,
-                ).await;
+                        None,
+                        "NetBoxPlatform",
+                    ).await;
                     let resolved_tags = crate::reconcile_helpers::convert_tags_to_strings(resolved_tags_json);
                     
                     // Update tags if they differ

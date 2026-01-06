@@ -7,7 +7,7 @@ spec:
   name: "Raspberry Pi"
   slug: "raspberry-pi"
   description: "Raspberry Pi Foundation single-board computer"
-  comments: "Raspberry Pi Foundation manufacturer entry. Managed by DCops controller."
+  comments: "DRIFT TEST 2: Updated manufacturer comments - 2026-01-04-175200"
   driftDetection: true
   # Tag references (optional)
   # Tags must exist in NetBox before they can be referenced
@@ -19,6 +19,6 @@ spec:
       namespace: default
     - apiGroup: dcops.microscaler.io
       kind: NetBoxTag
-      name: client-device
+      name: production
       namespace: default
 

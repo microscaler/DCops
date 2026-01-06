@@ -19,11 +19,16 @@ impl Reconciler {
         
         let existing_interface_id = existing.assigned_object_id;
         
-        compare_optional_dependency_id(Some(desired_interface_id), existing_interface_id)
-            || compare_optional_string_field(&spec.description, &existing.description)
-            || compare_optional_string_field(&spec.comments, &existing.comments)
+        // Evaluate all comparisons to log all field differences (no short-circuit)
+        let interface_diff = compare_optional_dependency_id(Some(desired_interface_id), existing_interface_id);
+        let description_diff = compare_optional_string_field(&spec.description, &existing.description);
+        let comments_diff = compare_optional_string_field(&spec.comments, &existing.comments);
         // Tags are handled separately
         // Note: mac_address field is immutable in NetBox
+        
+        // OR all results together (no short-circuit - all comparisons evaluated)
+        // Store each result in a variable, then OR them at the end to ensure all comparisons are evaluated
+        interface_diff || description_diff || comments_diff
     }
 
     pub async fn reconcile_netbox_mac_address(&self, mac_address_crd: &NetBoxMACAddress) -> Result<(), ControllerError> {
@@ -168,6 +173,7 @@ impl Reconciler {
                             namespace,
                             name,
                             Some(mac_address.id),
+                            "NetBoxMACAddress",
                         ).await;
                         let resolved_tags = crate::reconcile_helpers::convert_tags_to_strings(resolved_tags_json);
                         
@@ -238,6 +244,7 @@ impl Reconciler {
                     namespace,
                     name,
                     Some(mac_address_id),
+                    "NetBoxMACAddress",
                 ).await;
                 let resolved_tags = crate::reconcile_helpers::convert_tags_to_strings(resolved_tags_json);
                 

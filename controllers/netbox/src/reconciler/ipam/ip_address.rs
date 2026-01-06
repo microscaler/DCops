@@ -19,12 +19,21 @@ impl Reconciler {
     /// 3. If ID not found, query NetBox by name/slug
     /// 4. Return a list of tag IDs or dictionaries for the NetBox API
     /// 
+    /// **Partial Resolution**: If some tags can be resolved but others can't, this function
+    /// will proceed with the successfully resolved tags and log warnings for the ones that failed.
+    /// Only returns `None` (requeue) if NO tags could be resolved AND tags were specified in the CR.
+    /// 
+    /// **Dependency Tracking**: When tags can't be resolved, this function registers the resource
+    /// as waiting for those tags. When the tags become available, dependent resources are
+    /// automatically requeued for reconciliation.
+    /// 
     /// # Arguments
     /// - `netbox_client`: NetBox client to use for queries
     /// - `tag_refs`: Optional list of tag references to resolve
     /// - `namespace`: Namespace of the resource referencing the tags
     /// - `resource_name`: Name of the resource referencing the tags
     /// - `resource_netbox_id`: Optional NetBox ID of the resource (for better error messages)
+    /// - `resource_kind`: Kind of the resource (e.g., "NetBoxIPAddress") for dependency tracking
     pub async fn resolve_tag_references(
         &self,
         netbox_client: &dyn NetBoxClientTrait,
@@ -32,18 +41,31 @@ impl Reconciler {
         namespace: &str,
         resource_name: &str,
         resource_netbox_id: Option<u64>,
+        resource_kind: &str,
     ) -> Option<Vec<serde_json::Value>> {
+        // Handle empty tag list explicitly - return Some(vec![]) to remove all tags
         let tag_refs = match tag_refs {
-            Some(refs) if !refs.is_empty() => refs,
-            _ => return None,
+            Some(refs) if refs.is_empty() => return Some(vec![]), // Explicitly empty - remove all tags
+            Some(refs) => refs,
+            None => return None, // Not specified - don't update tags
         };
         
         let mut resolved_tags = Vec::new();
+        let mut failed_tags = Vec::new();
         
         for tag_ref in tag_refs {
-            validate_reference_kind(tag_ref, "NetBoxTag", "tag", resource_name).ok()?;
+            // Skip invalid tag references (wrong kind)
+            if validate_reference_kind(tag_ref, "NetBoxTag", "tag", resource_name).is_err() {
+                failed_tags.push(tag_ref.name.clone());
+                warn!(
+                    "⚠️  Tag reference '{}' in resource '{}/{}' has invalid kind, skipping",
+                    tag_ref.name, namespace, resource_name
+                );
+                continue;
+            }
             
             let tag_namespace = tag_ref.namespace.as_deref().unwrap_or(namespace);
+            let mut tag_resolved = false;
             
             // Try to get the NetBoxTag CRD and extract the NetBox ID
             let tag_id = match self.netbox_tag_api.get(&tag_ref.name).await {
@@ -51,168 +73,184 @@ impl Reconciler {
                     if let Some(status) = &tag_crd.status {
                         if let Some(id) = status.netbox_id {
                             if id == 0 {
-                                // Tag CRD exists but hasn't been reconciled yet - wait for it
+                                // Tag CRD exists but hasn't been reconciled yet - register dependency
+                                self.register_tag_dependency(tag_namespace, &tag_ref.name, resource_kind, namespace, resource_name);
                                 if let Some(netbox_id) = resource_netbox_id {
                                     warn!(
                                         "⚠️  NetBoxTag CRD '{}/{}' exists but hasn't been reconciled yet (netbox_id is 0). \
-                                        The tag reconciler will create it in NetBox. \
-                                        Resource '{}/{}' (NetBox ID: {}) will be requeued to wait for tag reconciliation. \
+                                        Skipping this tag for now. The tag reconciler will create it in NetBox. \
+                                        Resource '{}/{}' (NetBox ID: {}) will continue with other tags and be automatically \
+                                        requeued when the tag becomes available. \
                                         If this persists, check the NetBoxTag reconciler logs.",
                                         tag_namespace, tag_ref.name, namespace, resource_name, netbox_id
                                     );
                                 } else {
                                     warn!(
                                         "⚠️  NetBoxTag CRD '{}/{}' exists but hasn't been reconciled yet (netbox_id is 0). \
-                                        The tag reconciler will create it in NetBox. \
-                                        Resource '{}/{}' will be requeued to wait for tag reconciliation. \
+                                        Skipping this tag for now. The tag reconciler will create it in NetBox. \
+                                        Resource '{}/{}' will continue with other tags and be automatically \
+                                        requeued when the tag becomes available. \
                                         If this persists, check the NetBoxTag reconciler logs.",
                                         tag_namespace, tag_ref.name, namespace, resource_name
                                     );
                                 }
-                                return None; // Return None to signal dependency not ready, will be requeued
+                                None // Skip this tag, continue with others
+                            } else {
+                                debug!("Resolved tag {}/{} to NetBox ID {} from CRD status", tag_namespace, tag_ref.name, id);
+                                Some(id)
                             }
-                            debug!("Resolved tag {}/{} to NetBox ID {} from CRD status", tag_namespace, tag_ref.name, id);
-                            Some(id)
                         } else {
-                            // Tag CRD exists but has no netbox_id - wait for reconciliation
+                            // Tag CRD exists but has no netbox_id - register dependency
+                            self.register_tag_dependency(tag_namespace, &tag_ref.name, resource_kind, namespace, resource_name);
                             if let Some(netbox_id) = resource_netbox_id {
                                 warn!(
                                     "⚠️  NetBoxTag CRD '{}/{}' exists but has no netbox_id in status. \
-                                    The tag reconciler will create it in NetBox. \
-                                    Resource '{}/{}' (NetBox ID: {}) will be requeued to wait for tag reconciliation. \
+                                    Skipping this tag for now. The tag reconciler will create it in NetBox. \
+                                    Resource '{}/{}' (NetBox ID: {}) will continue with other tags and be automatically \
+                                    requeued when the tag becomes available. \
                                     If this persists, check the NetBoxTag reconciler logs.",
                                     tag_namespace, tag_ref.name, namespace, resource_name, netbox_id
                                 );
                             } else {
                                 warn!(
                                     "⚠️  NetBoxTag CRD '{}/{}' exists but has no netbox_id in status. \
-                                    The tag reconciler will create it in NetBox. \
-                                    Resource '{}/{}' will be requeued to wait for tag reconciliation. \
+                                    Skipping this tag for now. The tag reconciler will create it in NetBox. \
+                                    Resource '{}/{}' will continue with other tags and be automatically \
+                                    requeued when the tag becomes available. \
                                     If this persists, check the NetBoxTag reconciler logs.",
                                     tag_namespace, tag_ref.name, namespace, resource_name
                                 );
                             }
-                            return None; // Return None to signal dependency not ready, will be requeued
+                            None // Skip this tag, continue with others
                         }
                     } else {
-                        // Tag CRD exists but has no status - wait for reconciliation
+                        // Tag CRD exists but has no status - register dependency
+                        self.register_tag_dependency(tag_namespace, &tag_ref.name, resource_kind, namespace, resource_name);
                         if let Some(netbox_id) = resource_netbox_id {
                             warn!(
                                 "⚠️  NetBoxTag CRD '{}/{}' exists but has no status. \
-                                The tag reconciler will create it in NetBox. \
-                                Resource '{}/{}' (NetBox ID: {}) will be requeued to wait for tag reconciliation. \
+                                Skipping this tag for now. The tag reconciler will create it in NetBox. \
+                                Resource '{}/{}' (NetBox ID: {}) will continue with other tags and be automatically \
+                                requeued when the tag becomes available. \
                                 If this persists, check the NetBoxTag reconciler logs.",
                                 tag_namespace, tag_ref.name, namespace, resource_name, netbox_id
                             );
                         } else {
                             warn!(
                                 "⚠️  NetBoxTag CRD '{}/{}' exists but has no status. \
-                                The tag reconciler will create it in NetBox. \
-                                Resource '{}/{}' will be requeued to wait for tag reconciliation. \
+                                Skipping this tag for now. The tag reconciler will create it in NetBox. \
+                                Resource '{}/{}' will continue with other tags and be automatically \
+                                requeued when the tag becomes available. \
                                 If this persists, check the NetBoxTag reconciler logs.",
                                 tag_namespace, tag_ref.name, namespace, resource_name
                             );
                         }
-                        return None; // Return None to signal dependency not ready, will be requeued
+                        None // Skip this tag, continue with others
                     }
                 }
                 Err(_) => {
-                    // NetBoxTag CRD doesn't exist - warn user to create it
-                    if let Some(netbox_id) = resource_netbox_id {
-                        warn!(
-                            "⚠️  Tag '{}' is referenced in resource '{}/{}' (NetBox ID: {}) but the NetBoxTag CRD '{}/{}' does not exist. \
-                            The resource will be requeued until the tag CRD is created. \
-                            To fix this, create a NetBoxTag CRD with name '{}' in namespace '{}'. \
-                            See config/examples/tenant-datacenter-tenant/netbox-tag-example.yaml for examples. \
-                            Once the NetBoxTag CRD is created, the tag reconciler will automatically create it in NetBox.",
-                            tag_ref.name, namespace, resource_name, netbox_id, tag_namespace, tag_ref.name, tag_ref.name, tag_namespace
-                        );
-                    } else {
-                        warn!(
-                            "⚠️  Tag '{}' is referenced in resource '{}/{}' but the NetBoxTag CRD '{}/{}' does not exist. \
-                            The resource will be requeued until the tag CRD is created. \
-                            To fix this, create a NetBoxTag CRD with name '{}' in namespace '{}'. \
-                            See config/examples/tenant-datacenter-tenant/netbox-tag-example.yaml for examples. \
-                            Once the NetBoxTag CRD is created, the tag reconciler will automatically create it in NetBox.",
-                            tag_ref.name, namespace, resource_name, tag_namespace, tag_ref.name, tag_ref.name, tag_namespace
-                        );
-                    }
-                    // Return None to signal dependency not ready - this will cause the resource to be requeued
-                    // The user should create the NetBoxTag CRD, then the tag reconciler will create it in NetBox
-                    return None;
+                    // NetBoxTag CRD doesn't exist - try fallback query
+                    None // Will try fallback query below
                 }
             };
             
             // If we got an ID from the CRD, use it
             if let Some(id) = tag_id {
                 resolved_tags.push(serde_json::json!(id));
-                continue;
+                tag_resolved = true;
+                // Tag successfully resolved - unregister dependency (if it was registered)
+                self.unregister_tag_dependency(tag_namespace, &tag_ref.name, resource_kind, namespace, resource_name);
             }
             
-            // Fallback: Query NetBox directly by name (in case tag was created manually or by another process)
-            match netbox_client.query_tags(&[("name", &tag_ref.name)], false).await {
-                Ok(tags) => {
-                    if let Some(tag) = tags.first() {
-                        resolved_tags.push(serde_json::json!(tag.id));
-                        warn!(
-                            "⚠️  Tag '{}' exists in NetBox (ID: {}) but the NetBoxTag CRD '{}/{}' is missing. \
-                            The tag was resolved from NetBox directly, but for proper GitOps management, \
-                            you should create a NetBoxTag CRD with name '{}' in namespace '{}' to track this tag. \
-                            See config/examples/tenant-datacenter-tenant/netbox-tag-example.yaml for examples.",
-                            tag_ref.name, tag.id, tag_namespace, tag_ref.name, tag_ref.name, tag_namespace
-                        );
-                        debug!("Resolved tag '{}' to NetBox ID {} via query (tag exists in NetBox but NetBoxTag CRD is missing)", tag_ref.name, tag.id);
-                    } else {
-                        // Tag doesn't exist in NetBox and NetBoxTag CRD doesn't exist
+            // If not resolved from CRD, try fallback: Query NetBox directly by name
+            if !tag_resolved {
+                match netbox_client.query_tags(&[("name", &tag_ref.name)], false).await {
+                    Ok(tags) => {
+                        if let Some(tag) = tags.first() {
+                            resolved_tags.push(serde_json::json!(tag.id));
+                            // Tag resolved via query - unregister dependency (if it was registered)
+                            self.unregister_tag_dependency(tag_namespace, &tag_ref.name, resource_kind, namespace, resource_name);
+                            warn!(
+                                "⚠️  Tag '{}' exists in NetBox (ID: {}) but the NetBoxTag CRD '{}/{}' is missing. \
+                                The tag was resolved from NetBox directly, but for proper GitOps management, \
+                                you should create a NetBoxTag CRD with name '{}' in namespace '{}' to track this tag. \
+                                See config/examples/tenant-datacenter-tenant/netbox-tag-example.yaml for examples.",
+                                tag_ref.name, tag.id, tag_namespace, tag_ref.name, tag_ref.name, tag_namespace
+                            );
+                            debug!("Resolved tag '{}' to NetBox ID {} via query (tag exists in NetBox but NetBoxTag CRD is missing)", tag_ref.name, tag.id);
+                            tag_resolved = true;
+                        } else {
+                            // Tag doesn't exist in NetBox and NetBoxTag CRD doesn't exist - register dependency
+                            failed_tags.push(tag_ref.name.clone());
+                            self.register_tag_dependency(tag_namespace, &tag_ref.name, resource_kind, namespace, resource_name);
+                            if let Some(netbox_id) = resource_netbox_id {
+                                warn!(
+                                    "⚠️  Tag '{}' referenced in resource '{}/{}' (NetBox ID: {}) does not exist in NetBox and NetBoxTag CRD '{}/{}' not found. \
+                                    Skipping this tag. To fix this, create a NetBoxTag CRD with name '{}' in namespace '{}'. \
+                                    See config/examples/tenant-datacenter-tenant/netbox-tag-example.yaml for examples. \
+                                    Once the NetBoxTag CRD is created, the tag reconciler will automatically create it in NetBox, \
+                                    and this resource will be automatically requeued.",
+                                    tag_ref.name, namespace, resource_name, netbox_id, tag_namespace, tag_ref.name, tag_ref.name, tag_namespace
+                                );
+                            } else {
+                                warn!(
+                                    "⚠️  Tag '{}' referenced in resource '{}/{}' does not exist in NetBox and NetBoxTag CRD '{}/{}' not found. \
+                                    Skipping this tag. To fix this, create a NetBoxTag CRD with name '{}' in namespace '{}'. \
+                                    See config/examples/tenant-datacenter-tenant/netbox-tag-example.yaml for examples. \
+                                    Once the NetBoxTag CRD is created, the tag reconciler will automatically create it in NetBox, \
+                                    and this resource will be automatically requeued.",
+                                    tag_ref.name, namespace, resource_name, tag_namespace, tag_ref.name, tag_ref.name, tag_namespace
+                                );
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        // Query failed - tag couldn't be resolved - register dependency
+                        failed_tags.push(tag_ref.name.clone());
+                        self.register_tag_dependency(tag_namespace, &tag_ref.name, resource_kind, namespace, resource_name);
                         if let Some(netbox_id) = resource_netbox_id {
                             warn!(
-                                "⚠️  Tag '{}' referenced in resource '{}/{}' (NetBox ID: {}) does not exist in NetBox and NetBoxTag CRD '{}/{}' not found. \
-                                The resource will be requeued until the tag CRD is created. \
-                                To fix this, create a NetBoxTag CRD with name '{}' in namespace '{}'. \
-                                See config/examples/tenant-datacenter-tenant/netbox-tag-example.yaml for examples. \
-                                Once the NetBoxTag CRD is created, the tag reconciler will automatically create it in NetBox.",
-                                tag_ref.name, namespace, resource_name, netbox_id, tag_namespace, tag_ref.name, tag_ref.name, tag_namespace
+                                "⚠️  Failed to query tag '{}' from NetBox: {}. Tag is referenced in resource '{}/{}' (NetBox ID: {}) but cannot be resolved. \
+                                Skipping this tag. If the NetBoxTag CRD '{}/{}' exists, check the tag reconciler logs. \
+                                If it doesn't exist, create it. See config/examples/tenant-datacenter-tenant/netbox-tag-example.yaml for examples. \
+                                This resource will be automatically requeued when the tag becomes available.",
+                                tag_ref.name, e, namespace, resource_name, netbox_id, tag_namespace, tag_ref.name
                             );
                         } else {
                             warn!(
-                                "⚠️  Tag '{}' referenced in resource '{}/{}' does not exist in NetBox and NetBoxTag CRD '{}/{}' not found. \
-                                The resource will be requeued until the tag CRD is created. \
-                                To fix this, create a NetBoxTag CRD with name '{}' in namespace '{}'. \
-                                See config/examples/tenant-datacenter-tenant/netbox-tag-example.yaml for examples. \
-                                Once the NetBoxTag CRD is created, the tag reconciler will automatically create it in NetBox.",
-                                tag_ref.name, namespace, resource_name, tag_namespace, tag_ref.name, tag_ref.name, tag_namespace
+                                "⚠️  Failed to query tag '{}' from NetBox: {}. Tag is referenced in resource '{}/{}' but cannot be resolved. \
+                                Skipping this tag. If the NetBoxTag CRD '{}/{}' exists, check the tag reconciler logs. \
+                                If it doesn't exist, create it. See config/examples/tenant-datacenter-tenant/netbox-tag-example.yaml for examples. \
+                                This resource will be automatically requeued when the tag becomes available.",
+                                tag_ref.name, e, namespace, resource_name, tag_namespace, tag_ref.name
                             );
                         }
-                        // Return None to signal dependency not ready - this will cause the resource to be requeued
-                        return None;
                     }
-                }
-                Err(e) => {
-                    // Query failed - warn user
-                    if let Some(netbox_id) = resource_netbox_id {
-                        warn!(
-                            "⚠️  Failed to query tag '{}' from NetBox: {}. Tag is referenced in resource '{}/{}' (NetBox ID: {}) but cannot be resolved. \
-                            The resource will be requeued. \
-                            If the NetBoxTag CRD '{}/{}' exists, check the tag reconciler logs. \
-                            If it doesn't exist, create it. See config/examples/tenant-datacenter-tenant/netbox-tag-example.yaml for examples.",
-                            tag_ref.name, e, namespace, resource_name, netbox_id, tag_namespace, tag_ref.name
-                        );
-                    } else {
-                        warn!(
-                            "⚠️  Failed to query tag '{}' from NetBox: {}. Tag is referenced in resource '{}/{}' but cannot be resolved. \
-                            The resource will be requeued. \
-                            If the NetBoxTag CRD '{}/{}' exists, check the tag reconciler logs. \
-                            If it doesn't exist, create it. See config/examples/tenant-datacenter-tenant/netbox-tag-example.yaml for examples.",
-                            tag_ref.name, e, namespace, resource_name, tag_namespace, tag_ref.name
-                        );
-                    }
-                    // Return None to signal dependency not ready - this will cause the resource to be requeued
-                    return None;
                 }
             }
         }
         
+        // Log summary of tag resolution
+        if !failed_tags.is_empty() && !resolved_tags.is_empty() {
+            info!(
+                "Tag resolution for resource '{}/{}': {} tag(s) resolved successfully, {} tag(s) failed: {:?}. \
+                Proceeding with available tags. Failed tags will be added once their CRDs are created.",
+                namespace, resource_name, resolved_tags.len(), failed_tags.len(), failed_tags
+            );
+        } else if !failed_tags.is_empty() {
+            warn!(
+                "Tag resolution for resource '{}/{}': All {} tag(s) failed to resolve: {:?}. \
+                Resource will be requeued until at least one tag can be resolved.",
+                namespace, resource_name, failed_tags.len(), failed_tags
+            );
+        }
+        
+        // Return Some(vec![]) if tags were explicitly specified (even if empty) to clear all tags
+        // Return None only if tags were not specified in the CR (don't update tags)
+        // OR if NO tags could be resolved (all failed) - this will cause requeue
         if resolved_tags.is_empty() {
+            // If we processed tags but they all failed to resolve, return None to requeue
+            // (The empty list case is already handled at the top of the function)
             None
         } else {
             Some(resolved_tags)
@@ -460,15 +498,17 @@ impl Reconciler {
             false // No address in spec, can't compare
         };
         
-        // Compare all fields using helpers - every field in CR spec must be checked
-        compare_required_dependency_id(desired_tenant_id, existing_tenant_id)
-            || compare_string_field(desired_status, existing_status)
-            || compare_optional_string_field(&spec_role, &existing.role)
-            || compare_optional_string_field(&spec_dns_name, &netbox_dns_name)
-            || compare_optional_string_field(&spec_description, &netbox_description)
-            || compare_optional_string_field(&spec_comments, &netbox_comments)
-            || address_mismatch // Address mismatch detected (will log warning, can't fix as address is immutable)
+        // Evaluate all comparisons to log all field differences (no short-circuit)
+        let tenant_diff = compare_required_dependency_id(desired_tenant_id, existing_tenant_id);
+        let status_diff = compare_string_field(desired_status, existing_status);
+        let role_diff = compare_optional_string_field(&spec_role, &existing.role);
+        let dns_name_diff = compare_optional_string_field(&spec_dns_name, &netbox_dns_name);
+        let description_diff = compare_optional_string_field(&spec_description, &netbox_description);
+        let comments_diff = compare_optional_string_field(&spec_comments, &netbox_comments);
+        // Address mismatch detected (will log warning, can't fix as address is immutable)
+        
         // Tags are handled separately using tags_differ helper
+        tenant_diff || status_diff || role_diff || dns_name_diff || description_diff || comments_diff || address_mismatch
     }
 
     pub async fn reconcile_netbox_ip_address(&self, ip_address_crd: &NetBoxIPAddress) -> Result<(), ControllerError> {
@@ -903,10 +943,20 @@ impl Reconciler {
                     namespace,
                     name,
                     Some(resource_netbox_id),
+                    "NetBoxIPAddress",
                 ).await;
                 
-                // Clone resolved_tags for tag reconciliation after update
-                let resolved_tags_for_tag_update = resolved_tags.clone();
+                // If tags couldn't be resolved (None), requeue the resource
+                // This happens when tag CRDs don't exist or haven't been reconciled yet
+                let resolved_tags_for_tag_update = match resolved_tags {
+                    Some(tags) => Some(tags),
+                    None => {
+                        // Tags couldn't be resolved - resource will be requeued by the controller
+                        // This is expected when tag CRDs don't exist yet
+                        debug!("NetBoxIPAddress {}/{}: Tags couldn't be resolved, resource will be requeued", namespace, name);
+                        return Ok(()); // Return early - controller will requeue
+                    }
+                };
                 
                 // Check if drift detection is enabled (defaults to true)
                 let drift_detection_enabled = ip_address_crd.spec.drift_detection.unwrap_or(true);
@@ -936,9 +986,9 @@ impl Reconciler {
                         remediated_ip.tenant.as_ref().map(|t| t.id), 
                         tenant_id,
                         remediated_ip.tags.len(),
-                        resolved_tags.as_ref().map(|t| t.len()).unwrap_or(0));
+                        resolved_tags_for_tag_update.as_ref().map(|t| t.len()).unwrap_or(0));
                     
-                    debug!("Updating IP address {} with tenant_id: {}, tags: {:?}", remediated_ip.id, tenant_id, resolved_tags);
+                    debug!("Updating IP address {} with tenant_id: {}, tags: {:?}", remediated_ip.id, tenant_id, resolved_tags_for_tag_update);
                     
                     // Update the IP address
                     use netbox_client::AllocateIPRequest;
@@ -956,7 +1006,7 @@ impl Reconciler {
                         role: ip_address_crd.spec.role.clone(),
                         dns_name: ip_address_crd.spec.dns_name.clone(),
                         tenant: Some(tenant_id),
-                        tags: resolved_tags,
+                        tags: resolved_tags_for_tag_update.clone(),
                         assigned_object_type: interface_id.map(|_| "dcim.interface".to_string()),
                         assigned_object_id: interface_id,
                     };
@@ -1033,37 +1083,98 @@ impl Reconciler {
                         }
                     }
                 } else {
-                    // No changes needed - only update status if it changed
-                    use crate::reconcile_helpers::status_needs_update;
-                    let needs_status_update = status_needs_update(
-                        ip_address_crd.status.as_ref(),
-                        remediated_ip.id,
-                        &remediated_ip.url,
-                        "Created",
-                        None,
-                    );
-                    
-                    if needs_status_update {
-                        let status_patch = Self::create_typed_ip_address_status_patch(
-                            remediated_ip.id,
-                            remediated_ip.url.clone(),
-                            Some(remediated_ip.address.to_string()),
-                            ResourceState::Created,
-                            None,
-                        );
-                        update_resource_status(
-                            &*self.netbox_ip_address_api,
-                            name,
-                            namespace,
-                            &status_patch,
-                            "NetBoxIPAddress",
-                            remediated_ip.id,
-                        ).await?;
-                        debug!("Updated NetBoxIPAddress {}/{} status: NetBox ID {}", namespace, name, remediated_ip.id);
-                        return Ok(());
-                    } else {
-                        debug!("NetBoxIPAddress {}/{} already has correct status (ID: {}), skipping update", namespace, name, remediated_ip.id);
-                        return Ok(());
+                    // No field changes needed - but tags might still need updating
+                    // Always check and update tags separately (tags are handled independently)
+                    let resolved_tags_strings = crate::reconcile_helpers::convert_tags_to_strings(resolved_tags_for_tag_update);
+                    let remediated_ip_clone = remediated_ip.clone();
+                    match crate::reconcile_helpers::update_tags_if_differ(
+                        remediated_ip,
+                        &ip_address_crd.spec.tags,
+                        resolved_tags_strings,
+                        |tags| {
+                            let ip_id = remediated_ip_clone.id;
+                            // Convert Vec<String> back to Option<Vec<serde_json::Value>>
+                            let tags_json: Option<Vec<serde_json::Value>> = tags.map(|t| {
+                                t.into_iter().map(|s| serde_json::Value::String(s)).collect()
+                            });
+                            use netbox_client::AllocateIPRequest;
+                            let update_request_tags = AllocateIPRequest {
+                                address: None,
+                                description: None,
+                                comments: None,
+                                status: None,
+                                role: None,
+                                dns_name: None,
+                                tenant: None,
+                                tags: tags_json,
+                                assigned_object_type: None,
+                                assigned_object_id: None,
+                            };
+                            async move {
+                                netbox_client.update_ip_address(IpAddressId(ip_id), update_request_tags).await
+                            }
+                        },
+                        &format!("NetBoxIPAddress {}/{}", namespace, name),
+                    ).await {
+                        Ok(Some(updated_ip)) => {
+                            // Tags were updated - update status with updated IP
+                            let status_patch = Self::create_typed_ip_address_status_patch(
+                                updated_ip.id,
+                                updated_ip.url.clone(),
+                                Some(updated_ip.address.to_string()),
+                                ResourceState::Created,
+                                None,
+                            );
+                            update_resource_status(
+                                &*self.netbox_ip_address_api,
+                                name,
+                                namespace,
+                                &status_patch,
+                                "NetBoxIPAddress",
+                                updated_ip.id,
+                            ).await?;
+                            debug!("Updated NetBoxIPAddress {}/{} tags (ID: {})", namespace, name, updated_ip.id);
+                            return Ok(());
+                        }
+                        Ok(None) => {
+                            // Tags are up-to-date - only update status if it changed
+                            use crate::reconcile_helpers::status_needs_update;
+                            let needs_status_update = status_needs_update(
+                                ip_address_crd.status.as_ref(),
+                                remediated_ip_clone.id,
+                                &remediated_ip_clone.url,
+                                "Created",
+                                None,
+                            );
+                            
+                            if needs_status_update {
+                                let status_patch = Self::create_typed_ip_address_status_patch(
+                                    remediated_ip_clone.id,
+                                    remediated_ip_clone.url.clone(),
+                                    Some(remediated_ip_clone.address.to_string()),
+                                    ResourceState::Created,
+                                    None,
+                                );
+                                update_resource_status(
+                                    &*self.netbox_ip_address_api,
+                                    name,
+                                    namespace,
+                                    &status_patch,
+                                    "NetBoxIPAddress",
+                                    remediated_ip_clone.id,
+                                ).await?;
+                                debug!("Updated NetBoxIPAddress {}/{} status: NetBox ID {}", namespace, name, remediated_ip_clone.id);
+                                return Ok(());
+                            } else {
+                                debug!("NetBoxIPAddress {}/{} already has correct status and tags (ID: {}), skipping update", namespace, name, remediated_ip_clone.id);
+                                return Ok(());
+                            }
+                        }
+                        Err(e) => {
+                            error!("Failed to update NetBoxIPAddress {}/{} tags: {}", namespace, name, e);
+                            // Tag update failed - return error
+                            return Err(ControllerError::NetBox(e));
+                        }
                     }
                 }
             }
@@ -1332,6 +1443,7 @@ impl Reconciler {
             namespace,
             name,
             resource_netbox_id,
+            "NetBoxIPAddress",
         ).await;
         
         // Clone resolved_tags for tag reconciliation after creation

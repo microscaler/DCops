@@ -104,7 +104,9 @@ pub fn add_optional_enum_field<T: serde::Serialize>(body: &mut serde_json::Value
 /// - Vec<String> - tag IDs as strings (e.g., ["1", "2"])
 /// - Vec<serde_json::Value> - tag IDs as numbers or dictionaries (e.g., [1, 2] or [{"name": "tag1"}])
 /// 
-/// If `tags` is `None`, the field is not added (PATCH semantics).
+/// Special handling:
+/// - If `tags` is `Some(vec![])` (empty vector), sets `"tags": []` to clear all tags
+/// - If `tags` is `None`, the field is not added (PATCH semantics - don't update tags)
 pub fn add_optional_tags_field<T>(body: &mut serde_json::Value, tags: Option<T>) -> Result<(), NetBoxError>
 where
     T: serde::Serialize,
@@ -112,8 +114,16 @@ where
     if let Some(tags_vec) = tags {
         let tags_value = serde_json::to_value(tags_vec)
             .map_err(|e| NetBoxError::Serialization(e))?;
-        body["tags"] = tags_value.clone();
-        debug!("Adding tags field to request body: {:?}", tags_value);
+        
+        // Check if tags_vec is an empty array/vector
+        // If it's an empty array, we need to explicitly set it to clear tags
+        if tags_value.is_array() && tags_value.as_array().map(|a| a.is_empty()).unwrap_or(false) {
+            body["tags"] = serde_json::json!([]);
+            debug!("Adding empty tags array to request body to clear all tags: []");
+        } else {
+            body["tags"] = tags_value.clone();
+            debug!("Adding tags field to request body: {:?}", tags_value);
+        }
     } else {
         debug!("No tags provided, skipping tags field");
     }

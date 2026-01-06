@@ -22,12 +22,15 @@ impl Reconciler {
         let existing_prefix_str = existing.prefix.to_string();
         let existing_rir_id = existing.rir.as_ref().map(|r| r.id);
         
-        compare_string_field(&spec.prefix, &existing_prefix_str)
-            || compare_optional_dependency_id(desired_rir_id, existing_rir_id)
-            || compare_optional_string_field(&spec.date_allocated, &existing.date_allocated)
-            || compare_optional_string_field(&spec.description, &existing.description)
-            || compare_optional_string_field(&spec.comments, &existing.comments)
+        // Evaluate all comparisons to log all field differences (no short-circuit)
+        let prefix_diff = compare_string_field(&spec.prefix, &existing_prefix_str);
+        let rir_diff = compare_optional_dependency_id(desired_rir_id, existing_rir_id);
+        let date_allocated_diff = compare_optional_string_field(&spec.date_allocated, &existing.date_allocated);
+        let description_diff = compare_optional_string_field(&spec.description, &existing.description);
+        let comments_diff = compare_optional_string_field(&spec.comments, &existing.comments);
         // Tags are handled separately
+        
+        prefix_diff || rir_diff || date_allocated_diff || description_diff || comments_diff
     }
 
     pub async fn reconcile_netbox_aggregate(&self, aggregate_crd: &NetBoxAggregate) -> Result<(), ControllerError> {
@@ -162,6 +165,7 @@ impl Reconciler {
                             namespace,
                             name,
                             Some(aggregate.id),
+                            "NetBoxAggregate",
                         ).await;
                         let resolved_tags = crate::reconcile_helpers::convert_tags_to_strings(resolved_tags_json);
                         
@@ -236,6 +240,7 @@ impl Reconciler {
                     namespace,
                     name,
                     Some(aggregate_id),
+                    "NetBoxAggregate",
                 ).await;
                 let resolved_tags = crate::reconcile_helpers::convert_tags_to_strings(resolved_tags_json);
                 
@@ -307,8 +312,9 @@ impl Reconciler {
                             &aggregate_crd.spec.tags,
                             namespace,
                             name,
-                        None,
-                ).await;
+                            None,
+                            "NetBoxAggregate",
+                        ).await;
                         let resolved_tags = crate::reconcile_helpers::convert_tags_to_strings(resolved_tags_json);
                         
                         match netbox_client.as_ref().update_aggregate(
@@ -347,8 +353,9 @@ impl Reconciler {
                         &aggregate_crd.spec.tags,
                         namespace,
                         name,
-                    None,
-                ).await;
+                        None,
+                        "NetBoxAggregate",
+                    ).await;
                     let resolved_tags = crate::reconcile_helpers::convert_tags_to_strings(resolved_tags_json);
                     
                     match netbox_client.create_aggregate(

@@ -1,0 +1,57 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kea-dhcp
+  namespace: dcops-system
+  labels:
+    app: kea-dhcp
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: kea-dhcp
+  template:
+    metadata:
+      labels:
+        app: kea-dhcp
+    spec:
+      containers:
+      - name: kea-dhcp4
+        image: microscaler/kea-dhcp:latest
+        imagePullPolicy: Always
+        ports:
+        - name: dhcp
+          containerPort: 67
+          protocol: UDP
+        - name: control-agent
+          containerPort: 8000
+          protocol: TCP
+        volumeMounts:
+        - name: kea-config
+          mountPath: /etc/kea
+        command:
+        - /bin/bash
+        - -c
+        - |
+          # Start Kea DHCP4 server in background
+          kea-dhcp4 -c /etc/kea/kea-dhcp4.conf &
+          # Wait a moment for DHCP server to start
+          sleep 2
+          # Start Kea Control Agent in foreground (keeps container running)
+          exec kea-ctrl-agent -c /etc/kea/kea-dhcp4.conf
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: 500m
+            memory: 512Mi
+        # Kea needs CAP_NET_BIND_SERVICE to bind to port 67
+        securityContext:
+          capabilities:
+            add:
+            - NET_BIND_SERVICE
+      volumes:
+      - name: kea-config
+        configMap:
+          name: kea-dhcp-config

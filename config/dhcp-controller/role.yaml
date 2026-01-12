@@ -1,0 +1,30 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: dhcp-controller
+  labels:
+    app: dhcp-controller
+rules:
+- apiGroups:
+  - dcops.microscaler.io
+  resources:
+  # DHCP controller needs read access to NetBox CRDs to build Kea config
+  - netboxprefixes
+  - netboxipranges
+  - netboxipaddresses
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - dcops.microscaler.io
+  resources:
+  # Status updates for DHCP-related CRDs (if needed in future)
+  - netboxprefixes/status
+  - netboxipranges/status
+  - netboxipaddresses/status
+  verbs:
+  - get
+  - update
+  - patch
+

@@ -1,0 +1,60 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kea-dhcp-config
+  namespace: dcops-system
+  labels:
+    app: kea-dhcp
+data:
+  kea-dhcp4.conf: |
+    {
+      "Dhcp4": {
+        "interfaces-config": {
+          "interfaces": ["*"]
+        },
+        "control-socket": {
+          "socket-type": "http",
+          "socket-name": "/tmp/kea-http-socket",
+          "socket-url": "http://127.0.0.1:8000"
+        },
+        "lease-database": {
+          "type": "memfile",
+          "lfc-interval": 3600
+        },
+        # Alternative PostgreSQL configuration (uncomment to use):
+        # "lease-database": {
+        #   "type": "postgresql",
+        #   "name": "kea",
+        #   "host": "postgresql.dcops-system.svc.cluster.local",
+        #   "port": 5432,
+        #   "user": "kea",
+        #   "password": "kea-password",
+        #   "lfc-interval": 3600
+        # },
+        "subnet4": [],
+        "loggers": [
+          {
+            "name": "kea-dhcp4",
+            "output_options": [
+              {
+                "output": "stdout"
+              }
+            ],
+            "severity": "INFO",
+            "debuglevel": 0
+          }
+        ]
+      },
+      "Control-agent": {
+        "http-host": "0.0.0.0",
+        "http-port": 8000,
+        "control-sockets": {
+          "dhcp4": {
+            "socket-type": "http",
+            "socket-name": "/tmp/kea-http-socket",
+            "socket-url": "http://127.0.0.1:8000"
+          }
+        }
+      }
+    }
+

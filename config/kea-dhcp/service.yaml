@@ -1,0 +1,21 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: kea-dhcp
+  namespace: dcops-system
+  labels:
+    app: kea-dhcp
+spec:
+  type: ClusterIP
+  ports:
+  - name: dhcp
+    port: 67
+    targetPort: 67
+    protocol: UDP
+  - name: control-agent
+    port: 8000
+    targetPort: 8000
+    protocol: TCP
+  selector:
+    app: kea-dhcp
+

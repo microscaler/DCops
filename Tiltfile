@@ -241,6 +241,86 @@ local_resource(
 )
 
 # ====================
+# Kea DHCP Server
+# ====================
+# Deploy ISC Kea DHCP server with Control Agent
+# Image is built and pushed by GitHub Actions in the Kea fork
+# Available at:
+#   - docker.io/microscaler/kea-dhcp:latest (Docker Hub)
+#   - ghcr.io/microscaler/kea-dhcp:latest (GitHub Container Registry)
+k8s_yaml(kustomize('%s/config/kea-dhcp' % DCops_DIR))
+
+k8s_resource(
+    'kea-dhcp',
+    labels=['infrastructure'],
+    port_forwards=[
+        '8000:8000',  # Kea Control Agent REST API: localhost:8000 -> pod:8000
+    ],
+)
+
+# ====================
+# DHCP Controller
+# ====================
+# Build the DHCP Controller binary
+# Uses host_aware_build.py for cross-compilation (macOS -> Linux)
+# Note: host_aware_build.py passes all args to cargo, so --release works
+local_resource(
+    'build-dhcp-controller',
+    cmd='python3 scripts/host_aware_build.py --release -p dhcp-controller',
+    deps=[
+        'controllers/dhcp/src',
+        'controllers/dhcp/Cargo.toml',
+        'crates/crds/src',
+        'Cargo.toml',
+        'Cargo.lock',
+        'scripts/host_aware_build.py',
+    ],
+    resource_deps=['generate-crds'],  # Wait for CRDs to be generated and applied
+    labels=['controllers'],
+    allow_parallel=True,
+)
+
+# Build Docker image for DHCP Controller
+# Use custom_build to ensure binary exists before Docker build
+# This matches the pattern from netbox-controller
+# Note: We build for linux/amd64 platform even on Apple Silicon
+# because the binary is cross-compiled for x86_64-unknown-linux-musl
+# The 'deps' parameter ensures the binary exists before Docker build
+DHCP_BINARY_PATH = 'target/x86_64-unknown-linux-musl/release/dhcp-controller'
+DHCP_IMAGE_NAME = 'dhcp-controller'
+DHCP_FULL_IMAGE_NAME = '%s/%s' % (REGISTRY, DHCP_IMAGE_NAME)
+
+custom_build(
+    DHCP_IMAGE_NAME,
+    'docker buildx build --platform linux/amd64 -f dockerfiles/Dockerfile.dhcp-controller.dev -t %s:tilt . && docker tag %s:tilt %s:tilt && docker push %s:tilt' % (
+        DHCP_IMAGE_NAME,
+        DHCP_IMAGE_NAME,
+        DHCP_FULL_IMAGE_NAME,
+        DHCP_FULL_IMAGE_NAME
+    ),
+    deps=[
+        DHCP_BINARY_PATH,  # File dependency ensures binary exists before Docker build
+        'dockerfiles/Dockerfile.dhcp-controller.dev',
+    ],
+    tag='tilt',
+    live_update=[
+        sync(DHCP_BINARY_PATH, '/app/dhcp-controller'),
+        run('kill -HUP 1', trigger=[DHCP_BINARY_PATH]),
+    ],
+)
+
+# Deploy DHCP Controller
+# This includes: namespace, serviceaccount, role (RBAC), rolebinding, deployment
+# RBAC permissions are automatically applied via kustomize
+k8s_yaml(kustomize('%s/config/dhcp-controller' % DCops_DIR))
+
+k8s_resource(
+    'dhcp-controller',
+    labels=['controllers'],
+    resource_deps=['build-dhcp-controller', 'kea-dhcp'],  # Wait for binary and Kea to be ready
+)
+
+# ====================
 # Future Controllers
 # ====================
 # Additional controllers will be added here as they're implemented

@@ -1,0 +1,12 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: dcops-system
+
+resources:
+# namespace.yaml is already defined in netbox-controller, so we don't include it here
+- serviceaccount.yaml
+- role.yaml
+- rolebinding.yaml
+- deployment.yaml
+

@@ -46,7 +46,7 @@ jobs:
       - name: Extract metadata
         if: ${{ !env.ACT }}
         id: meta
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@v6
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/dcops-rust-builder-base-image
           tags: |
@@ -122,7 +122,7 @@ jobs:
       - name: Extract metadata
         if: ${{ !env.ACT }}
         id: meta
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@v6
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/dcops-controller-base-image
           tags: |

@@ -47,7 +47,7 @@ tower-test = "0.4"
 tower = { workspace = true }  # Needed for tower::Service trait in mocks
 # Note: tower-test 0.4 uses hyper 0.14, which has hyper::Body
 # We need to use hyper 0.14 for compatibility
-hyper = { version = "0.14", features = ["full"] }
+hyper = { version = "1.9", features = ["full"] }
 bytes = "1.0"
 
 # Docker container testing (for DHCP integration tests)

@@ -1,6 +1,7 @@
 //! IPAM (IP Address Management) reconcilers
 //! 
-//! Handles: NetBoxPrefix, NetBoxAggregate, NetBoxRIR, NetBoxIPAddress
+//! Handles: NetBoxPrefix, NetBoxAggregate, NetBoxRIR, NetBoxIPAddress,
+//! NetBoxIPRange, NetBoxRouteTarget, NetBoxVRF, IPPool, IPClaim
 pub mod prefix;
 #[cfg(test)]
 pub mod prefix_test;
@@ -22,3 +23,5 @@ pub mod route_target;
 pub mod vrf;
 // #[cfg(test)]
 // pub mod vrf_test;
+pub mod ip_pool;
+pub mod ip_claim;

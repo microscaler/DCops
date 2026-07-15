@@ -11,9 +11,12 @@ use crate::error::ControllerError;
 use crate::kube_api_trait::KubeApiWrapper;
 use crate::token_resolver::TokenResolver;
 use crds::{
-    NetBoxPrefix, NetBoxTenant, NetBoxTenantGroup, NetBoxSite, NetBoxRole, NetBoxTag, NetBoxAggregate,
-    NetBoxVLAN, NetBoxRIR, NetBoxIPAddress, NetBoxIPRange, NetBoxVRF, NetBoxRouteTarget, NetBoxDeviceRole, NetBoxManufacturer, NetBoxPlatform, NetBoxDeviceType,
-    NetBoxDevice, NetBoxInterface, NetBoxMACAddress, NetBoxRegion, NetBoxSiteGroup, NetBoxLocation,
+    IPPool, IPClaim,
+    NetBoxAggregate, NetBoxDevice, NetBoxDeviceRole, NetBoxDeviceType,
+    NetBoxIPAddress, NetBoxIPRange, NetBoxInterface, NetBoxLocation, NetBoxMACAddress,
+    NetBoxManufacturer, NetBoxPlatform, NetBoxPrefix, NetBoxRIR, NetBoxRegion, NetBoxRole,
+    NetBoxRouteTarget, NetBoxSite, NetBoxSiteGroup, NetBoxTag, NetBoxTenant, NetBoxTenantGroup,
+    NetBoxVLAN, NetBoxVRF,
 };
 use kube::{Api, Client};
 use tokio::task::JoinHandle;
@@ -51,6 +54,7 @@ pub struct Controller {
 }
 
 impl Controller {
+
     /// Performs startup tasks like reconciliation and cleanup.
     async fn perform_startup_tasks(
         reconciler: &Reconciler,
@@ -63,7 +67,7 @@ impl Controller {
         } else {
             info!("Startup reconciliation completed");
         }
-        
+
         // Perform global duplicate IP address cleanup on startup
         // Try to get a NetBox client for the default tenant to run cleanup
         info!("Performing global duplicate IP address cleanup...");
@@ -87,22 +91,22 @@ impl Controller {
             warn!("Could not get NetBox client for global duplicate cleanup (will continue)");
         }
     }
-    
+
     /// Creates a new controller instance.
     pub async fn new(
         netbox_url: String,
         namespace: Option<String>,
     ) -> Result<Self, ControllerError> {
         info!("Initializing NetBox Controller (Multi-Tenant Mode)");
-        
+
         // Create Kubernetes client
         let kube_client = Client::try_default().await
             .map_err(|e| ControllerError::Kube(e.into()))?;
-        
+
         // Create TokenResolver (single point of dependency injection)
         let token_resolver = Arc::new(TokenResolver::new(kube_client.clone(), netbox_url.clone()));
         info!("✅ TokenResolver initialized - tokens will be resolved from Tenant CRDs");
-        
+
         // Create API clients for all CRD types
         // NOTE: These are REAL kube::Api<T> instances that connect to the actual Kubernetes cluster
         // The KubeApiWrapper is a thin delegation layer that forwards all calls to these real APIs
@@ -118,6 +122,8 @@ impl Controller {
         let netbox_ip_range_api: Api<NetBoxIPRange> = Api::namespaced(kube_client.clone(), ns);
         let netbox_vrf_api: Api<NetBoxVRF> = Api::namespaced(kube_client.clone(), ns);
         let netbox_route_target_api: Api<NetBoxRouteTarget> = Api::namespaced(kube_client.clone(), ns);
+        let netbox_ip_pool_api: Api<IPPool> = Api::namespaced(kube_client.clone(), ns);
+        let netbox_ip_claim_api: Api<IPClaim> = Api::namespaced(kube_client.clone(), ns);
         // Tenancy APIs
         let netbox_tenant_api: Api<NetBoxTenant> = Api::namespaced(kube_client.clone(), ns);
         let netbox_tenant_group_api: Api<NetBoxTenantGroup> = Api::namespaced(kube_client.clone(), ns);
@@ -133,14 +139,14 @@ impl Controller {
         let netbox_region_api: Api<NetBoxRegion> = Api::namespaced(kube_client.clone(), ns);
         let netbox_site_group_api: Api<NetBoxSiteGroup> = Api::namespaced(kube_client.clone(), ns);
         let netbox_location_api: Api<NetBoxLocation> = Api::namespaced(kube_client.clone(), ns);
-        
+
         // Create reconciler with wrapped APIs
         // NOTE: KubeApiWrapper is a thin delegation layer - all calls forward to real Api<T>
         // This preserves 100% real cluster operation while enabling unit testing with mocks
         // Create RealSecretFetcher for production use
         use crate::secret_fetcher::RealSecretFetcher;
         let secret_fetcher = Arc::new(RealSecretFetcher::new(kube_client.clone()));
-        
+
         // Create EventRecorder for emitting Kubernetes events
         use kube::runtime::events::{Reporter, Recorder};
         use crate::events::RecorderWrapper;
@@ -150,7 +156,7 @@ impl Controller {
         };
         let recorder = Recorder::new(kube_client.clone(), reporter);
         let event_recorder: Option<Arc<dyn crate::events::EventRecorderTrait>> = Some(Arc::new(RecorderWrapper::new(recorder)));
-        
+
         let reconciler = Reconciler::new(
             token_resolver.clone(),
             Some(secret_fetcher), // Use RealSecretFetcher for production
@@ -166,6 +172,8 @@ impl Controller {
             KubeApiWrapper::new(netbox_ip_range_api.clone()),
             KubeApiWrapper::new(netbox_vrf_api.clone()),
             KubeApiWrapper::new(netbox_route_target_api.clone()),
+            KubeApiWrapper::new(netbox_ip_pool_api.clone()),
+            KubeApiWrapper::new(netbox_ip_claim_api.clone()),
             // Tenancy
             KubeApiWrapper::new(netbox_tenant_api.clone()),
             KubeApiWrapper::new(netbox_tenant_group_api.clone()),
@@ -182,13 +190,13 @@ impl Controller {
             KubeApiWrapper::new(netbox_site_group_api.clone()),
             KubeApiWrapper::new(netbox_location_api.clone()),
         );
-        
+
         // Perform startup tasks (reconciliation, cleanup, etc.)
         Self::perform_startup_tasks(&reconciler, &token_resolver).await;
-        
+
         // Create watchers - use Arc to share reconciler
         let reconciler_arc = Arc::new(reconciler);
-        
+
         // Create a single watcher instance that handles all CRD types
         let watcher_instance = Arc::new(Watcher::new(
             reconciler_arc.clone(),
@@ -203,6 +211,8 @@ impl Controller {
             netbox_ip_range_api.clone(),
             netbox_vrf_api.clone(),
             netbox_route_target_api.clone(),
+            netbox_ip_pool_api.clone(),
+            netbox_ip_claim_api.clone(),
             // Tenancy
             netbox_tenant_api.clone(),
             netbox_tenant_group_api.clone(),
@@ -219,7 +229,7 @@ impl Controller {
             netbox_site_group_api.clone(),
             netbox_location_api.clone(),
         ));
-        
+
         // Start all watchers in background tasks
         let netbox_prefix_watcher = {
             let watcher = watcher_instance.clone();
@@ -227,161 +237,161 @@ impl Controller {
                 watcher.watch_netbox_prefixes().await
             })
         };
-        
+
         let netbox_tenant_watcher = {
             let watcher = watcher_instance.clone();
             tokio::spawn(async move {
                 watcher.watch_netbox_tenants().await
             })
         };
-        
+
         let netbox_tenant_group_watcher = {
             let watcher = watcher_instance.clone();
             tokio::spawn(async move {
                 watcher.watch_netbox_tenant_groups().await
             })
         };
-        
+
         let netbox_site_watcher = {
             let watcher = watcher_instance.clone();
             tokio::spawn(async move {
                 watcher.watch_netbox_sites().await
             })
         };
-        
+
         let netbox_role_watcher = {
             let watcher = watcher_instance.clone();
             tokio::spawn(async move {
                 watcher.watch_netbox_roles().await
             })
         };
-        
+
         let netbox_tag_watcher = {
             let watcher = watcher_instance.clone();
             tokio::spawn(async move {
                 watcher.watch_netbox_tags().await
             })
         };
-        
+
         let netbox_aggregate_watcher = {
             let watcher = watcher_instance.clone();
             tokio::spawn(async move {
                 watcher.watch_netbox_aggregates().await
             })
         };
-        
+
         let netbox_vlan_watcher = {
             let watcher = watcher_instance.clone();
             tokio::spawn(async move {
                 watcher.watch_netbox_vlans().await
             })
         };
-        
+
         let netbox_rir_watcher = {
             let watcher = watcher_instance.clone();
             tokio::spawn(async move {
                 watcher.watch_netbox_rirs().await
             })
         };
-        
+
         let netbox_ip_address_watcher = {
             let watcher = watcher_instance.clone();
             tokio::spawn(async move {
                 watcher.watch_netbox_ip_addresses().await
             })
         };
-        
+
         let netbox_ip_range_watcher = {
             let watcher = watcher_instance.clone();
             tokio::spawn(async move {
                 watcher.watch_netbox_ip_ranges().await
             })
         };
-        
+
         let netbox_vrf_watcher = {
             let watcher = watcher_instance.clone();
             tokio::spawn(async move {
                 watcher.watch_netbox_vrfs().await
             })
         };
-        
+
         let netbox_route_target_watcher = {
             let watcher = watcher_instance.clone();
             tokio::spawn(async move {
                 watcher.watch_netbox_route_targets().await
             })
         };
-        
+
         let netbox_device_role_watcher = {
             let watcher = watcher_instance.clone();
             tokio::spawn(async move {
                 watcher.watch_netbox_device_roles().await
             })
         };
-        
+
         let netbox_manufacturer_watcher = {
             let watcher = watcher_instance.clone();
             tokio::spawn(async move {
                 watcher.watch_netbox_manufacturers().await
             })
         };
-        
+
         let netbox_platform_watcher = {
             let watcher = watcher_instance.clone();
             tokio::spawn(async move {
                 watcher.watch_netbox_platforms().await
             })
         };
-        
+
         let netbox_device_type_watcher = {
             let watcher = watcher_instance.clone();
             tokio::spawn(async move {
                 watcher.watch_netbox_device_types().await
             })
         };
-        
+
         let netbox_device_watcher = {
             let watcher = watcher_instance.clone();
             tokio::spawn(async move {
                 watcher.watch_netbox_devices().await
             })
         };
-        
+
         let netbox_interface_watcher = {
             let watcher = watcher_instance.clone();
             tokio::spawn(async move {
                 watcher.watch_netbox_interfaces().await
             })
         };
-        
+
         let netbox_mac_address_watcher = {
             let watcher = watcher_instance.clone();
             tokio::spawn(async move {
                 watcher.watch_netbox_mac_addresses().await
             })
         };
-        
+
         let netbox_region_watcher = {
             let watcher = watcher_instance.clone();
             tokio::spawn(async move {
                 watcher.watch_netbox_regions().await
             })
         };
-        
+
         let netbox_site_group_watcher = {
             let watcher = watcher_instance.clone();
             tokio::spawn(async move {
                 watcher.watch_netbox_site_groups().await
             })
         };
-        
+
         let netbox_location_watcher = {
             let watcher = watcher_instance.clone();
             tokio::spawn(async move {
                 watcher.watch_netbox_locations().await
             })
         };
-        
+
         Ok(Self {
             // IPAM watchers
             netbox_prefix_watcher,
@@ -411,11 +421,11 @@ impl Controller {
             netbox_location_watcher,
         })
     }
-    
+
     /// Runs the controller until shutdown.
     pub async fn run(mut self) -> Result<(), ControllerError> {
         info!("NetBox Controller running");
-        
+
         // Wait for any watcher to exit (they should run forever)
         tokio::select! {
             result = &mut self.netbox_prefix_watcher => {
@@ -511,9 +521,7 @@ impl Controller {
                     .map_err(|e| ControllerError::Watch(format!("NetBoxLocation watcher error: {}", e)))?;
             }
         }
-        
+
         Ok(())
     }
 }
-
-

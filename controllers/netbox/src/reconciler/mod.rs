@@ -30,6 +30,7 @@ use crds::{
     NetBoxDeviceRole, NetBoxManufacturer, NetBoxPlatform, NetBoxDeviceType, NetBoxDevice,
     NetBoxInterface, NetBoxMACAddress, NetBoxVLAN, NetBoxRegion, NetBoxSiteGroup, NetBoxLocation,
     NetBoxRIR, NetBoxIPAddress, NetBoxIPRange, NetBoxVRF, NetBoxRouteTarget, PrefixState, ResourceState,
+    IPClaim, IPClaimState, IPClaimStatus, IPPool, IPPoolState, IPPoolStatus,
 };
 use tracing::{info, error, debug, warn};
 use std::collections::{HashMap, HashSet};
@@ -76,6 +77,9 @@ pub struct Reconciler {
     pub(crate) netbox_ip_range_api: Box<dyn KubeApiTrait<NetBoxIPRange> + Send + Sync>,
     pub(crate) netbox_vrf_api: Box<dyn KubeApiTrait<NetBoxVRF> + Send + Sync>,
     pub(crate) netbox_route_target_api: Box<dyn KubeApiTrait<NetBoxRouteTarget> + Send + Sync>,
+    // IPAM: IPPool / IPClaim APIs
+    pub(crate) netbox_ip_pool_api: Box<dyn KubeApiTrait<IPPool> + Send + Sync>,
+    pub(crate) netbox_ip_claim_api: Box<dyn KubeApiTrait<IPClaim> + Send + Sync>,
     // Tenancy APIs
     pub(crate) netbox_tenant_api: Box<dyn KubeApiTrait<NetBoxTenant> + Send + Sync>,
     pub(crate) netbox_tenant_group_api: Box<dyn KubeApiTrait<NetBoxTenantGroup> + Send + Sync>,
@@ -370,6 +374,52 @@ impl Reconciler {
         serde_json::json!({ "status": status })
     }
     
+    /// Create IPPool status patch with PascalCase state values
+    pub(crate) fn create_ip_pool_status_patch(
+        netbox_id: u64,
+        netbox_url: String,
+        state: IPPoolState,
+        error: Option<String>,
+    ) -> serde_json::Value {
+        let state_str = match state {
+            IPPoolState::Pending => "Pending",
+            IPPoolState::Created => "Created",
+            IPPoolState::Failed => "Failed",
+        };
+        serde_json::json!({
+            "status": {
+                "netboxId": netbox_id,
+                "netboxUrl": netbox_url,
+                "state": state_str,
+                "error": error,
+            }
+        })
+    }
+    
+    /// Create IPClaim status patch with PascalCase state values
+    pub(crate) fn create_ip_claim_status_patch(
+        netbox_id: u64,
+        netbox_url: String,
+        ip: Option<String>,
+        state: IPClaimState,
+        error: Option<String>,
+    ) -> serde_json::Value {
+        let state_str = match state {
+            IPClaimState::Pending => "Pending",
+            IPClaimState::Created => "Created",
+            IPClaimState::Failed => "Failed",
+        };
+        serde_json::json!({
+            "status": {
+                "netboxId": netbox_id,
+                "netboxUrl": netbox_url,
+                "ip": ip,
+                "state": state_str,
+                "error": error,
+            }
+        })
+    }
+    
     /// Create typed NetBoxTenantGroupStatus and serialize to JSON patch
     pub(crate) fn create_typed_tenant_group_status_patch(
         netbox_id: u64,
@@ -403,6 +453,9 @@ impl Reconciler {
         netbox_ip_range_api: impl KubeApiTrait<NetBoxIPRange> + Send + Sync + 'static,
         netbox_vrf_api: impl KubeApiTrait<NetBoxVRF> + Send + Sync + 'static,
         netbox_route_target_api: impl KubeApiTrait<NetBoxRouteTarget> + Send + Sync + 'static,
+        // IPAM: IPPool / IPClaim APIs
+        netbox_ip_pool_api: impl KubeApiTrait<IPPool> + Send + Sync + 'static,
+        netbox_ip_claim_api: impl KubeApiTrait<IPClaim> + Send + Sync + 'static,
         // Tenancy APIs
         netbox_tenant_api: impl KubeApiTrait<NetBoxTenant> + Send + Sync + 'static,
         netbox_tenant_group_api: impl KubeApiTrait<NetBoxTenantGroup> + Send + Sync + 'static,
@@ -434,6 +487,9 @@ impl Reconciler {
             netbox_ip_range_api: Box::new(netbox_ip_range_api),
             netbox_vrf_api: Box::new(netbox_vrf_api),
             netbox_route_target_api: Box::new(netbox_route_target_api),
+            // IPAM: IPPool / IPClaim
+            netbox_ip_pool_api: Box::new(netbox_ip_pool_api),
+            netbox_ip_claim_api: Box::new(netbox_ip_claim_api),
             // Tenancy
             netbox_tenant_api: Box::new(netbox_tenant_api),
             netbox_tenant_group_api: Box::new(netbox_tenant_group_api),

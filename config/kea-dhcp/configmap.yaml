@@ -13,29 +13,18 @@ data:
           "interfaces": ["*"]
         },
         "control-socket": {
-          "socket-type": "http",
-          "socket-name": "/tmp/kea-http-socket",
-          "socket-url": "http://127.0.0.1:8000"
+          "socket-type": "unix",
+          "socket-name": "/var/run/kea/kea4-ctrl-socket"
         },
         "lease-database": {
           "type": "memfile",
           "lfc-interval": 3600
         },
-        # Alternative PostgreSQL configuration (uncomment to use):
-        # "lease-database": {
-        #   "type": "postgresql",
-        #   "name": "kea",
-        #   "host": "postgresql.dcops-system.svc.cluster.local",
-        #   "port": 5432,
-        #   "user": "kea",
-        #   "password": "kea-password",
-        #   "lfc-interval": 3600
-        # },
         "subnet4": [],
         "loggers": [
           {
             "name": "kea-dhcp4",
-            "output_options": [
+            "output-options": [
               {
                 "output": "stdout"
               }
@@ -44,17 +33,18 @@ data:
             "debuglevel": 0
           }
         ]
-      },
+      }
+    }
+  kea-ctrl-agent.conf: |
+    {
       "Control-agent": {
         "http-host": "0.0.0.0",
         "http-port": 8000,
         "control-sockets": {
           "dhcp4": {
-            "socket-type": "http",
-            "socket-name": "/tmp/kea-http-socket",
-            "socket-url": "http://127.0.0.1:8000"
+            "socket-type": "unix",
+            "socket-name": "/var/run/kea/kea4-ctrl-socket"
           }
         }
       }
     }
-

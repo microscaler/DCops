@@ -2,115 +2,44 @@
 """
 Development environment startup script.
 
-Starts Kind cluster and Tilt for local development.
-Replaces embedded shell script in justfile.
+Deploys DCops to the shared-k8s (k3s) cluster via Tilt.
+Does not create or destroy any cluster — the shared-k8s cluster is managed by the
+sibling repo microscaler/shared-k8s-cluster.
 """
 
-import os
 import subprocess
 import sys
-from pathlib import Path
 
-# Add scripts directory to path for imports
-sys.path.insert(0, str(Path(__file__).parent))
+TILT_PORT = "10354"
+NETBOX_UI_PORT = "8011"
 
-def log_info(msg):
-    """Print info message."""
+
+def log_info(msg: str) -> None:
     print(f"[INFO] {msg}")
 
 
-def log_error(msg):
-    """Print error message."""
-    print(f"[ERROR] {msg}", file=sys.stderr)
-
-
-def check_command(cmd):
-    """Check if a command exists."""
-    import shutil
-    if not shutil.which(cmd):
-        log_error(f"{cmd} is not installed. Please install it first.")
-        sys.exit(1)
-
-
-def check_docker():
-    """Check if Docker is running."""
-    log_info("Checking Docker daemon...")
-    result = subprocess.run(
-        ["docker", "info"],
-        capture_output=True,
-        text=True
+def start_tilt() -> None:
+    log_info("Starting Tilt...")
+    log_info(f"   Tilt UI: http://0.0.0.0:{TILT_PORT} (LAN: http://<this-host>:{TILT_PORT}/)")
+    log_info(f"   NetBox UI: http://localhost:{NETBOX_UI_PORT} (via Tilt port forward)")
+    log_info("   Kea Control Agent: http://localhost:8010 (via Tilt port forward)")
+    log_info("   Default NetBox credentials: admin / admin")
+    subprocess.run(
+        ["tilt", "up", "--host", "0.0.0.0", "--port", TILT_PORT],
+        check=False,
     )
-    if result.returncode != 0:
-        log_error("Docker daemon is not running")
-        print("   Please start Docker Desktop and try again")
-        sys.exit(1)
-    log_info("✅ Docker daemon is running")
 
 
-def start_kind():
-    """Start or create Kind cluster."""
-    log_info("Setting up Kind cluster...")
-    
-    # Always call setup_kind.py - it handles both creation and updates
-    # Force non-interactive mode to avoid prompts when called from dev_up
-    setup_script = Path(__file__).parent / "setup_kind.py"
-    env = os.environ.copy()
-    env["NON_INTERACTIVE"] = "1"
-    result = subprocess.run(
-        [sys.executable, str(setup_script)],
-        capture_output=False,
-        env=env
-    )
-    if result.returncode != 0:
-        log_error("Failed to setup Kind cluster")
-        sys.exit(1)
+def main() -> None:
+    log_info("Starting DCops development environment (shared-k8s cluster)...")
 
+    for cmd in ("docker", "kubectl", "tilt"):
+        import shutil
 
-def set_kubeconfig_context():
-    """Set kubeconfig context to kind cluster."""
-    log_info("Setting kubeconfig context...")
-    result = subprocess.run(
-        ["kubectl", "config", "use-context", "kind-dcops"],
-        capture_output=True,
-        text=True
-    )
-    if result.returncode != 0:
-        log_info("⚠️  Warning: Could not set kind context, using current context")
-    else:
-        log_info("✅ Context set to kind-dcops")
+        if not shutil.which(cmd):
+            print(f"[ERROR] {cmd} is not installed. Please install it first.", file=sys.stderr)
+            sys.exit(1)
 
-
-def start_tilt():
-    """Start Tilt development environment."""
-    log_info("🎯 Starting Tilt...")
-    log_info("   Tilt UI: http://localhost:10350")
-    log_info("   NetBox UI: http://localhost:8001 (via Tilt port forward)")
-    log_info("   Default credentials: admin / admin")
-    # Run tilt up in foreground (will block until user stops it)
-    # KeyboardInterrupt will be caught by main() handler
-    subprocess.run(["tilt", "up"], check=False)
-
-
-def main():
-    """Main development environment startup."""
-    log_info("🚀 Starting DCops development environment (Kind)...")
-    
-    # Check prerequisites
-    check_command("docker")
-    check_command("kind")
-    check_command("kubectl")
-    check_command("tilt")
-    
-    # Check Docker is running
-    check_docker()
-    
-    # Start Kind cluster
-    start_kind()
-    
-    # Set kubeconfig context
-    set_kubeconfig_context()
-    
-    # Start Tilt
     start_tilt()
 
 
@@ -119,11 +48,10 @@ if __name__ == "__main__":
         main()
     except KeyboardInterrupt:
         print()
-        log_info("🛑 Shutting down gracefully...")
+        log_info("Shutting down gracefully...")
         log_info("   Tilt has been stopped")
-        log_info("   Kind cluster is still running (use 'just dev-down' to stop it)")
-        log_info("   Registry is still running")
+        log_info("   The shared-k8s cluster is still running")
+        log_info("   Use 'just dev-down' to stop Tilt without touching the cluster")
         print()
-        log_info("✅ Shutdown complete")
+        log_info("Shutdown complete")
         sys.exit(0)
-

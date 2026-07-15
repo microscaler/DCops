@@ -12,6 +12,27 @@
 
 ---
 
+## Shared Kind cluster (local dev)
+
+DCops deploys to the **shared** Kind cluster (`kind-kind`), not a dedicated `kind-dcops` cluster.
+
+| Item | Value |
+|------|-------|
+| Cluster | `kind` → context **`kind-kind`** |
+| Registry | **`kind-registry`** on **`localhost:5001`** |
+| Prerequisite repo | **`../shared-kind-cluster`** — `just cluster-create` or `just dev-up` |
+| DCops namespaces | **`netbox`**, **`dcops-system`** |
+| Tilt UI port | **10354** (`tilt-dcops.service`) |
+| NetBox UI (Tilt forward) | **http://localhost:8011** |
+| Kea Control Agent (Tilt forward) | **http://localhost:8010** |
+| PXE HTTP (Tilt forward) | **http://localhost:8088** |
+
+**Workflow:** `just verify-shared-kind` → `just dev-up` (or `just tilt-up`). **`just dev-down`** stops Tilt only — it does **not** delete the shared cluster.
+
+Override checkout layout: `SHARED_KIND_CLUSTER_ROOT=/path/to/shared-kind-cluster`.
+
+---
+
 This document provides specific guidance for AI agents working on the DCops codebase, with **explicit modularization requirements** from the start.
 
 ## 🚨 CRITICAL: Check for Existing Helpers/Traits First

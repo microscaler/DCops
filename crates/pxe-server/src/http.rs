@@ -1,42 +1,136 @@
-//! HTTP server for iPXE boot.
-//!
-//! This module implements an HTTP server for serving boot files
-//! to iPXE clients, which prefer HTTP over TFTP for faster transfers.
-//! Supports both IPv4 and IPv6.
+//! HTTP server for iPXE boot file delivery and boot API routes.
 
+use std::sync::Arc;
+
+use axum::extract::{Path, State};
+use axum::http::{header, StatusCode};
+use axum::response::{IntoResponse, Response};
+use axum::routing::get;
+use axum::Router;
+use tower_http::services::ServeDir;
+use tower_http::trace::TraceLayer;
+use tracing::info;
+
+use crate::api::BootConfig;
+use crate::boot::{render_ipxe_script, BootResolution};
+use crate::config::ServerConfig;
 use crate::error::PxeError;
-use anyhow::Result;
+use crate::store::SharedBootStore;
 
-/// HTTP server for iPXE boot file delivery with dual-stack support.
-///
-/// Serves kernel images, initrd files, and iPXE scripts
-/// via HTTP protocol for faster boot times. Supports both IPv4 and IPv6.
-pub struct HttpServer {
-    // TODO: Add fields for dual-stack HTTP server
-    // - IPv4 listener
-    // - IPv6 listener
-    // - Axum router
+/// Shared axum state.
+#[derive(Clone)]
+pub struct AppState {
+    pub config: Arc<ServerConfig>,
+    pub boot_store: SharedBootStore,
 }
 
-impl HttpServer {
-    /// Creates a new HTTP server instance with dual-stack support.
-    pub fn new() -> Result<Self, PxeError> {
-        // TODO: Initialize HTTP server for both IPv4 and IPv6
-        // Use axum for HTTP server (supports dual-stack)
-        // - Configure IPv4 listener
-        // - Configure IPv6 listener
-        todo!("Implement HTTP server initialization with dual-stack support")
-    }
-    
-    /// Starts the HTTP server with dual-stack support.
-    ///
-    /// Listens on both IPv4 and IPv6 addresses for HTTP requests.
-    pub async fn start(&self) -> Result<()> {
-        // TODO: Start HTTP server on both IPv4 and IPv6
-        // Serve boot files and iPXE scripts
-        // - Start IPv4 listener
-        // - Start IPv6 listener
-        todo!("Implement HTTP server start with dual-stack support")
+/// Build the HTTP router.
+pub fn router(state: AppState) -> Router {
+    let static_root = state.config.pxe_root.clone();
+    Router::new()
+        .route("/healthz", get(healthz))
+        .route("/v1/boot/{mac}", get(get_boot_json))
+        .route("/ipxe/boot/{mac}", get(get_boot_script))
+        .fallback_service(ServeDir::new(static_root))
+        .with_state(state)
+        .layer(TraceLayer::new_for_http())
+}
+
+async fn healthz() -> &'static str {
+    "ok"
+}
+
+async fn get_boot_json(
+    State(state): State<AppState>,
+    Path(mac): Path<String>,
+) -> Result<axum::Json<BootConfig>, ApiError> {
+    match state.boot_store.resolve_mac(&mac).await {
+        Ok(BootResolution::Profile(cfg)) => Ok(axum::Json(cfg)),
+        Ok(BootResolution::LocalBootOnly) => Err(ApiError::locked(&mac)),
+        Err(e) => Err(ApiError::from_pxe(e)),
     }
 }
 
+async fn get_boot_script(
+    State(state): State<AppState>,
+    Path(mac): Path<String>,
+) -> Result<Response, ApiError> {
+    let resolution = state.boot_store.resolve_mac(&mac).await.map_err(ApiError::from_pxe)?;
+
+    let body = match resolution {
+        BootResolution::LocalBootOnly => read_localboot_script(&state)?,
+        BootResolution::Profile(cfg) => render_ipxe_script(&cfg),
+    };
+
+    Ok((
+        StatusCode::OK,
+        [(header::CONTENT_TYPE, "text/plain; charset=utf-8")],
+        body,
+    )
+        .into_response())
+}
+
+fn read_localboot_script(state: &AppState) -> Result<String, ApiError> {
+    let path = state.config.path_under_root("ipxe/localboot.ipxe");
+    std::fs::read_to_string(&path).map_err(|e| {
+        ApiError::internal(format!("read {}: {e}", path.display()))
+    })
+}
+
+/// Start the HTTP server (runs until shutdown).
+pub async fn serve(config: ServerConfig, boot_store: SharedBootStore) -> Result<(), PxeError> {
+    let listen = config.http_listen;
+    info!(%listen, root = %config.pxe_root.display(), "starting pxe-server HTTP");
+
+    let state = AppState { config: Arc::new(config), boot_store };
+    let app = router(state);
+
+    let listener = tokio::net::TcpListener::bind(listen)
+        .await
+        .map_err(|e| PxeError::Http(format!("bind {listen}: {e}")))?;
+
+    axum::serve(listener, app).await.map_err(|e| PxeError::Http(format!("serve: {e}")))?;
+
+    Ok(())
+}
+
+/// HTTP API errors mapped to status codes.
+#[derive(Debug)]
+pub struct ApiError {
+    status: StatusCode,
+    message: String,
+}
+
+impl ApiError {
+    fn locked(mac: &str) -> Self {
+        Self {
+            status: StatusCode::FORBIDDEN,
+            message: format!("BootIntent for {mac} is locked — local disk boot only"),
+        }
+    }
+
+    fn internal(message: String) -> Self {
+        Self {
+            status: StatusCode::INTERNAL_SERVER_ERROR,
+            message,
+        }
+    }
+
+    fn from_pxe(err: PxeError) -> Self {
+        let status = match &err {
+            PxeError::NotFound(_) => StatusCode::NOT_FOUND,
+            PxeError::Configuration(msg) if msg.contains("invalid MAC") => StatusCode::BAD_REQUEST,
+            _ => StatusCode::INTERNAL_SERVER_ERROR,
+        };
+        Self {
+            status,
+            message: err.to_string(),
+        }
+    }
+}
+
+impl IntoResponse for ApiError {
+    fn into_response(self) -> Response {
+        (self.status, self.message).into_response()
+    }
+}

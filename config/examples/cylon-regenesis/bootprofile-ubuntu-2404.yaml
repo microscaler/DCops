@@ -1,0 +1,14 @@
+apiVersion: dcops.microscaler.io/v1alpha1
+kind: BootProfile
+metadata:
+  name: cylon-resurrection-ubuntu-2404
+  namespace: cylon-regenesis
+spec:
+  kernel: http://pxe-server.dcops-system:8080/cylon-regenesis/profiles/ubuntu-24.04-autoinstall/vmlinuz
+  initrd:
+    - http://pxe-server.dcops-system:8080/cylon-regenesis/profiles/ubuntu-24.04-autoinstall/initrd.img
+  cmdline: >-
+    ip=dhcp autoinstall ds=nocloud-net;s=http://pxe-server.dcops-system:8080/cylon-regenesis/profiles/ubuntu-24.04-autoinstall/autoinstall/
+    regenesis.profile=ubuntu-24.04-autoinstall
+    regenesis.hub=http://192.168.1.189:14000
+  message: Cylon resurrection node — Ubuntu 24.04 autoinstall

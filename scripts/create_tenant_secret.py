@@ -196,8 +196,8 @@ def main():
     )
     parser.add_argument(
         '--netbox-url',
-        default='http://localhost:8001',
-        help='NetBox URL (default: http://localhost:8001)'
+        default='http://localhost:8011',
+        help='NetBox URL (default: http://localhost:8011)'
     )
     parser.add_argument(
         '--username',

@@ -3,7 +3,7 @@
 Simple script to create a NetBox token and update Kubernetes secret.
 
 This script uses port-forwarding to access NetBox from localhost.
-It requires NetBox to be accessible on localhost:8001 (via Tilt port-forward).
+It requires NetBox to be accessible on localhost:8011 (via Tilt port-forward).
 
 Usage:
     python3 scripts/create_netbox_token_simple.py [--token TOKEN]
@@ -132,7 +132,7 @@ stringData:
 
 def main():
     parser = argparse.ArgumentParser(description='Create NetBox token and update Kubernetes secret')
-    parser.add_argument('--netbox-url', default='http://localhost:8001', help='NetBox URL (default: http://localhost:8001)')
+    parser.add_argument('--netbox-url', default='http://localhost:8011', help='NetBox URL (default: http://localhost:8011)')
     parser.add_argument('--netbox-user', default='admin', help='NetBox username (default: admin)')
     parser.add_argument('--netbox-password', default='admin', help='NetBox password (default: admin)')
     parser.add_argument('--token', help='Existing token to use (skips token creation)')

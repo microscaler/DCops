@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: pxe-server
+  namespace: dcops-system
+  labels:
+    app: pxe-server
+    app.kubernetes.io/part-of: dcops
+spec:
+  type: ClusterIP
+  selector:
+    app: pxe-server
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+      protocol: TCP

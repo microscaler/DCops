@@ -21,5 +21,8 @@ pub enum PxeError {
     
     #[error("Configuration error: {0}")]
     Configuration(String),
+
+    #[error("Not found: {0}")]
+    NotFound(String),
 }
 

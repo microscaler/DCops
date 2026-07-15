@@ -1,0 +1,5 @@
+Place large boot artifacts here for lab dev (vmlinuz, initrd, autoinstall trees).
+
+Publish from cylon-regenesis host-os build into this tree or mount via hostPath on ms02:
+
+`~/Workspace/microscaler/cylon-regenesis/artifacts/pxe/cylon-regenesis/`

@@ -1,0 +1,25 @@
+#!ipxe
+# Cylon Regenesis — resurrection node entry script
+# Served by DCops pxe-server HTTP. See cylon-regenesis ipxe-provisioning.md
+
+dhcp
+
+set profile ${regenesis.profile:ubuntu-24.04-autoinstall}
+set hub-url ${regenesis.hub:http://192.168.1.189:14000}
+set base http://${next-server}:${port}/cylon-regenesis/profiles/${profile}
+
+echo ---
+echo Cylon Regenesis
+echo   profile: ${profile}
+echo   hub:     ${hub-url}
+echo   base:    ${base}
+echo ---
+
+kernel ${base}/vmlinuz initrd=initrd.img \
+  ip=dhcp \
+  autoinstall ds=nocloud-net\;s=${base}/autoinstall/ \
+  regenesis.profile=${profile} \
+  regenesis.hub=${hub-url} \
+  ---
+initrd ${base}/initrd.img
+boot

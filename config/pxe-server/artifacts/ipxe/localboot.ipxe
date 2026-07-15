@@ -1,0 +1,3 @@
+#!ipxe
+echo BootIntent locked — local disk only
+sanboot --no-describe --drive 0x80

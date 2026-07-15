@@ -17,7 +17,7 @@ spec:
     spec:
       containers:
       - name: kea-dhcp4
-        image: microscaler/kea-dhcp:latest
+        image: 10.177.76.220:5000/kea-dhcp:latest
         imagePullPolicy: Always
         ports:
         - name: dhcp
@@ -29,16 +29,16 @@ spec:
         volumeMounts:
         - name: kea-config
           mountPath: /etc/kea
+        - name: kea-run
+          mountPath: /var/run/kea
         command:
         - /bin/bash
         - -c
         - |
-          # Start Kea DHCP4 server in background
+          chmod 750 /var/run/kea
           kea-dhcp4 -c /etc/kea/kea-dhcp4.conf &
-          # Wait a moment for DHCP server to start
           sleep 2
-          # Start Kea Control Agent in foreground (keeps container running)
-          exec kea-ctrl-agent -c /etc/kea/kea-dhcp4.conf
+          exec kea-ctrl-agent -c /etc/kea/kea-ctrl-agent.conf
         resources:
           requests:
             cpu: 100m
@@ -46,7 +46,6 @@ spec:
           limits:
             cpu: 500m
             memory: 512Mi
-        # Kea needs CAP_NET_BIND_SERVICE to bind to port 67
         securityContext:
           capabilities:
             add:
@@ -55,3 +54,5 @@ spec:
       - name: kea-config
         configMap:
           name: kea-dhcp-config
+      - name: kea-run
+        emptyDir: {}

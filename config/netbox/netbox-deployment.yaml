@@ -24,15 +24,18 @@ spec:
         - migrate
         env:
         - name: DB_HOST
-          value: postgres
+          value: postgres.data.svc.cluster.local
         - name: DB_NAME
           value: netbox
         - name: DB_USER
           value: netbox
         - name: DB_PASSWORD
-          value: netbox
+          valueFrom:
+            secretKeyRef:
+              name: netbox-db-credentials
+              key: DB_PASSWORD
         - name: REDIS_HOST
-          value: redis
+          value: redis.data.svc.cluster.local
         - name: REDIS_PORT
           value: "6379"
         - name: SECRET_KEY
@@ -49,15 +52,18 @@ spec:
           /opt/netbox/venv/bin/python /opt/netbox/netbox/manage.py shell -c "from django.contrib.auth import get_user_model; User = get_user_model(); admin = User.objects.get(username='admin'); admin.set_password('admin'); admin.save()" || true
         env:
         - name: DB_HOST
-          value: postgres
+          value: postgres.data.svc.cluster.local
         - name: DB_NAME
           value: netbox
         - name: DB_USER
           value: netbox
         - name: DB_PASSWORD
-          value: netbox
+          valueFrom:
+            secretKeyRef:
+              name: netbox-db-credentials
+              key: DB_PASSWORD
         - name: REDIS_HOST
-          value: redis
+          value: redis.data.svc.cluster.local
         - name: REDIS_PORT
           value: "6379"
         - name: SECRET_KEY
@@ -78,15 +84,18 @@ spec:
           name: http
         env:
         - name: DB_HOST
-          value: postgres
+          value: postgres.data.svc.cluster.local
         - name: DB_NAME
           value: netbox
         - name: DB_USER
           value: netbox
         - name: DB_PASSWORD
-          value: netbox
+          valueFrom:
+            secretKeyRef:
+              name: netbox-db-credentials
+              key: DB_PASSWORD
         - name: REDIS_HOST
-          value: redis
+          value: redis.data.svc.cluster.local
         - name: REDIS_PORT
           value: "6379"
         - name: SECRET_KEY

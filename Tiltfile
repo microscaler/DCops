@@ -15,13 +15,21 @@
 # Configuration
 # ====================
 
-# Restrict to kind cluster
-allow_k8s_contexts(['kind-dcops'])
+# Shared k8s (k3s) platform cluster — no kind. Kubeconfig + context come from the
+# sibling repo microscaler/shared-k8s-cluster, matching hauliage and the other
+# microscaler projects.
+_SHARED_K8S_KCFG = os.path.abspath('../shared-k8s-cluster/kubeconfig/shared-k8s.yaml')
+_SHARED_K8S_REGISTRY = '10.177.76.220:5000'
+allow_k8s_contexts(['shared-k8s'])
+if os.path.exists(_SHARED_K8S_KCFG):
+    os.putenv('KUBECONFIG', _SHARED_K8S_KCFG)
 
-# Configure default registry for Kind cluster
-# Tilt will automatically push docker_build images to this registry
-# The registry is set up by scripts/setup_kind.py
-default_registry('localhost:5000')
+# Shared LAN registry (same as hauliage / the other microscaler projects).
+default_registry(_SHARED_K8S_REGISTRY)
+
+# Host ports avoid shared-k8s conflicts: PriceWhisperer uses 8000, LLMRouter uses 8001
+NETBOX_UI_HOST_PORT = 8011
+KEA_CONTROL_AGENT_HOST_PORT = 8010
 
 # Get the directory where this Tiltfile is located
 DCops_DIR = '.'
@@ -35,6 +43,34 @@ DCops_DIR = '.'
 # Deploy NetBox using kustomize
 k8s_yaml(kustomize('%s/config/netbox' % DCops_DIR))
 
+# ---- NetBox database lifecycle (label `data`), modeled on hauliage's set ----
+
+# (Re)apply the per-app DB credentials secret on demand. The kustomize above also
+# applies it at startup; this is the manual "database-env" button (parity with
+# hauliage-database-env).
+local_resource(
+    'netbox-database-env',
+    cmd='kubectl apply -f config/netbox/netbox-db-credentials.yaml',
+    deps=['config/netbox/netbox-db-credentials.yaml'],
+    labels=['data'],
+    trigger_mode=TRIGGER_MODE_MANUAL,
+    auto_init=False,
+    allow_parallel=True,
+)
+
+# Provision the NetBox role + database on the shared Postgres before NetBox
+# migrates. Idempotent; mirrors hauliage-db-init. Runs once on `tilt up`, then
+# re-runnable from the Tilt UI (MANUAL stops file-watch re-triggers).
+local_resource(
+    'netbox-db-init',
+    cmd='chmod +x scripts/setup-db.sh && bash scripts/setup-db.sh',
+    deps=['scripts/setup-db.sh'],
+    labels=['data'],
+    allow_parallel=False,
+    trigger_mode=TRIGGER_MODE_MANUAL,
+    auto_init=True,
+)
+
 # Configure NetBox resource with port forwards
 # Forward directly to pod container port 8080 for stability
 # Format: 'local_port:container_port' where container_port is the actual port the app listens on
@@ -42,27 +78,29 @@ k8s_resource(
     'netbox',
     labels=['infrastructure'],
     port_forwards=[
-        '8001:8080',  # NetBox web UI: localhost:8001 -> pod:8080 (direct to container)
+        '%d:8080' % NETBOX_UI_HOST_PORT,  # NetBox web UI (8011 avoids shared-k8s 8000/8001)
     ],
+    resource_deps=['netbox-db-init'],
+    # Applied once on `tilt up` (after the DB is bootstrapped); MANUAL so you
+    # control re-applies from the Tilt UI rather than on every manifest change.
+    trigger_mode=TRIGGER_MODE_MANUAL,
 )
 
-# PostgreSQL (optional port forward for debugging)
-k8s_resource(
-    'postgres',
-    labels=['infrastructure'],
-    port_forwards=[
-        # '5432:5432',  # Uncomment if you need direct database access
-    ],
+# Run NetBox schema migrations on demand. They also run in the deployment's init
+# container, but this lets you (re)apply migrations later without a redeploy.
+# (NetBox migrations ship with the image, so there is no separate SQL-generation
+# step like hauliage-migrate; this is the apply-migrations equivalent.)
+local_resource(
+    'netbox-migrate',
+    cmd='kubectl exec -n netbox deployment/netbox -- /opt/netbox/venv/bin/python /opt/netbox/netbox/manage.py migrate',
+    resource_deps=['netbox'],
+    labels=['data'],
+    trigger_mode=TRIGGER_MODE_MANUAL,
+    auto_init=False,
 )
 
-# Redis (optional port forward for debugging)
-k8s_resource(
-    'redis',
-    labels=['infrastructure'],
-    port_forwards=[
-        # '6379:6379',  # Uncomment if you need direct Redis access
-    ],
-)
+# Postgres and Redis are NOT deployed by DCops — NetBox uses the shared-k8s
+# cluster's services in the `data` namespace (postgres.data / redis.data).
 
 # ====================
 # NetBox Token Management
@@ -77,11 +115,11 @@ k8s_resource(
 local_resource(
     'manage-netbox-token',
     # Wait for PostgreSQL to be ready, then query database for token
-    cmd='python3 scripts/get_netbox_token_from_db.py 2>&1 || echo "⚠️  Token not found in database. Create token in NetBox UI at http://localhost:8001/user/api-tokens/ with key \"dcops-controller\", then this script will retrieve it automatically."',
+    cmd='python3 scripts/get_netbox_token_from_db.py 2>&1 || echo "⚠️  Token not found in database. Create token in NetBox UI at http://localhost:%d/user/api-tokens/ with key \"dcops-controller\", then this script will retrieve it automatically."' % NETBOX_UI_HOST_PORT,
     deps=[
         'scripts/get_netbox_token_from_db.py',
     ],
-    resource_deps=['netbox', 'postgres'],  # Wait for NetBox and PostgreSQL to be ready
+    resource_deps=['netbox'],  # Wait for NetBox to be ready
     labels=['infrastructure'],
     allow_parallel=False,
     # Runs when script changes or NetBox/PostgreSQL becomes ready
@@ -104,7 +142,7 @@ local_resource(
     deps=[
         'scripts/setup_netbox_tenant.py',
     ],
-    resource_deps=['netbox', 'postgres'],  # Wait for NetBox and PostgreSQL to be ready
+    resource_deps=['netbox'],  # Wait for NetBox to be ready
     labels=['infrastructure'],
     allow_parallel=False,
     # Runs when script changes or NetBox/PostgreSQL becomes ready
@@ -184,7 +222,7 @@ local_resource(
 # The 'deps' parameter ensures the binary exists before Docker build
 BINARY_PATH = 'target/x86_64-unknown-linux-musl/release/netbox-controller'
 IMAGE_NAME = 'netbox-controller'
-REGISTRY = 'localhost:5000'
+REGISTRY = _SHARED_K8S_REGISTRY
 FULL_IMAGE_NAME = '%s/%s' % (REGISTRY, IMAGE_NAME)
 
 custom_build(
@@ -254,7 +292,7 @@ k8s_resource(
     'kea-dhcp',
     labels=['infrastructure'],
     port_forwards=[
-        '8000:8000',  # Kea Control Agent REST API: localhost:8000 -> pod:8000
+        '%d:8000' % KEA_CONTROL_AGENT_HOST_PORT,  # Kea Control Agent REST API (8010 avoids host 8000)
     ],
 )
 
@@ -318,6 +356,73 @@ k8s_resource(
     'dhcp-controller',
     labels=['controllers'],
     resource_deps=['build-dhcp-controller', 'kea-dhcp'],  # Wait for binary and Kea to be ready
+)
+
+# Host port 8088 → pxe-server HTTP (8080 taken by BRRTRouter on shared-k8s)
+PXE_SERVER_HOST_PORT = 8088
+
+# ====================
+# PXE Server (HTTP / iPXE)
+# ====================
+local_resource(
+    'build-pxe-server',
+    cmd='python3 scripts/host_aware_build.py --release -p pxe-server',
+    deps=[
+        'crates/pxe-server/src',
+        'crates/pxe-server/Cargo.toml',
+        'crates/crds/src',
+        'Cargo.toml',
+        'Cargo.lock',
+        'scripts/host_aware_build.py',
+    ],
+    resource_deps=['generate-crds'],
+    labels=['infrastructure'],
+    allow_parallel=True,
+)
+
+PXE_BINARY_PATH = 'target/x86_64-unknown-linux-musl/release/pxe-server'
+PXE_IMAGE_NAME = 'pxe-server'
+PXE_FULL_IMAGE_NAME = '%s/%s' % (REGISTRY, PXE_IMAGE_NAME)
+
+custom_build(
+    PXE_IMAGE_NAME,
+    'docker buildx build --platform linux/amd64 -f dockerfiles/Dockerfile.pxe-server.dev -t %s:tilt . && docker tag %s:tilt %s:tilt && docker push %s:tilt' % (
+        PXE_IMAGE_NAME,
+        PXE_IMAGE_NAME,
+        PXE_FULL_IMAGE_NAME,
+        PXE_FULL_IMAGE_NAME
+    ),
+    deps=[
+        PXE_BINARY_PATH,
+        'dockerfiles/Dockerfile.pxe-server.dev',
+    ],
+    tag='tilt',
+    live_update=[
+        sync(PXE_BINARY_PATH, '/app/pxe-server'),
+        run('kill -HUP 1', trigger=[PXE_BINARY_PATH]),
+    ],
+)
+
+k8s_yaml(kustomize('%s/config/pxe-server' % DCops_DIR))
+
+k8s_resource(
+    'pxe-server',
+    labels=['infrastructure'],
+    resource_deps=['build-pxe-server'],
+    port_forwards=[
+        '%d:8080' % PXE_SERVER_HOST_PORT,
+    ],
+)
+
+local_resource(
+    'apply-cylon-regenesis-examples',
+    cmd='kubectl apply -k config/examples/cylon-regenesis',
+    deps=[
+        'config/examples/cylon-regenesis',
+    ],
+    resource_deps=['generate-crds', 'pxe-server'],
+    labels=['infrastructure'],
+    allow_parallel=False,
 )
 
 # ====================

@@ -12,25 +12,45 @@ default:
 # Development Environment
 # ============================================================================
 
-# Start development environment (Kind + Tilt)
+# Shared k3s cluster checkout (override if layout differs)
+export SHARED_K8S_CLUSTER_ROOT := env_var_or_default('SHARED_K8S_CLUSTER_ROOT', '../shared-k8s-cluster')
+export KUBECONFIG := env_var_or_default('KUBECONFIG', SHARED_K8S_CLUSTER_ROOT + '/kubeconfig/shared-k8s.yaml')
+export TILT_PORT := "10354"
+export REGISTRY := "10.177.76.220:5000"
+export NETBOX_UI_PORT := "8011"
+
+# Start development environment (shared-k8s + Tilt)
 dev-up:
     python3 scripts/dev_up.py
 
-# Stop development environment (Kind + Tilt)
+# Stop Tilt only (shared-k8s cluster and registry mirror stay up)
 dev-down:
     python3 scripts/dev_down.py
 
-# Start Tilt only (assumes cluster is already running)
-tilt-up:
+# Verify shared-k8s prerequisites without starting Tilt
+verify-shared-k8s:
+    (cd {{SHARED_K8S_CLUSTER_ROOT}} && just check-ready)
+
+# Start Tilt only (assumes shared-k8s cluster is already running)
+tilt-up: verify-shared-k8s
     @echo "🎯 Starting Tilt..."
-    @echo "   Tilt UI: http://localhost:10350"
-    @echo "   NetBox UI: http://localhost:8001 (via Tilt port forward)"
-    @tilt up
+    @echo "   Tilt UI: http://0.0.0.0:{{TILT_PORT}} (LAN: http://<this-host>:{{TILT_PORT}}/)"
+    @echo "   NetBox UI: http://localhost:{{NETBOX_UI_PORT}} (via Tilt port forward)"
+    @echo "   Kea Control Agent: http://localhost:8010 (via Tilt port forward)"
+    @tilt up --host 0.0.0.0 --port {{TILT_PORT}}
 
 # Stop Tilt only
 tilt-down:
     @echo "🛑 Stopping Tilt..."
-    @tilt down
+    @tilt down --port {{TILT_PORT}}
+
+# Install systemd user unit for DCops Tilt (ms02)
+dev-install-tilt-service:
+    @mkdir -p "${HOME}/.config/systemd/user"
+    @install -m 0644 deployment-configuration/systemd/tilt-dcops.service "${HOME}/.config/systemd/user/tilt-dcops.service"
+    @systemctl --user daemon-reload
+    @echo "Installed tilt-dcops.service (port 10354). Start with: systemctl --user start tilt-dcops"
+
 
 # ============================================================================
 # Building
@@ -39,7 +59,10 @@ tilt-down:
 # Build all (Rust binary + Docker image)
 build: build-rust build-docker
 
-# Build Rust binary (debug)
+# Test pxe-server crate
+test-pxe-server:
+    @cargo test -p pxe-server
+
 build-rust:
     @echo "🔨 Building Rust binary..."
     @cargo build --workspace
@@ -57,20 +80,20 @@ build-musl:
 # Build Docker image (development)
 build-docker:
     @echo "🐳 Building Docker images (development)..."
-    @docker build -f dockerfiles/Dockerfile.pxe-intent-controller.dev -t localhost:5000/dcops-pxe-intent-controller:dev .
-    @docker build -f dockerfiles/Dockerfile.ip-claim-controller.dev -t localhost:5000/dcops-ip-claim-controller:dev .
+    @docker build -f dockerfiles/Dockerfile.pxe-intent-controller.dev -t {{REGISTRY}}/dcops-pxe-intent-controller:dev .
+    @docker build -f dockerfiles/Dockerfile.ip-claim-controller.dev -t {{REGISTRY}}/dcops-ip-claim-controller:dev .
 
 # Build Docker image (production)
 build-docker-prod:
     @echo "🐳 Building Docker images (production)..."
-    @docker buildx build -f dockerfiles/Dockerfile.pxe-intent-controller -t localhost:5000/dcops-pxe-intent-controller:latest .
-    @docker buildx build -f dockerfiles/Dockerfile.ip-claim-controller -t localhost:5000/dcops-ip-claim-controller:latest .
+    @docker buildx build -f dockerfiles/Dockerfile.pxe-intent-controller -t {{REGISTRY}}/dcops-pxe-intent-controller:latest .
+    @docker buildx build -f dockerfiles/Dockerfile.ip-claim-controller -t {{REGISTRY}}/dcops-ip-claim-controller:latest .
 
 # Build base images
 build-base:
     @echo "🐳 Building base Docker images..."
-    @docker buildx build -f dockerfiles/Dockerfile.base.rust-builder -t localhost:5000/dcops-rust-builder-base-image:latest .
-    @docker buildx build -f dockerfiles/Dockerfile.base.controller -t localhost:5000/dcops-controller-base-image:latest .
+    @docker buildx build -f dockerfiles/Dockerfile.base.rust-builder -t {{REGISTRY}}/dcops-rust-builder-base-image:latest .
+    @docker buildx build -f dockerfiles/Dockerfile.base.controller -t {{REGISTRY}}/dcops-controller-base-image:latest .
 
 # ============================================================================
 # Testing
@@ -166,7 +189,7 @@ test-coverage-check:
 deploy:
     @echo "🚀 Deploying to Kubernetes..."
     @kubectl apply -k config/
-    @echo "✅ Deployed to microscaler-system namespace"
+    @echo "✅ Deployed to dcops-system / netbox namespaces"
 
 # Deploy CRDs only
 deploy-crd:
@@ -195,38 +218,38 @@ status:
 # Show PXE Intent Controller logs
 logs-pxe:
     @echo "📜 PXE Intent Controller logs..."
-    @kubectl logs -n microscaler-system -l app=pxe-intent-controller --tail=100 -f
+    @kubectl logs -n dcops-system -l app=pxe-intent-controller --tail=100 -f
 
 # Show IP Claim Controller logs
 logs-ip:
     @echo "📜 IP Claim Controller logs..."
-    @kubectl logs -n microscaler-system -l app=ip-claim-controller --tail=100 -f
+    @kubectl logs -n dcops-system -l app=ip-claim-controller --tail=100 -f
 
 # Show all controller logs
 logs-all:
     @echo "📜 All controller logs..."
-    @kubectl logs -n microscaler-system -l app.kubernetes.io/part-of=dcops --tail=100 -f --all-containers=true
+    @kubectl logs -n dcops-system -l app.kubernetes.io/part-of=dcops --tail=100 -f --all-containers=true
 
 # Port forward to PXE Intent Controller metrics
 port-forward-pxe:
     @echo "🔌 Port forwarding to PXE Intent Controller metrics (5000)..."
-    @kubectl port-forward -n microscaler-system svc/pxe-intent-controller-metrics 5000:5000
+    @kubectl port-forward -n dcops-system svc/pxe-intent-controller-metrics 5000:5000
 
 # Port forward to IP Claim Controller metrics
 port-forward-ip:
     @echo "🔌 Port forwarding to IP Claim Controller metrics (5001)..."
-    @kubectl port-forward -n microscaler-system svc/ip-claim-controller-metrics 5001:5000
+    @kubectl port-forward -n dcops-system svc/ip-claim-controller-metrics 5001:5000
 
 # ============================================================================
 # NetBox Management
 # ============================================================================
 
-# Deploy NetBox to Kind cluster
+# Deploy NetBox to shared-k8s cluster
 deploy-netbox:
     @echo "🚀 Deploying NetBox..."
     @python3 scripts/deploy_netbox.py
 
-# Undeploy NetBox from Kind cluster
+# Undeploy NetBox from shared-k8s cluster
 undeploy-netbox:
     @echo "🛑 Undeploying NetBox..."
     @python3 scripts/undeploy_netbox.py
@@ -244,7 +267,7 @@ port-forward-netbox:
 # Manage NetBox API token for IP Claim Controller
 # Usage: just netbox-token
 #   Or with token: NETBOX_TOKEN=abc123 just netbox-token
-#   Or with URL: NETBOX_URL=http://localhost:8001 just netbox-token
+#   Or with URL: NETBOX_URL=http://localhost:8011 just netbox-token
 netbox-token:
     @echo "🔑 Managing NetBox API token..."
     @python3 scripts/manage_netbox_token.py

@@ -20,7 +20,7 @@ For local development, Tilt automatically deploys NetBox:
 tilt up
 ```
 
-This deploys NetBox, PostgreSQL, and Redis in your Kind cluster. NetBox will be available at `http://localhost:8001`.
+This deploys NetBox, PostgreSQL, and Redis in the shared Kind cluster. NetBox will be available at `http://localhost:8011` when Tilt is running.
 
 ### Option 2: Existing NetBox Instance
 

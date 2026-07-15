@@ -437,6 +437,7 @@ impl Reconciler {
         desired_tenant_id: u64,
         _desired_vlan_id: Option<u32>,
         desired_status: &str,
+        address_within_range: bool,
     ) -> bool {
         use crate::reconcile_helpers::{
             compare_required_dependency_id,
@@ -500,7 +501,14 @@ impl Reconciler {
         
         // Evaluate all comparisons to log all field differences (no short-circuit)
         let tenant_diff = compare_required_dependency_id(desired_tenant_id, existing_tenant_id);
-        let status_diff = compare_string_field(desired_status, existing_status);
+        // When the IP address falls inside an IP range, NetBox forces status='reserved'
+        // regardless of the CRD's desired status. In that case, skip status drift detection
+        // so we don't flag a false-positive "drift" and loop forever trying to set 'dhcp'.
+        let status_diff = if address_within_range {
+            false // NetBox will always be 'reserved' — ignore status comparison
+        } else {
+            compare_string_field(desired_status, existing_status)
+        };
         let role_diff = compare_optional_string_field(&spec_role, &existing.role);
         let dns_name_diff = compare_optional_string_field(&spec_dns_name, &netbox_dns_name);
         let description_diff = compare_optional_string_field(&spec_description, &netbox_description);
@@ -838,6 +846,23 @@ impl Reconciler {
             false // No range specified
         };
         
+        // Compute the effective NetBox status. NetBox does not allow creating IPs with
+        // status='dhcp' inside an IP range — the status must be 'reserved'. When the
+        // address falls within a range, override the CRD's requested status to 'reserved'
+        // regardless of what the CRD says (static DHCP reservations inside a range must
+        // use reserved so NetBox accepts the create/update).
+        let effective_netbox_status = if address_within_range {
+            netbox_client::IPAddressStatus::Reserved
+        } else {
+            match ip_address_crd.spec.status {
+                crds::IPAddressStatus::Active => netbox_client::IPAddressStatus::Active,
+                crds::IPAddressStatus::Reserved => netbox_client::IPAddressStatus::Reserved,
+                crds::IPAddressStatus::Deprecated => netbox_client::IPAddressStatus::Deprecated,
+                crds::IPAddressStatus::Dhcp => netbox_client::IPAddressStatus::Dhcp,
+                crds::IPAddressStatus::Slaac => netbox_client::IPAddressStatus::Slaac,
+            }
+        };
+        
         // Validate status and check for drift
         let drift_result = {
             let netbox_client_ref = &netbox_client;
@@ -926,13 +951,13 @@ impl Reconciler {
                     None
                 };
                 
-                // Convert status enum to string
-                let status_str = match ip_address_crd.spec.status {
-                    crds::IPAddressStatus::Active => "active",
-                    crds::IPAddressStatus::Reserved => "reserved",
-                    crds::IPAddressStatus::Deprecated => "deprecated",
-                    crds::IPAddressStatus::Dhcp => "dhcp",
-                    crds::IPAddressStatus::Slaac => "slaac",
+                // Convert effective NetBox status to string for comparison
+                let effective_status_str = match effective_netbox_status {
+                    netbox_client::IPAddressStatus::Active => "active",
+                    netbox_client::IPAddressStatus::Reserved => "reserved",
+                    netbox_client::IPAddressStatus::Deprecated => "deprecated",
+                    netbox_client::IPAddressStatus::Dhcp => "dhcp",
+                    netbox_client::IPAddressStatus::Slaac => "slaac",
                 };
                 
                 // Always resolve tags (even if nothing else changed, tags might need updating)
@@ -969,7 +994,8 @@ impl Reconciler {
                         &remediated_ip,
                         tenant_id,
                         vlan_id, // Note: vlan_id comparison not implemented in needs_update yet
-                        status_str,
+                        effective_status_str,
+                        address_within_range,
                     );
                     debug!("NetBoxIPAddress {}/{}: ip_address_needs_update returned {}", namespace, name, result);
                     result
@@ -996,13 +1022,7 @@ impl Reconciler {
                         address: None, // Address cannot be changed
                         description: ip_address_crd.spec.description.clone(),
                         comments: ip_address_crd.spec.comments.clone(),
-                        status: Some(match ip_address_crd.spec.status {
-                            crds::IPAddressStatus::Active => netbox_client::IPAddressStatus::Active,
-                            crds::IPAddressStatus::Reserved => netbox_client::IPAddressStatus::Reserved,
-                            crds::IPAddressStatus::Deprecated => netbox_client::IPAddressStatus::Deprecated,
-                            crds::IPAddressStatus::Dhcp => netbox_client::IPAddressStatus::Dhcp,
-                            crds::IPAddressStatus::Slaac => netbox_client::IPAddressStatus::Slaac,
-                        }),
+                        status: Some(effective_netbox_status),
                         role: ip_address_crd.spec.role.clone(),
                         dns_name: ip_address_crd.spec.dns_name.clone(),
                         tenant: Some(tenant_id),
@@ -1366,20 +1386,20 @@ impl Reconciler {
         None
     };
     
-    // Convert status enum to NetBox status
-    let netbox_status = match ip_address_crd.spec.status {
-        crds::IPAddressStatus::Active => netbox_client::IPAddressStatus::Active,
-        crds::IPAddressStatus::Reserved => netbox_client::IPAddressStatus::Reserved,
-        crds::IPAddressStatus::Deprecated => netbox_client::IPAddressStatus::Deprecated,
-        crds::IPAddressStatus::Dhcp => netbox_client::IPAddressStatus::Dhcp,
-        crds::IPAddressStatus::Slaac => netbox_client::IPAddressStatus::Slaac,
-    };
-    
     // CRITICAL: Before creating, query ALL IPs by address to ensure it doesn't exist
     // This prevents duplicate creation due to race conditions or query failures
     let address_str = ip_address_crd.spec.address.as_ref()
         .ok_or_else(|| ControllerError::InvalidInput("Address is required for IP address reconciliation".to_string()))?;
-    
+
+    // effective_netbox_status is already computed earlier (after range validation).
+    // Log when we're overriding to 'reserved'.
+    if address_within_range {
+        info!(
+            "IP address {} is within IP range; overriding NetBox status to 'reserved'",
+            address_str
+        );
+    }
+
     // Query ALL IPs (no filters) and filter client-side for exact match
     // This is more reliable than using NetBox API filters which might be inaccurate
     info!("Pre-creation check: Querying ALL IP addresses to find exact match for {}", address_str);
@@ -1468,7 +1488,7 @@ impl Reconciler {
             address: Some(ip_net), // Specify the exact IP address
             description: ip_address_crd.spec.description.clone(),
             comments: ip_address_crd.spec.comments.clone(),
-            status: Some(netbox_status),
+            status: Some(effective_netbox_status),
             role: ip_address_crd.spec.role.clone(),
             dns_name: ip_address_crd.spec.dns_name.clone(),
             tenant: Some(tenant_id),

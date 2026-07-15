@@ -11,7 +11,7 @@ set -euo pipefail
 NS=data
 DEPLOY=postgres-primary
 WAIT_TIMEOUT="${NETBOX_DB_INIT_TIMEOUT:-600s}"
-NETBOX_DB_PASSWORD="${NETBOX_DB_PASSWORD:-netbox}"
+NETBOX_DB_PASSWORD="${NETBOX_DB_PASSWORD:-dcops_dev_password_change_in_prod}"
 
 sql_escape() { printf '%s' "$1" | sed "s/'/''/g"; }
 PW_SQL=$(sql_escape "${NETBOX_DB_PASSWORD}")

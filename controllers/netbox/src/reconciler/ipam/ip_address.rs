@@ -803,20 +803,25 @@ impl Reconciler {
         // If ip_range is provided, validate address (from spec or status) is within range
         // CRITICAL: NetBox does NOT allow creating individual IP addresses that fall within an IP range.
         // If the address is within a range, we can only track it if it already exists in NetBox.
-        let address_within_range: bool = if let Some(range_id) = ip_range_id {
+        // (address_within_range, range_is_populated). A "populated" range is one NetBox
+        // treats as fully allocated: it PROHIBITS creating individual IP objects inside it,
+        // signalling that the addresses are owned by an external system (a DHCP server such
+        // as Kea). We must detect that here so we can track the address in the CR status
+        // without attempting a NetBox create that would fail. See docs/NETBOX_IP_RANGE_ANALYSIS.md.
+        let (address_within_range, range_is_populated): (bool, bool) = if let Some(range_id) = ip_range_id {
             // Get the IP range to validate address is within it
             match netbox_client.get_ip_range(netbox_client::IPRangeId(range_id)).await {
                 Ok(range) => {
                     let address_ip = ip_net.addr();
                     let range_start = range.start_address.addr();
                     let range_end = range.end_address.addr();
-                    
+
                     // Get address string for error messages and logging
                     let address_str = ip_address_crd.spec.address.as_ref()
                         .or_else(|| ip_address_crd.status.as_ref().and_then(|s| s.address.as_ref()))
                         .map(|s| s.as_str())
                         .unwrap_or("unknown");
-                    
+
                     // Check if address is within range
                     if address_ip < range_start || address_ip > range_end {
                         let error_msg = format!(
@@ -834,17 +839,75 @@ impl Reconciler {
                         return Err(ControllerError::InvalidInput(error_msg));
                     }
                     debug!("Validated IP address {} is within range {} - {}", address_str, range.start_address, range.end_address);
-                    true // Address is within range
+                    (true, range.mark_populated) // Address is within range
                 }
                 Err(e) => {
                     warn!("Failed to validate IP address against range (ID: {}): {}", range_id, e);
                     // Continue anyway - range validation is best-effort
-                    false
+                    (false, false)
                 }
             }
         } else {
-            false // No range specified
+            (false, false) // No range specified
         };
+
+        // Populated ranges are externally managed (e.g. by a DHCP server such as Kea).
+        // NetBox rejects creating individual IP addresses inside a populated range, so we
+        // MUST NOT attempt a create here. Instead we record the address in the CR status as
+        // terminally reconciled: state=Created with NO NetBox ID. This is the repo's own
+        // recommended "Option 1" (docs/NETBOX_IP_RANGE_ANALYSIS.md). We short-circuit BEFORE
+        // the status/drift check below, because that path would otherwise treat a
+        // Created-without-netbox-id status as "needs (re)create" and loop forever.
+        if range_is_populated {
+            let address_str = ip_net.to_string();
+
+            // Idempotency: if we already recorded this exact address as externally managed
+            // (Created, no NetBox ID), there is nothing to do — avoid needless status churn.
+            if let Some(status) = ip_address_crd.status.as_ref() {
+                if status.state == ResourceState::Created
+                    && status.netbox_id.is_none()
+                    && status.address.as_deref() == Some(address_str.as_str())
+                {
+                    debug!(
+                        "NetBoxIPAddress {}/{}: address {} is within populated (externally managed) range {:?}; \
+                         status already reconciled, nothing to do",
+                        namespace, name, address_str, ip_range_id
+                    );
+                    return Ok(());
+                }
+            }
+
+            info!(
+                "NetBoxIPAddress {}/{}: address {} falls within a populated IP range (NetBox ID {:?}); \
+                 the range is externally managed (DHCP), so tracking the address in CR status only — \
+                 no NetBox IPAddress object will be created",
+                namespace, name, address_str, ip_range_id
+            );
+
+            {
+                use crate::events::reasons;
+                self.record_event_normal(
+                    reasons::EXTERNALLY_MANAGED,
+                    &format!(
+                        "IP {} is within a populated range and managed externally (DHCP); tracked in CR status, no NetBox object created",
+                        address_str
+                    ),
+                    ip_address_crd,
+                ).await;
+            }
+
+            let status_patch = Self::create_populated_range_ip_status_patch(Some(address_str));
+            update_resource_status(
+                &*self.netbox_ip_address_api,
+                name,
+                namespace,
+                &status_patch,
+                "NetBoxIPAddress",
+                0,
+            ).await?;
+
+            return Ok(());
+        }
         
         // Compute the effective NetBox status. NetBox does not allow creating IPs with
         // status='dhcp' inside an IP range — the status must be 'reserved'. When the

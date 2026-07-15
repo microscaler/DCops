@@ -373,7 +373,28 @@ impl Reconciler {
         };
         serde_json::json!({ "status": status })
     }
-    
+
+    /// Create an IPAddress status patch for an address that lives inside a
+    /// **populated** IP range and is therefore managed by an external system
+    /// (typically a DHCP server such as Kea). NetBox prohibits creating
+    /// individual IP addresses inside a range marked populated, so no NetBox
+    /// object exists: `netbox_id`/`netbox_url` are `None`, but the address is
+    /// still recorded and the resource is marked terminally `Created`.
+    /// See `docs/NETBOX_IP_RANGE_ANALYSIS.md` (Option 1).
+    pub(crate) fn create_populated_range_ip_status_patch(
+        address: Option<String>,
+    ) -> serde_json::Value {
+        let status = crds::NetBoxIPAddressStatus {
+            netbox_id: None,
+            netbox_url: None,
+            address,
+            state: ResourceState::Created,
+            error: None,
+            last_reconciled: None,
+        };
+        serde_json::json!({ "status": status })
+    }
+
     /// Create IPPool status patch with PascalCase state values
     pub(crate) fn create_ip_pool_status_patch(
         netbox_id: u64,

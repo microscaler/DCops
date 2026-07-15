@@ -452,6 +452,12 @@ docker_build(
         'ui/dist',
         'ui/.git',
     ],
+    # Fast path: sync src → /app, then run `yarn build` in the container.
+    # This avoids a full image rebuild for every source change.
+    live_update=[
+        sync('./ui', '/app/ui'),
+        run('cd /app && yarn build', trigger=['./ui']),
+    ],
 )
 
 # Documentation site service (ClusterIP with port forward)

@@ -6,8 +6,9 @@ WORKDIR /app
 # Copy package files
 COPY ui/package.json ui/yarn.lock* ./
 
-# Install dependencies
-RUN corepack enable && yarn install --frozen-lockfile
+# Install dependencies (corepack is not bundled in node:25-alpine;
+# yarn is available directly)
+RUN yarn install --frozen-lockfile
 
 # Copy source files
 COPY ui/ .

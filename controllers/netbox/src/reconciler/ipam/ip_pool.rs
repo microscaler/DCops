@@ -5,15 +5,13 @@
 
 use super::super::Reconciler;
 use crate::error::ControllerError;
-use crate::kube_api_trait::KubeApiTrait;
 use crate::reconcile_helpers::{
     extract_name_and_namespace, resolve_optional_dependency_id,
     resolve_required_dependency_id, validate_reference_kind,
 };
-use crds::{IPPool, IPPoolState, IPPoolStatus};
+use crds::{IPPool, IPPoolState};
 use ipnet::IpNet;
-use netbox_client::{NetBoxClientTrait, PrefixId};
-use std::str::FromStr;
+use netbox_client::NetBoxClientTrait;
 use tracing::{debug, error, info, warn};
 
 impl Reconciler {
@@ -55,10 +53,11 @@ impl Reconciler {
     async fn resolve_parent_tenant(
         &self,
         prefix_ref: &crds::NetBoxResourceReference,
-        pool_name: &str,
+        _pool_name: &str,
         pool_namespace: &str,
     ) -> Result<crds::NetBoxResourceReference, ControllerError> {
-        let tenant_ref = prefix_ref.namespace.as_deref().unwrap_or(pool_namespace);
+        let _tenant_ref =
+            prefix_ref.namespace.as_deref().unwrap_or(pool_namespace);
         let parent_crd = self
             .netbox_prefix_api
             .get(&prefix_ref.name)
@@ -79,36 +78,38 @@ impl Reconciler {
     fn compute_child_prefix_cidr(
         parent_prefix: &IpNet,
         child_prefix_len: u8,
-        strategy: &crds::AllocationStrategy,
+        _strategy: &crds::AllocationStrategy,
     ) -> Result<IpNet, ControllerError> {
-        match strategy {
-            crds::AllocationStrategy::Sequential => {
-                // Sequential: just use the child prefix (first child in range)
-                let child = parent_prefix
-                    .supernet()
-                    .ok_or_else(|| {
-                        ControllerError::InvalidIPFormat(format!(
-                            "Cannot compute child prefix /{} from {:?}",
-                            child_prefix_len, parent_prefix
-                        ))
-                    })?;
-                Ok(child)
-            }
-            crds::AllocationStrategy::Random => {
-                // Random: for now, also use the first child prefix.
-                // A full random strategy would require iterating sub-prefixes
-                // and tracking which ones are allocated.
-                let child = parent_prefix
-                    .supernet()
-                    .ok_or_else(|| {
-                        ControllerError::InvalidIPFormat(format!(
-                            "Cannot compute child prefix /{} from {:?}",
-                            child_prefix_len, parent_prefix
-                        ))
-                    })?;
-                Ok(child)
-            }
+        if child_prefix_len <= parent_prefix.prefix_len() {
+            return Err(ControllerError::InvalidIPFormat(format!(
+                "Child prefix length {} must be greater than parent prefix length {}",
+                child_prefix_len,
+                parent_prefix.prefix_len()
+            )));
         }
+        // subnets() returns an iterator over all child prefixes of the given length.
+        // .next() gives the first one (0x0.0.0.0 subnet at that CIDR).
+        let mut subnets = parent_prefix
+            .subnets(child_prefix_len)
+            .map_err(|e| {
+                ControllerError::InvalidIPFormat(format!(
+                    "Cannot compute child prefix /{} from {:?}: {}",
+                    child_prefix_len, parent_prefix, e
+                ))
+            })?;
+        let child = subnets
+            .next()
+            .ok_or_else(|| {
+                ControllerError::InvalidIPFormat(format!(
+                    "No child prefix /{} possible from {:?}",
+                    child_prefix_len, parent_prefix
+                ))
+            })?;
+        // Ignore remaining subnets — we only use the first one.
+        // Sequential and Random both return the first; Random would
+        // need tracking of allocated subnets for true randomization.
+        let _ = _strategy;
+        Ok(child)
     }
 
     /// Find the best child prefix length for the pool.
@@ -145,7 +146,10 @@ impl Reconciler {
             .patch_status(name, &pp, &kube::api::Patch::Merge(status_patch))
             .await
             .map_err(ControllerError::Kube)?;
-        debug!("Updated IPPool {}/{} status: NetBox ID {}", namespace, name, netbox_id);
+        debug!(
+            "Updated IPPool {}/{} status: NetBox ID {}",
+            namespace, name, netbox_id
+        );
         Ok(())
     }
 
@@ -207,7 +211,7 @@ impl Reconciler {
 
         // 4. Get the parent prefix from NetBox to determine child CIDR
         let parent_prefix = match netbox_client
-            .get_prefix(PrefixId(parent_netbox_id))
+            .get_prefix(netbox_client::PrefixId(parent_netbox_id))
             .await
         {
             Ok(prefix) => {
@@ -223,7 +227,11 @@ impl Reconciler {
                     parent_netbox_id, e
                 );
                 return self
-                    .set_failed_status(name, namespace, format!("Parent prefix not found in NetBox: {}", e))
+                    .set_failed_status(
+                        name,
+                        namespace,
+                        format!("Parent prefix not found in NetBox: {}", e),
+                    )
                     .await;
             }
         };
@@ -243,9 +251,7 @@ impl Reconciler {
         );
 
         // 6. Resolve optional role reference
-        let role_id = self
-            .resolve_role_id(ip_pool_crd.spec.role.as_ref(), name)
-            .await;
+        let role_id = self.resolve_role_id(ip_pool_crd.spec.role.as_ref(), name).await;
         if let Some(rid) = role_id {
             info!("Resolved role ID for child prefix: {}", rid);
         }

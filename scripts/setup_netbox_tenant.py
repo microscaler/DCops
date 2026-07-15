@@ -19,6 +19,7 @@ import time
 import requests
 import json
 import secrets
+from typing import Optional
 
 def log_info(message):
     print(f"ℹ️  {message}")
@@ -31,6 +32,76 @@ def log_success(message):
 
 def log_warning(message):
     print(f"⚠️  {message}")
+
+def get_token_key_from_db(postgres_pod: str, postgres_ns: str,
+                          username: str = 'admin',
+                          description: str = '',
+                          dbname: str = 'netbox',
+                          user: str = 'netbox',
+                          password: str = 'netbox') -> Optional[str]:
+    """Retrieve a token key by querying PostgreSQL directly.
+
+    NetBox doesn't return the full token key via the API (security feature).
+    This function queries the database to retrieve it.
+    """
+    # Find PostgreSQL pod if not provided
+    if not postgres_pod:
+        postgres_pod, postgres_ns = find_postgres_pod()
+
+    if description:
+        query = f"""
+            SELECT ut.key
+            FROM users_token ut
+            JOIN users_user u ON ut.user_id = u.id
+            WHERE u.username = '{username}'
+              AND ut.description = '{description}'
+            ORDER BY ut.created DESC
+            LIMIT 1
+        """
+    else:
+        query = f"""
+            SELECT ut.key
+            FROM users_token ut
+            JOIN users_user u ON ut.user_id = u.id
+            WHERE u.username = '{username}'
+            ORDER BY ut.created DESC
+            LIMIT 1
+        """
+
+    cmd = [
+        'kubectl', 'exec', '-n', postgres_ns, postgres_pod,
+        '--', 'env', f'PGPASSWORD={password}', 'psql',
+        '-U', user, '-d', dbname, '-t', '-A', '-c', query
+    ]
+
+    try:
+        result = subprocess.run(cmd, check=True, capture_output=True, text=True)
+        key = result.stdout.strip()
+        if key:
+            log_info(f"Retrieved token key from database (first 20 chars: {key[:20]}...)")
+            return key
+    except subprocess.CalledProcessError as e:
+        log_error(f"Failed to query database: {e.stderr}")
+    except Exception as e:
+        log_error(f"Database query failed: {e}")
+
+    return None
+
+def find_postgres_pod() -> tuple:
+    """Find the shared-cluster PostgreSQL pod. Returns (pod_name, namespace)."""
+    for ns, label in [('data', 'app=postgres-primary'),
+                      ('netbox', 'app=postgres')]:
+        try:
+            result = subprocess.run(
+                ['kubectl', 'get', 'pod', '-n', ns, '-l', label,
+                 '-o', 'jsonpath={.items[0].metadata.name}'],
+                check=True, capture_output=True, text=True
+            )
+            if result.stdout.strip():
+                return (result.stdout.strip(), ns)
+        except subprocess.CalledProcessError:
+            pass
+    return (None, None)
 
 def wait_for_netbox(netbox_url, max_wait=300):
     """Wait for NetBox to be ready."""
@@ -182,11 +253,24 @@ def get_or_create_token(netbox_url, session, user_id, token_key, description):
             if 'key' in token:
                 return token['key']
             else:
-                log_info("Token exists but key not returned (security feature). Using a different description to create a new token...")
-                # Use a timestamped description to create a new token
+                # NetBox API may not return the key for existing tokens (security).
+                # Try to get it from the database first before creating a new one.
+                log_info("Token exists but key not returned by API. Checking database...")
+                postgres_pod, postgres_ns = find_postgres_pod()
+                if postgres_pod:
+                    db_key = get_token_key_from_db(
+                        postgres_pod, postgres_ns,
+                        username='admin',
+                        description=description
+                    )
+                    if db_key:
+                        log_success(f"Retrieved existing token key from database: '{db_key[:20]}...'")
+                        return db_key
+
+                # DB fallback didn't work (maybe description changed). Create a new token.
+                log_info("Could not retrieve key from database. Creating a new token...")
                 description = f"{description} ({int(time.time())})"
                 log_info(f"Creating new token with description: {description}")
-                # Continue to create a new token below with the new description
     
     # Create new token
     # If no key provided or key is None, let NetBox auto-generate it
@@ -248,6 +332,19 @@ def get_or_create_token(netbox_url, session, user_id, token_key, description):
                     if 'key' in fetch_data:
                         log_success(f"Retrieved API token key '{fetch_data['key'][:20]}...'")
                         return fetch_data['key']
+                
+                # Fallback: query the database directly for the token key
+                log_info("NetBox API did not return the token key. Falling back to database query...")
+                postgres_pod, postgres_ns = find_postgres_pod()
+                if postgres_pod:
+                    db_key = get_token_key_from_db(
+                        postgres_pod, postgres_ns,
+                        username='admin',
+                        description=description
+                    )
+                    if db_key:
+                        log_success(f"Retrieved API token key from database: '{db_key[:20]}...'")
+                        return db_key
                 
                 # If we still don't have the key, log error
                 log_error("Token created but key not available (NetBox security feature - keys are only shown once)")

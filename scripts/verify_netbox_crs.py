@@ -148,30 +148,35 @@ def run_kubectl(cmd: List[str], json_output: bool = True) -> Optional[Dict]:
         log_error(f"Failed to parse JSON: {e}")
         return None
 
-def get_postgres_pod(namespace: str = 'netbox') -> Optional[str]:
-    """Get the name of the PostgreSQL pod."""
-    result = run_kubectl(
-        ['get', 'pod', '-n', namespace, '-l', 'app=postgres', '-o', 'jsonpath={.items[0].metadata.name}'],
-        json_output=False
-    )
-    return result
+def get_postgres_pod(namespace: str = 'netbox') -> Optional[tuple]:
+    """Find the shared-cluster PostgreSQL pod and return (pod_name, namespace).
 
-def run_psql_query(postgres_pod: str, namespace: str, query: str, 
+    Tries the shared cluster PostgreSQL in the `data` namespace first
+    (app=postgres-primary), then falls back to a standalone pod in the
+    given namespace (app=postgres).
+    """
+    for ns, label in [('data', 'app=postgres-primary'),
+                      (namespace, 'app=postgres')]:
+        result = run_kubectl(
+            ['get', 'pod', '-n', ns, '-l', label, '-o', 'jsonpath={.items[0].metadata.name}'],
+            json_output=False
+        )
+        if result:
+            return (result, ns)
+    return None
+
+def run_psql_query(pod: str, namespace: str, query: str, 
                    dbname: str = 'netbox', user: str = 'netbox', password: str = 'netbox') -> Optional[str]:
-    """Run a PostgreSQL query using kubectl exec."""
-    import os
-    env = os.environ.copy()
-    env['PGPASSWORD'] = password
-    
+    """Run a PostgreSQL query using kubectl exec with env var for PGPASSWORD."""
     cmd = [
-        'kubectl', 'exec', '-n', namespace, postgres_pod,
-        '--', 'psql', '-U', user, '-d', dbname, '-t', '-A', '-c', query
+        'kubectl', 'exec', '-n', namespace, pod,
+        '--', 'env', 'PGPASSWORD=' + password, 'psql',
+        '-U', user, '-d', dbname, '-t', '-A', '-c', query
     ]
     
     try:
         result = subprocess.run(
             cmd,
-            env=env,
             check=True,
             capture_output=True,
             text=True
@@ -232,13 +237,16 @@ def verify_cr_status(cr: Dict, crd_type: str) -> Tuple[bool, Optional[int], Opti
     return True, netbox_id, identifier, state
 
 def verify_in_netbox_db(crd_type: str, netbox_id: int, identifier: str, 
-                        postgres_pod: str, namespace: str = 'netbox') -> bool:
+                        postgres_info: tuple, 
+                        netbox_db_namespace: str = 'data',
+                        postgres_password: str = 'netbox') -> bool:
     """Verify resource exists in NetBox database."""
     db_map = CRD_TO_DB_MAP.get(crd_type)
     if not db_map:
         log_warning(f"No database mapping for {crd_type}, skipping DB verification")
         return True  # Don't fail if we don't have mapping
     
+    postgres_pod, postgres_ns = postgres_info
     table = db_map['table']
     id_field = db_map['id_field']
     name_field = db_map['name_field']
@@ -249,7 +257,7 @@ def verify_in_netbox_db(crd_type: str, netbox_id: int, identifier: str,
     identifier_escaped = identifier_str.replace("'", "''")
     query = f"SELECT {id_field}, {name_field} FROM {table} WHERE {id_field} = {netbox_id} AND {name_field} = '{identifier_escaped}';"
     
-    result = run_psql_query(postgres_pod, namespace, query)
+    result = run_psql_query(postgres_pod, postgres_ns, query, password=postgres_password)
     if not result or not result.strip():
         log_error(f"Resource not found in NetBox database (ID: {netbox_id}, {name_field}: {identifier})")
         return False
@@ -259,7 +267,7 @@ def verify_in_netbox_db(crd_type: str, netbox_id: int, identifier: str,
 
 def verify_crd_type(crd_type: str, namespace: str = 'default', 
                     specific_name: Optional[str] = None,
-                    postgres_pod: Optional[str] = None,
+                    postgres_info: Optional[tuple] = None,
                     netbox_namespace: str = 'netbox') -> Tuple[bool, List[str], List[str], List[str]]:
     """Verify all CRs of a specific CRD type.
     
@@ -298,11 +306,14 @@ def verify_crd_type(crd_type: str, namespace: str = 'default',
         return True, failures, warnings, missing
     
     # Get PostgreSQL pod if needed
-    if not postgres_pod:
-        postgres_pod = get_postgres_pod(netbox_namespace)
-        if not postgres_pod:
+    if not postgres_info:
+        postgres_info = get_postgres_pod(netbox_namespace)
+        if not postgres_info:
             failures.append("Could not find PostgreSQL pod")
             return False, failures, warnings, missing
+    
+    postgres_pod, postgres_ns = postgres_info
+    postgres_password = 'netbox'
     
     # Verify each CR
     for cr in crs_list:
@@ -333,7 +344,7 @@ def verify_crd_type(crd_type: str, namespace: str = 'default',
         
         # Verify in database
         if identifier:
-            if not verify_in_netbox_db(crd_type, netbox_id, identifier, postgres_pod, netbox_namespace):
+            if not verify_in_netbox_db(crd_type, netbox_id, identifier, postgres_info, postgres_ns, postgres_password):
                 failures.append(f"{crd_type}/{cr_full_name}: not found in NetBox database (ID: {netbox_id})")
         else:
             warnings.append(f"{crd_type}/{cr_full_name}: skipping DB verification (no identifier)")
@@ -351,12 +362,13 @@ def verify_all_crds(namespace: str = 'default', netbox_namespace: str = 'netbox'
     print("="*60)
     
     # Get PostgreSQL pod once
-    postgres_pod = get_postgres_pod(netbox_namespace)
-    if not postgres_pod:
+    postgres_info = get_postgres_pod(netbox_namespace)
+    if not postgres_info:
         log_error("Could not find PostgreSQL pod")
         return False, ["Could not find PostgreSQL pod"], [], []
     
-    log_info(f"Using PostgreSQL pod: {postgres_pod}")
+    postgres_pod, postgres_ns = postgres_info
+    log_info(f"Using PostgreSQL pod: {postgres_pod} (namespace: {postgres_ns})")
     
     all_failures = []
     all_warnings = []
@@ -364,7 +376,7 @@ def verify_all_crds(namespace: str = 'default', netbox_namespace: str = 'netbox'
     
     for crd_type in sorted(CRD_TO_DB_MAP.keys()):
         success, failures, warnings, missing = verify_crd_type(
-            crd_type, namespace, postgres_pod=postgres_pod, netbox_namespace=netbox_namespace
+            crd_type, namespace, postgres_info=postgres_info, netbox_namespace=netbox_namespace
         )
         all_failures.extend(failures)
         all_warnings.extend(warnings)

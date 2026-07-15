@@ -30,21 +30,18 @@ def log_success(message):
     print(f"✅ {message}")
 
 def run_psql_query(postgres_pod, namespace, query, dbname='netbox', user='netbox', password='netbox'):
-    """Run a PostgreSQL query using kubectl exec."""
-    # Use PGPASSWORD environment variable for password
-    env = os.environ.copy()
-    env['PGPASSWORD'] = password
-    
-    # Run psql command via kubectl exec
+    """Run a PostgreSQL query using kubectl exec with env var for PGPASSWORD."""
+    # kubectl exec doesn't inherit the parent process's env vars, so we
+    # inject PGPASSWORD via the container's `env` command.
     cmd = [
         'kubectl', 'exec', '-n', namespace, postgres_pod,
-        '--', 'psql', '-U', user, '-d', dbname, '-t', '-A', '-c', query
+        '--', 'env', f'PGPASSWORD={password}', 'psql',
+        '-U', user, '-d', dbname, '-t', '-A', '-c', query
     ]
     
     try:
         result = subprocess.run(
             cmd,
-            env=env,
             check=True,
             capture_output=True,
             text=True
@@ -55,18 +52,26 @@ def run_psql_query(postgres_pod, namespace, query, dbname='netbox', user='netbox
         return None
 
 def get_postgres_pod(namespace='netbox'):
-    """Get the name of the PostgreSQL pod."""
-    try:
-        result = subprocess.run(
-            ['kubectl', 'get', 'pod', '-n', namespace, '-l', 'app=postgres', '-o', 'jsonpath={.items[0].metadata.name}'],
-            check=True,
-            capture_output=True,
-            text=True
-        )
-        return result.stdout.strip()
-    except subprocess.CalledProcessError as e:
-        log_error(f"Failed to get PostgreSQL pod: {e.stderr}")
-        return None
+    """Get the name of the PostgreSQL pod.
+
+    Tries the shared cluster PostgreSQL in the `data` namespace first
+    (app=postgres-primary), then falls back to a standalone pod in the
+    given namespace (app=postgres).
+    """
+    for ns, label in [('data', 'app=postgres-primary'),
+                      (namespace, 'app=postgres')]:
+        try:
+            result = subprocess.run(
+                ['kubectl', 'get', 'pod', '-n', ns, '-l', label, '-o', 'jsonpath={.items[0].metadata.name}'],
+                check=True,
+                capture_output=True,
+                text=True
+            )
+            if result.stdout.strip():
+                return (result.stdout.strip(), ns)
+        except subprocess.CalledProcessError:
+            pass
+    return None
 
 def get_token_from_db(postgres_pod, namespace, description=None, username='admin', dbname='netbox', user='netbox', password='netbox'):
     """Retrieve token from database by description or get most recent token for user.
@@ -161,17 +166,18 @@ def main():
         log_info(f"Looking for most recent token for user '{args.username}'")
     
     # Get PostgreSQL pod name
-    postgres_pod = get_postgres_pod(args.namespace)
-    if not postgres_pod:
-        log_error(f"Failed to find PostgreSQL pod in namespace {args.namespace}")
+    postgres_info = get_postgres_pod(args.namespace)
+    if not postgres_info:
+        log_error("Failed to find PostgreSQL pod")
         sys.exit(1)
+    postgres_pod, postgres_ns = postgres_info
     
-    log_info(f"Using PostgreSQL pod: {postgres_pod}")
+    log_info(f"Using PostgreSQL pod: {postgres_pod} (namespace: {postgres_ns})")
     
     # Try to get existing token by description first
     token = get_token_from_db(
         postgres_pod,
-        args.namespace,
+        postgres_ns,
         args.description,
         args.username,
         args.postgres_db,
@@ -184,7 +190,7 @@ def main():
         log_info(f"Token with description '{args.description}' not found, trying most recent token...")
         token = get_token_from_db(
             postgres_pod,
-            args.namespace,
+            postgres_ns,
             None,  # No description filter
             args.username,
             args.postgres_db,

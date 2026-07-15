@@ -74,6 +74,18 @@ def main():
     errors = []
     
     for yaml_file in yaml_files:
+        # Skip kustomization.yaml — it is a Kustomize manifest, not a
+        # plain Kubernetes resource.  The script already discovers every
+        # file the kustomization references, so nothing is lost.
+        if yaml_file.name == "kustomization.yaml":
+            try:
+                rel_path = yaml_file.relative_to(EXAMPLES_DIR)
+                file_display = str(rel_path)
+            except ValueError:
+                file_display = yaml_file.name
+            print(f"  Skipping {file_display} (Kustomize manifest)…", flush=True)
+            continue
+
         # Show relative path from examples directory for clarity
         try:
             rel_path = yaml_file.relative_to(EXAMPLES_DIR)

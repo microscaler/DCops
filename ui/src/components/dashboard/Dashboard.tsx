@@ -55,15 +55,10 @@ const Dashboard: Component = () => {
   const chartData = () => {
     const d = data();
     if (!d) return [];
-    return d.crds
-      .map((crd) => ({
-        category: crd.category,
-        count: (d.summary.byCategory[crd.category] ?? 0) + 1,
-      }))
-      .reduce<Record<string, number>>((acc, item) => {
-        acc[item.category] = (acc[item.category] ?? 0) + 1;
-        return acc;
-      }, {});
+    // summary.byCategory is already the correct aggregate counts
+    return Object.entries(d.summary.byCategory).map(
+      ([category, count]) => ({ category, count }),
+    );
   };
 
   // Get filtered CR instances

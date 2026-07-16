@@ -3,6 +3,7 @@ import Navigation from './components/layout/Navigation';
 import ContentArea from './components/layout/ContentArea';
 import TableOfContents from './components/layout/TableOfContents';
 import Breadcrumbs from './components/layout/Breadcrumbs';
+import Dashboard from './components/dashboard/Dashboard';
 
 type DocCategory = 'user' | 'contributor';
 
@@ -16,7 +17,7 @@ const App: Component = () => {
   onMount(() => {
     const handleHashChange = () => {
       const hash = window.location.hash;
-      
+
       if (hash === '' || hash === '#' || hash === '#/') {
         setCurrentCategory('user');
         setCurrentSection(null);
@@ -47,6 +48,7 @@ const App: Component = () => {
           setCurrentPage(null);
         }
       } else {
+        // Unknown routes default to user docs
         setCurrentCategory('user');
         setCurrentSection(null);
         setCurrentPage('index');
@@ -56,11 +58,14 @@ const App: Component = () => {
 
     handleHashChange();
     window.addEventListener('hashchange', handleHashChange);
-    
+
     return () => {
       window.removeEventListener('hashchange', handleHashChange);
     };
   });
+
+  // Render the dashboard when Admin tab is active
+  const isAdmin = () => currentSection() === 'admin' && currentPage() === 'dashboard';
 
   return (
     <div class="min-h-screen bg-[#faf9f7] flex flex-col">
@@ -108,65 +113,86 @@ const App: Component = () => {
               >
                 Contributor Docs
               </button>
+              <button
+                onClick={() => {
+                  setCurrentSection('admin');
+                  setCurrentPage('dashboard');
+                  window.location.hash = '#/admin/dashboard';
+                }}
+                class={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                  isAdmin()
+                    ? 'bg-[#4a5a4c] text-white shadow-sm'
+                    : 'bg-[#f1f0ed] text-[#4a5568] hover:bg-[#e5e3df]'
+                }`}
+              >
+                Admin
+              </button>
             </nav>
           </div>
           <div class="px-6 py-2 border-t border-[#e5e3df] bg-[#faf9f7]">
-            <Breadcrumbs
-              category={currentCategory()}
-              section={currentSection()}
-              page={currentPage()}
-              onNavigate={(category, section, page) => {
-                setCurrentCategory(category);
-                setCurrentSection(section);
-                setCurrentPage(page);
-                if (page === 'index' && !section) {
-                  window.location.hash = '#/';
-                } else {
-                  window.location.hash = `#/${category}/${section}${page ? `/${page}` : ''}`;
-                }
-              }}
-            />
+            <Show when={!isAdmin()}>
+              <Breadcrumbs
+                category={currentCategory()}
+                section={currentSection()}
+                page={currentPage()}
+                onNavigate={(category, section, page) => {
+                  setCurrentCategory(category);
+                  setCurrentSection(section);
+                  setCurrentPage(page);
+                  if (page === 'index' && !section) {
+                    window.location.hash = '#/';
+                  } else {
+                    window.location.hash = `#/${category}/${section}${page ? `/${page}` : ''}`;
+                  }
+                }}
+              />
+            </Show>
           </div>
         </div>
       </header>
 
-      <div class="flex-1 flex">
-        <Navigation
-          category={currentCategory()}
-          currentSection={currentSection()}
-          currentPage={currentPage()}
-          onNavigate={(category, section, page) => {
-            setCurrentCategory(category);
-            setCurrentSection(section);
-            setCurrentPage(page);
-            if (page === 'index' && !section) {
-              window.location.hash = '#/';
-            } else {
-              window.location.hash = `#/${category}/${section}${page ? `/${page}` : ''}`;
-            }
-          }}
-        />
-        <ContentArea
-          category={currentCategory()}
-          section={currentSection()}
-          page={currentPage()}
-          onContentChange={setContent}
-          onNavigate={(category, section, page) => {
-            setCurrentCategory(category);
-            setCurrentSection(section);
-            setCurrentPage(page);
-            if (page === 'index' && !section) {
-              window.location.hash = '#/';
-            } else {
-              window.location.hash = `#/${category}/${section}${page ? `/${page}` : ''}`;
-            }
-          }}
-        />
-        <TableOfContents content={content()} />
-      </div>
+      <Show when={isAdmin()}>
+        <Dashboard />
+      </Show>
+
+      <Show when={!isAdmin()}>
+        <div class="flex-1 flex">
+          <Navigation
+            category={currentCategory()}
+            currentSection={currentSection()}
+            currentPage={currentPage()}
+            onNavigate={(category, section, page) => {
+              setCurrentCategory(category);
+              setCurrentSection(section);
+              setCurrentPage(page);
+              if (page === 'index' && !section) {
+                window.location.hash = '#/';
+              } else {
+                window.location.hash = `#/${category}/${section}${page ? `/${page}` : ''}`;
+              }
+            }}
+          />
+          <ContentArea
+            category={currentCategory()}
+            section={currentSection()}
+            page={currentPage()}
+            onContentChange={setContent}
+            onNavigate={(category, section, page) => {
+              setCurrentCategory(category);
+              setCurrentSection(section);
+              setCurrentPage(page);
+              if (page === 'index' && !section) {
+                window.location.hash = '#/';
+              } else {
+                window.location.hash = `#/${category}/${section}${page ? `/${page}` : ''}`;
+              }
+            }}
+          />
+          <TableOfContents content={content()} />
+        </div>
+      </Show>
     </div>
   );
 };
 
 export default App;
-

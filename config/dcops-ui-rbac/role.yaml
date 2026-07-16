@@ -1,0 +1,26 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: dcops-ui-reader
+rules:
+  # Read-only access to all dcops CRDs
+  - apiGroups: ["dcops.microscaler.io"]
+    resources: ["*"]
+    verbs: ["get", "list"]
+  # List namespaces for the namespace filter
+  - apiGroups: [""]
+    resources: ["namespaces"]
+    verbs: ["list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: dcops-ui-reader
+subjects:
+  - kind: ServiceAccount
+    name: default
+    namespace: dcops-system
+roleRef:
+  kind: ClusterRole
+  name: dcops-ui-reader
+  apiGroup: rbac.authorization.k8s.io

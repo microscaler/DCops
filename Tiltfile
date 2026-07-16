@@ -460,6 +460,17 @@ docker_build(
     ],
 )
 
+# ====================
+# kubectl proxy for local dev
+# ====================
+# Provides a local HTTP proxy to the K8s API cluster (port 8001).
+# Used by the Dashboard SPA to fetch CR data in Tilt dev mode.
+local_resource(
+    'kubectl-proxy',
+    cmd='kubectl proxy --port=8001 --address=127.0.0.1 --accept-hosts="^localhost$|^127\\.0\\.0\\.1$"',
+    labels=['infrastructure'],
+)
+
 # Documentation site service (ClusterIP with port forward)
 k8s_yaml(kustomize('%s/config/dcops-ui' % DCops_DIR))
 
@@ -467,5 +478,6 @@ k8s_resource(
     'dcops-ui',
     port_forwards='8800:80',
     labels=['docs'],
+    resource_deps=['kubectl-proxy'],  # ensure proxy is running before UI loads
 )
 

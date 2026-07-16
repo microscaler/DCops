@@ -467,7 +467,7 @@ docker_build(
 # Used by the Dashboard SPA to fetch CR data in Tilt dev mode.
 local_resource(
     'kubectl-proxy',
-    cmd='kubectl proxy --port=8001 --address=127.0.0.1 --accept-hosts="^localhost$|^127\\.0\\.0\\.1$"',
+    cmd='kubectl proxy --port=8001 --address=0.0.0.0',
     labels=['infrastructure'],
 )
 

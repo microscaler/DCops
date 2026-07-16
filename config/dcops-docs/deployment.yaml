@@ -1,0 +1,31 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dcops-docs
+  namespace: dcops-system
+  labels:
+    app: dcops-docs
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: dcops-docs
+  template:
+    metadata:
+      labels:
+        app: dcops-docs
+    spec:
+      containers:
+      - name: dcops-docs
+        image: dcops-docs
+        imagePullPolicy: Never
+        ports:
+        - containerPort: 80
+          name: http
+        resources:
+          requests:
+            memory: "64Mi"
+            cpu: "50m"
+          limits:
+            memory: "128Mi"
+            cpu: "100m"

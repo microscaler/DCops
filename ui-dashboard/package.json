@@ -1,0 +1,19 @@
+{
+  "name": "dcops-dashboard",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "solid-js": "^1.9.0"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-solid": "^0.6.0",
+    "vite": "^7.0.0",
+    "typescript": "^5.7.0"
+  }
+}

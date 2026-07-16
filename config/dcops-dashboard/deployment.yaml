@@ -1,0 +1,31 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dcops-dashboard
+  namespace: dcops-system
+  labels:
+    app: dcops-dashboard
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: dcops-dashboard
+  template:
+    metadata:
+      labels:
+        app: dcops-dashboard
+    spec:
+      containers:
+      - name: dcops-dashboard
+        image: dcops-dashboard
+        imagePullPolicy: Never
+        ports:
+        - containerPort: 80
+          name: http
+        resources:
+          requests:
+            memory: "64Mi"
+            cpu: "50m"
+          limits:
+            memory: "128Mi"
+            cpu: "100m"

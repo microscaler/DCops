@@ -24,6 +24,7 @@ export interface CrdMeta {
   plural: string;
   kind: string;
   category: CrdCategory;
+  subgroup: string; // e.g. 'netbox.dcops.microscaler.io', 'ippool.dcops.microscaler.io', 'boot.dcops.microscaler.io'
 }
 
 // Categories for CRD grouping (mirrors the 6 logical groups in 01_dashboard_design.md)

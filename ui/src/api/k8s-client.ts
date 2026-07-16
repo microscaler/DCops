@@ -111,76 +111,94 @@ export class K8sClient {
   }
 
   // ---------------------------------------------------------------------------
-  // Discover all dcops CRD plurals + categories.
+  // Discover ALL dcops.* microgroups under dcops.microscaler.io.
   // ---------------------------------------------------------------------------
   async listCrdPlurals(): Promise<CrdMeta[]> {
-    // GET /apis → list API groups, then look for dcops.microscaler.io
+    // GET /apis → the key is the API group name, the value contains versions.
+    // dcops subgroups appear as keys like 'netbox.dcops.microscaler.io',
+    // not 'dcops.microscaler.io'.
     const apiGroups = await this.fetchJson<Record<string, unknown>>(
       this.apiUrl('/apis'),
     );
 
-    const dcopsGroup = apiGroups['dcops.microscaler.io'] as
-      | {
-          versions?: { name: string }[];
-        }
-      | undefined;
+    // Find all dcops.* subgroups and extract versions to determine the API version.
+    const subgroupNames = Object.keys(apiGroups)
+      .filter((key) => key.endsWith('.dcops.microscaler.io'));
 
-    if (!dcopsGroup) {
+    if (subgroupNames.length === 0) {
       throw {
         kind: 'Status',
         status: 'Failure',
         code: 404,
         message:
-          'API group dcops.microscaler.io not found — are CRDs applied?',
+          'No dcops API groups found — are CRDs applied?',
       } as K8sError;
     }
 
+    // Get the version from the first subgroup entry.
+    const firstGroup = apiGroups[subgroupNames[0]] as
+      | {
+          versions?: { name: string }[];
+        }
+      | undefined;
+
     const version =
-      dcopsGroup.versions?.[0]?.name ?? 'v1alpha1';
+      firstGroup?.versions?.[0]?.name ?? 'v1alpha1';
 
-    // GET /apis/dcops.microscaler.io/v1alpha1 → get available resources (plural + kind)
-    const resourceList = await this.fetchJson<{
-      kind: string;
-      resources: { plural: string; name: string }[];
-    }>(
-      this.apiUrl(`/apis/dcops.microscaler.io/${version}`),
-    );
+    const allResources: CrdMeta[] = [];
 
-    return resourceList.resources.map((r) => ({
-      plural: r.plural,
-      kind: pluralToKind(r.plural),
-      category:
-        CRD_CATEGORY_MAP[r.plural] ??
-        ('dcim' as CrdCategory), // fallback — unlikely to happen
-    }));
+    // For each subgroup, fetch its resources.
+    for (const subgroup of subgroupNames) {
+      const resourceList = await this.fetchJson<{
+        kind: string;
+        resources: { plural: string; name: string }[];
+      }>(
+        this.apiUrl(`/apis/${subgroup}/${version}`),
+      );
+
+      for (const r of resourceList.resources) {
+        allResources.push({
+          plural: r.plural,
+          kind: pluralToKind(r.plural),
+          category:
+            CRD_CATEGORY_MAP[r.plural] ??
+            ('dcim' as CrdCategory), // fallback — unlikely to happen
+          subgroup,
+        });
+      }
+    }
+
+    return allResources;
   }
 
   // ---------------------------------------------------------------------------
-  // List CRs of one type in one namespace.
+  // List CRs of one type in one namespace (dynamic subgroup support).
   // ---------------------------------------------------------------------------
   async listCrds(
     plural: string,
     namespace: string,
+    subgroup: string,
   ): Promise<K8sResource[]> {
     const data = await this.fetchJson<{ items: K8sResource[] }>(
       this.apiUrl(
-        `/apis/dcops.microscaler.io/v1alpha1/namespaces/${encodeURIComponent(namespace)}/${encodeURIComponent(plural)}`,
+        `/apis/${subgroup}/v1alpha1/namespaces/${encodeURIComponent(namespace)}/${encodeURIComponent(plural)}`,
       ),
     );
     return data.items;
   }
 
   // ---------------------------------------------------------------------------
-  // Get a single CR by name.
+  // Get a single CR by name (dynamic subgroup support).
   // ---------------------------------------------------------------------------
   async getCrds(
     plural: string,
     namespace: string,
     name: string,
+    subgroup: string,
   ): Promise<K8sResource> {
     const data = await this.fetchJson<K8sResource>(
       this.apiUrl(
-        `/apis/dcops.microscaler.io/v1alpha1/namespaces/${encodeURIComponent(namespace)}/${encodeURIComponent(plural)}/${encodeURIComponent(name)}`,
+        `/apis/${subgroup}/v1alpha1/namespaces/${encodeURIComponent(namespace)}/${encodeURIComponent(plural)}/${encodeURIComponent(name)}`,
       ),
     );
     return data;
@@ -210,7 +228,7 @@ export class K8sClient {
     for (const ns of namespaces) {
       for (const crd of crds) {
         try {
-          const items = await this.listCrds(crd.plural, ns);
+          const items = await this.listCrds(crd.plural, ns, crd.subgroup);
           const existing = instances.get(crd.plural) ?? [];
           instances.set(crd.plural, [...existing, ...items]);
         } catch (err) {

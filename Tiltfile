@@ -155,17 +155,18 @@ local_resource(
 # ====================
 # CRD Generation
 # ====================
-# Generate CRDs when CRD code changes. This is a local build step — it doesn't
-# need NetBox to be running (unlike apply-netbox-examples which does).
+# Generate CRDs from Rust code to config/crd/all-crds.yaml.
+# This is a local build step only — it does NOT apply CRDs to the cluster.
+# CRDs in the cluster are managed by Flux (production) or applied manually.
 local_resource(
     'generate-crds',
-    cmd='python3 scripts/generate_crds.py',
+    cmd='python3 scripts/generate_crds_local.py',
     deps=[
         'crates/crds/src',
         'crates/crds/Cargo.toml',
         'Cargo.toml',
         'Cargo.lock',
-        'scripts/generate_crds.py',
+        'scripts/generate_crds_local.py',
     ],
     labels=['infrastructure'],
     allow_parallel=True,

@@ -351,7 +351,6 @@ echo "Published $DEV_REF for Flux image discovery"
         PXE_STAGING_DIR,
         PXE_IMAGE_NAME,
         PXE_STAGING_DIR,
-        PXE_IMAGE_NAME,
         PXE_FULL_IMAGE_NAME,
         PXE_IMAGE_NAME,
     ),

@@ -13,7 +13,7 @@ default:
 # ============================================================================
 
 # Shared k3s cluster checkout (override if layout differs)
-export SHARED_K8S_CLUSTER_ROOT := env_var_or_default('SHARED_K8S_CLUSTER_ROOT', '../shared-k8s-cluster')
+export SHARED_K8S_CLUSTER_ROOT := env_var_or_default('SHARED_K8S_CLUSTER_ROOT', '../shared-gitops-k8s-cluster')
 export KUBECONFIG := env_var_or_default('KUBECONFIG', SHARED_K8S_CLUSTER_ROOT + '/kubeconfig/shared-k8s.yaml')
 export TILT_PORT := "10354"
 export REGISTRY := "10.177.76.220:5000"

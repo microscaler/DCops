@@ -1,5 +1,11 @@
 # NetBox IP Range and IP Address Relationship Analysis
 
+> **Status: RESOLVED (Implemented).** The populated-range handling described in
+> this analysis has been implemented per "Option 1" below. See
+> [Resolution (Implemented)](#resolution-implemented) for the actual code change,
+> and [`AETHER_DCOPS_IPAM_CONTRACT.md`](./AETHER_DCOPS_IPAM_CONTRACT.md) for how
+> Aether's MAC-keyed DHCP claims consume this behaviour end to end.
+
 ## Critical Finding: Populated IP Ranges
 
 ### NetBox Constraint
@@ -138,4 +144,53 @@ For IPs in populated ranges:
 - NetBox IP Range Documentation: `../netbox/docs/models/ipam/iprange.md`
 - NetBox IP Address Documentation: `../netbox/docs/models/ipam/ipaddress.md`
 - Web Search Results: NetBox readthedocs.io
+
+---
+
+## Resolution (Implemented)
+
+"Option 1" is now implemented in
+`controllers/netbox/src/reconciler/ipam/ip_address.rs`.
+
+### What changed
+
+- **Detect populated ranges.** When `reconcile_netbox_ip_address` resolves the
+  `ipRange`, it now reads the range's `mark_populated` flag (captured alongside
+  the existing within-range validation, so no extra NetBox round-trip).
+- **Skip NetBox creation for populated ranges.** If the range is populated, the
+  reconciler does **not** call `create_ip_address`. Instead it records the
+  address in the CR status as terminally `Created` with **no NetBox id** via a new
+  helper, `create_populated_range_ip_status_patch` (in `reconciler/mod.rs`), and
+  emits an `ExternallyManaged` Kubernetes event (new reason in `events.rs`).
+- **Short-circuit before the drift check.** The populated-range branch returns
+  **before** `validate_status_and_drift`. This is essential: the drift machinery
+  treats a `Created`/`Failed` status with `netbox_id = 0` (or `None`) as
+  "recreate," so without the early return the reconciler would loop
+  create → 400 → `Failed(0)` → recreate forever. The early return also makes the
+  path **idempotent** and lets it **self-heal** a CR already stuck in that loop.
+
+### Why the naive form loops
+
+The drift check (`reconcile_helpers.rs`) returns `Recreate` for `Created` +
+`netbox_id: None` as well as `Some(0)`. So the documentation's original
+"`Created`, `netboxId: None`" shape would *also* loop if it flowed through the
+normal drift path. The fix therefore short-circuits **before** that check rather
+than relying on the status shape alone.
+
+### Behaviour
+
+| Range | Reconciler action | NetBox object | CR status |
+| :--- | :--- | :--- | :--- |
+| Populated (`markPopulated: true`) | Skip create; track in status | **None** | `Created`, `netboxId: null`, `address` recorded |
+| Not populated | Create as normal | `IPAddress` | `Created`, `netboxId: <id>` |
+
+For populated ranges the actual IP is served by the DHCP layer (Kea), keyed on the
+reservation's MAC — see [`AETHER_DCOPS_IPAM_CONTRACT.md`](./AETHER_DCOPS_IPAM_CONTRACT.md).
+
+### Tests
+
+`test_reconcile_ip_address_in_populated_range_is_tracked_only`
+(`controllers/netbox/src/reconciler/ipam/ip_address_test.rs`): asserts the address
+is tracked (`Created`, `netboxId: None`, address set), that **no** NetBox IP is
+created, and that a second reconcile stays stable (no recreate loop).
 

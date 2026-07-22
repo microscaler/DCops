@@ -67,17 +67,35 @@ function pluralToKind(plural: string): string {
 // ---------------------------------------------------------------------------
 // K8sClient
 // ---------------------------------------------------------------------------
-export class K8sClient {
-  private proxyUrl: string;
 
-  constructor(proxyUrl = 'http://localhost:8001') {
-    this.proxyUrl = proxyUrl;
+// Auto-detect runtime: in Tilt dev mode the KUBE_PROXY env var is set by the
+// Tiltfile's environment() call; otherwise we try the in-cluster cert.
+function detectApiBaseUrl(): string {
+  // In-cluster: use the Kubernetes discovery URL with in-cluster auth.
+  if (typeof window !== 'undefined') {
+    // Running in browser: if we're in-cluster, the in-cluster cert is
+    // mounted at /var/run/secrets/kubernetes.io/serviceaccount.
+    // We can't check that here, so we default to the in-cluster URL and
+    // let the browser handle auth via the mounted SA token.
+    return 'https://kubernetes.default.svc:443';
+  }
+  // Server-side default — shouldn't reach here.
+  return '';
+}
+
+export class K8sClient {
+  private apiUrlBase: string;
+  private isDev: boolean;
+
+  constructor(proxyUrl?: string) {
+    this.isDev = !!proxyUrl;
+    this.apiUrlBase = proxyUrl ?? detectApiBaseUrl();
   }
 
   // Build the base URL for the API group.
   private apiUrl(path: string): string {
-    if (this.proxyUrl) {
-      return `${this.proxyUrl}${path}`;
+    if (this.isDev) {
+      return `${this.apiUrlBase}${path}`;
     }
     // In-cluster: use the Kubernetes in-cluster discovery URL.
     return `https://kubernetes.default.svc:443${path}`;

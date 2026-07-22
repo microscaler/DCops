@@ -102,3 +102,21 @@ cargo run --bin dhcp-controller
 
 See [KEA_COMMANDS.md](./KEA_COMMANDS.md) for complete command reference.
 
+## MAC-keyed reservations & populated ranges (Aether integration)
+
+The DHCP controller is the DCops half of the Aether ↔ DCops IPAM contract, where
+**Aether owns the MAC and DCops/Kea own the IP**.
+
+- A `NetBoxIPRange` with `markPopulated: true` is a DHCP pool: the NetBox
+  controller does **not** create individual `IPAddress` objects inside it (see
+  [`../../docs/NETBOX_IP_RANGE_ANALYSIS.md`](../../docs/NETBOX_IP_RANGE_ANALYSIS.md)).
+  The DHCP controller turns the range into a **Kea subnet/pool**.
+- A `NetBoxIPAddress` with `status: dhcp` and a `macAddress` (and no `address` —
+  the IP is DCops's to assign) becomes a **Kea host reservation keyed on that
+  MAC**. When the guest boots with that MAC, Kea hands back a **stable** lease —
+  the same address every time.
+
+Because Aether re-uses a workload's MAC across a recovery, the recovered VM hits
+the same reservation and gets the same IP back. Full contract:
+[`../../docs/AETHER_DCOPS_IPAM_CONTRACT.md`](../../docs/AETHER_DCOPS_IPAM_CONTRACT.md).
+

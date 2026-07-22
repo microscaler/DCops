@@ -3,15 +3,27 @@ FROM node:25-alpine AS builder
 
 WORKDIR /app
 
-COPY ui-docs/package.json ui-docs/yarn.lock* ./
-RUN yarn install --frozen-lockfile
+# Copy package files (no lockfile needed — yarn will generate one)
+COPY ui-docs/package.json ./
 
+# Install dependencies (no --frozen-lockfile since we don't ship a lockfile)
+RUN yarn install
+
+# Copy source files
 COPY ui-docs/ .
+
+# Build the site
 RUN yarn build
 
+# Production stage - serve static files with nginx
 FROM nginx:alpine
+
+# Copy built files from builder
 COPY --from=builder /app/dist /usr/share/nginx/html
+
+# Copy nginx configuration for SPA routing
 COPY dockerfiles/nginx.dcops-docs.conf /etc/nginx/conf.d/default.conf
 
 EXPOSE 80
+
 CMD ["nginx", "-g", "daemon off;"]

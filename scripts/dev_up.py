@@ -4,7 +4,7 @@ Development environment startup script.
 
 Deploys DCops to the shared-k8s (k3s) cluster via Tilt.
 Does not create or destroy any cluster — the shared-k8s cluster is managed by the
-sibling repo microscaler/shared-k8s-cluster.
+sibling repo microscaler/shared-gitops-k8s-cluster.
 """
 
 import subprocess

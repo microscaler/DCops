@@ -41,6 +41,12 @@ DCops is a set of Kubernetes controllers that manage your physical infrastructur
 - Prevent infinite boot loops and accidental reinstallations
 - Safe cluster rebuilds without manual intervention
 
+**📡 DHCP-managed leases (Kea)**
+- Translate NetBox IP ranges and addresses into ISC Kea DHCP config
+- MAC-keyed host reservations for stable leases — powers the Aether hypervisor's
+  "recover a VM, keep its IP" story ([contract](docs/AETHER_DCOPS_IPAM_CONTRACT.md))
+- Populated ranges are managed by Kea, not tracked as individual NetBox IPs
+
 **📊 Single Source of Truth**
 - Git is your source of truth
 - NetBox is your authoritative database
@@ -154,8 +160,10 @@ The easiest way to get started with DCops development is using our pre-configure
 
 **What's Included:**
 - ✅ Full Rust toolchain (stable, rustfmt, clippy, musl target)
-- ✅ Docker-in-Docker for building images and running Kind clusters
-- ✅ Kubernetes tools (kubectl, kind, Tilt)
+- ✅ Docker-in-Docker for building images
+- ✅ Kubernetes tools (kubectl, Tilt) — DCops deploys to a shared **k3s** cluster
+  (`shared-k8s`), driven by the [`Tiltfile`](./Tiltfile); the older Kind setup has
+  been removed
 - ✅ Python 3 for project scripts
 - ✅ Development tools (Just, cargo-nextest, cargo-llvm-cov, cargo-audit)
 
@@ -165,12 +173,14 @@ The easiest way to get started with DCops development is using our pre-configure
 If you prefer a local development environment, ensure you have:
 - Rust toolchain (see `rust-toolchain.toml`)
 - Docker Desktop
-- kubectl, kind, and Tilt installed
+- kubectl and Tilt installed (NetBox runs against the shared cluster's Postgres/Redis in the `data` namespace)
 - Python 3 for running project scripts
 
 ## Learn More
 
 - **Contributing**: [CONTRIBUTING.md](CONTRIBUTING.md)
+- **Aether hypervisor integration** (MAC-keyed DHCP reservations, populated ranges): [docs/AETHER_DCOPS_IPAM_CONTRACT.md](docs/AETHER_DCOPS_IPAM_CONTRACT.md)
+- **Populated IP range handling** (NetBox constraint + implemented fix): [docs/NETBOX_IP_RANGE_ANALYSIS.md](docs/NETBOX_IP_RANGE_ANALYSIS.md)
 
 ---
 

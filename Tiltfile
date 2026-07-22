@@ -324,15 +324,33 @@ PXE_BINARY_PATH = 'target/x86_64-unknown-linux-musl/release/pxe-server'
 PXE_IMAGE_NAME = 'pxe-server'
 PXE_FULL_IMAGE_NAME = '%s/%s' % (_SHARED_K8S_REGISTRY, PXE_IMAGE_NAME)
 
+# Use a staging directory for the docker build context to avoid Tilt
+# detecting file changes in target/ (which causes infinite rebuild loops).
+# The staging dir is unwatched by Tilt, so docker operations there are silent.
+PXE_STAGING_DIR = '.tilt-staging/pxe-server'
+
 local_resource(
     'image-%s' % PXE_IMAGE_NAME,
     '''set -eu
-docker buildx build --platform linux/amd64 -f dockerfiles/Dockerfile.pxe-server.dev -t %s:tilt .
+# Copy binary to unwatched staging dir — Tilt won't see docker ops there
+rm -rf %s
+mkdir -p %s
+cp %s %s/pxe-server
+cp dockerfiles/Dockerfile.pxe-server.dev %s/Dockerfile
+docker buildx build --platform linux/amd64 -f %s/Dockerfile -t %s:tilt %s
 DEV_REF="%s:dev-$(date +%%s%%N)"
 docker tag %s:tilt "$DEV_REF"
 docker push "$DEV_REF"
 echo "Published $DEV_REF for Flux image discovery"
 ''' % (
+        PXE_STAGING_DIR,
+        PXE_STAGING_DIR,
+        PXE_BINARY_PATH,
+        PXE_STAGING_DIR,
+        PXE_STAGING_DIR,
+        PXE_STAGING_DIR,
+        PXE_IMAGE_NAME,
+        PXE_STAGING_DIR,
         PXE_IMAGE_NAME,
         PXE_FULL_IMAGE_NAME,
         PXE_IMAGE_NAME,

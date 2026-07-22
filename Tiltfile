@@ -155,8 +155,8 @@ local_resource(
 # ====================
 # CRD Generation
 # ====================
-# Generate and apply CRDs when CRD code changes
-# This ensures CRDs are always up-to-date with the Rust code
+# Generate CRDs when CRD code changes. This is a local build step — it doesn't
+# need NetBox to be running (unlike apply-netbox-examples which does).
 local_resource(
     'generate-crds',
     cmd='python3 scripts/generate_crds.py',
@@ -167,7 +167,6 @@ local_resource(
         'Cargo.lock',
         'scripts/generate_crds.py',
     ],
-    resource_deps=['manage-netbox-token', 'setup-netbox-tenant'],  # Ensure tokens are set before controllers start
     labels=['infrastructure'],
     allow_parallel=True,
 )

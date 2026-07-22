@@ -301,18 +301,32 @@ echo "Published $DEV_REF for Flux image discovery"
 )
 
 # ---- PXE Server ----
+# Build the PXE Server binary
+# Uses host_aware_build.py for cross-compilation (macOS -> Linux)
+local_resource(
+    'build-pxe-server',
+    cmd='python3 scripts/host_aware_build.py --release -p pxe-server',
+    deps=[
+        'crates/pxe-server/src',
+        'crates/pxe-server/Cargo.toml',
+        'crates/crds/src',
+        'Cargo.toml',
+        'Cargo.lock',
+        'scripts/host_aware_build.py',
+    ],
+    resource_deps=['generate-crds'],
+    labels=['infrastructure'],
+    allow_parallel=True,
+)
+
 # Publish PXE Server image for Flux ImagePolicy discovery
-# Build + docker push in one local_resource to avoid build storms
-# (separate build+image resources race on the binary file when sources change)
+PXE_BINARY_PATH = 'target/x86_64-unknown-linux-musl/release/pxe-server'
 PXE_IMAGE_NAME = 'pxe-server'
 PXE_FULL_IMAGE_NAME = '%s/%s' % (_SHARED_K8S_REGISTRY, PXE_IMAGE_NAME)
 
 local_resource(
     'image-%s' % PXE_IMAGE_NAME,
     '''set -eu
-# Build the binary
-python3 scripts/host_aware_build.py --release -p pxe-server
-# Build the image (Dockerfile copies the binary)
 docker buildx build --platform linux/amd64 -f dockerfiles/Dockerfile.pxe-server.dev -t %s:tilt .
 DEV_REF="%s:dev-$(date +%%s%%N)"
 docker tag %s:tilt "$DEV_REF"
@@ -324,15 +338,9 @@ echo "Published $DEV_REF for Flux image discovery"
         PXE_IMAGE_NAME,
     ),
     deps=[
-        'crates/pxe-server/src',
-        'crates/pxe-server/Cargo.toml',
-        'crates/crds/src',
-        'Cargo.toml',
-        'Cargo.lock',
-        'scripts/host_aware_build.py',
+        PXE_BINARY_PATH,
         'dockerfiles/Dockerfile.pxe-server.dev',
     ],
-    resource_deps=['generate-crds'],
     labels=['infrastructure'],
     allow_parallel=True,
 )

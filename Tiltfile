@@ -301,31 +301,18 @@ echo "Published $DEV_REF for Flux image discovery"
 )
 
 # ---- PXE Server ----
-# Build the PXE Server binary
-local_resource(
-    'build-pxe-server',
-    cmd='python3 scripts/host_aware_build.py --release -p pxe-server',
-    deps=[
-        'crates/pxe-server/src',
-        'crates/pxe-server/Cargo.toml',
-        'crates/crds/src',
-        'Cargo.toml',
-        'Cargo.lock',
-        'scripts/host_aware_build.py',
-    ],
-    resource_deps=['generate-crds'],
-    labels=['infrastructure'],
-    allow_parallel=True,
-)
-
 # Publish PXE Server image for Flux ImagePolicy discovery
-PXE_BINARY_PATH = 'target/x86_64-unknown-linux-musl/release/pxe-server'
+# Build + docker push in one local_resource to avoid build storms
+# (separate build+image resources race on the binary file when sources change)
 PXE_IMAGE_NAME = 'pxe-server'
 PXE_FULL_IMAGE_NAME = '%s/%s' % (_SHARED_K8S_REGISTRY, PXE_IMAGE_NAME)
 
 local_resource(
     'image-%s' % PXE_IMAGE_NAME,
     '''set -eu
+# Build the binary
+python3 scripts/host_aware_build.py --release -p pxe-server
+# Build the image (Dockerfile copies the binary)
 docker buildx build --platform linux/amd64 -f dockerfiles/Dockerfile.pxe-server.dev -t %s:tilt .
 DEV_REF="%s:dev-$(date +%%s%%N)"
 docker tag %s:tilt "$DEV_REF"
@@ -337,29 +324,25 @@ echo "Published $DEV_REF for Flux image discovery"
         PXE_IMAGE_NAME,
     ),
     deps=[
-        PXE_BINARY_PATH,
+        'crates/pxe-server/src',
+        'crates/pxe-server/Cargo.toml',
+        'crates/crds/src',
+        'Cargo.toml',
+        'Cargo.lock',
+        'scripts/host_aware_build.py',
         'dockerfiles/Dockerfile.pxe-server.dev',
     ],
+    resource_deps=['generate-crds'],
     labels=['infrastructure'],
     allow_parallel=True,
 )
 
 # ====================
-# Dev-only: kubectl proxy + Vite servers (not deployed by Flux)
+# Dev-only: Vite servers for local development (not deployed by Flux)
 # ====================
 
-# kubectl proxy for local dev (shared by docs + dashboard)
-# Provides a local HTTP proxy to the K8s API cluster (port 8001).
-# The Dashboard SPA reads CRs from the cluster; in-cluster it falls
-# back to https://kubernetes.default.svc:443 with mounted SA token.
-local_resource(
-    'kubectl-proxy',
-    cmd='kubectl proxy --port=8001 --address=0.0.0.0',
-    labels=['infrastructure'],
-)
-
 # DCops Documentation Site (docs UI) — Vite dev server
-# NOT deployed by Flux — only for local Tilt dev
+# For local development only; in production Flux deploys the built artifacts
 local_resource(
     'build-docs',
     cmd='yarn --cwd ui-docs dev --port 8801 --host 0.0.0.0',
@@ -369,12 +352,13 @@ local_resource(
         'ui-docs/yarn.lock',
     ],
     labels=['docs'],
-    resource_deps=['kubectl-proxy'],
     allow_parallel=True,
+    trigger_mode=TRIGGER_MODE_MANUAL,
+    auto_init=False,
 )
 
 # DCops Dashboard SPA — Vite dev server
-# NOT deployed by Flux — only for local Tilt dev
+# For local development only; in production Flux deploys the built artifacts
 local_resource(
     'build-dashboard',
     cmd='yarn --cwd ui-dashboard dev --port 8802 --host 0.0.0.0',
@@ -384,6 +368,7 @@ local_resource(
         'ui-dashboard/yarn.lock',
     ],
     labels=['docs'],
-    resource_deps=['kubectl-proxy'],
     allow_parallel=True,
+    trigger_mode=TRIGGER_MODE_MANUAL,
+    auto_init=False,
 )

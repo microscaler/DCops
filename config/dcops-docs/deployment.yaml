@@ -20,7 +20,7 @@ spec:
         image: dcops-docs
         imagePullPolicy: Never
         ports:
-        - containerPort: 80
+        - containerPort: 8080
           name: http
         resources:
           requests:

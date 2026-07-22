@@ -9,6 +9,7 @@ resources:
   - rolebinding.yaml
   - deployment.yaml
   - service.yaml
+  - httproute.yaml
 
 configMapGenerator:
   - name: pxe-ipxe-scripts

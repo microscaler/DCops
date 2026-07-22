@@ -20,7 +20,7 @@ spec:
         image: dcops-ui
         imagePullPolicy: Never
         ports:
-        - containerPort: 80
+        - containerPort: 8080
           name: http
         resources:
           requests:
@@ -29,4 +29,3 @@ spec:
           limits:
             memory: "128Mi"
             cpu: "100m"
-

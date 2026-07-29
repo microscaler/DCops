@@ -24,6 +24,10 @@ Thumbs.db
 *.dylib
 *.dll
 .tilt-staging/
+lcov.info
+
+# Local backup state
+/Tiltfile.end
 
 __pycache__/
 *.pyc

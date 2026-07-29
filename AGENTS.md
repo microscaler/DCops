@@ -1,35 +1,40 @@
 # Agent Development Guidelines
 
-> **Desktop dev environment** — before doing anything in this repo, read the
-> Microscaler-wide topology brief. It explains that you are on a Mac but the
-> code lives on `ms02` (NFS), where commands execute for this environment, how
-> the Kind cluster and vLLM fit in, and the network constraints behind the SSH
-> tunneling. Do not duplicate its contents here — link to it. If reality drifts,
-> fix the canonical doc, not this copy.
+> **Execution host** — run `hostname -s` before deciding whether to use SSH.
+> Treat both `casibbald-MS-02-Ultra` and `ms02` as the ms02 execution host. An
+> agent already on ms02 runs Git, builds, tests, Docker, Kubernetes, and
+> filesystem commands directly under `~/Workspace/microscaler/DCops`; it must
+> not SSH back into ms02. Agents starting elsewhere may use `ssh ms02` to reach
+> that same checkout. Tunnels are inbound access for other machines, not a
+> reason for an ms02-local agent to connect outward.
 >
-> - GitHub: [`cylon-local-infra/docs/desktop-dev-environment.md`](https://github.com/microscaler/cylon-local-infra/blob/main/docs/desktop-dev-environment.md)
-> - On ms02 NFS: `~/Workspace/microscaler/cylon-local-infra/docs/desktop-dev-environment.md`
+> The active development cluster and registry are owned by the sibling
+> `../shared-gitops-k8s-cluster` repository. `cylon-local-infra` is deprecated
+> and must not be used as a topology or workflow dependency.
 
 ---
 
-## Shared Kind cluster (local dev)
+## Shared k3s cluster (local dev)
 
-DCops deploys to the **shared** Kind cluster (`kind-kind`), not a dedicated `kind-dcops` cluster.
+DCops deploys to the shared k3s management cluster, not a dedicated local
+cluster.
 
 | Item | Value |
 |------|-------|
-| Cluster | `kind` → context **`kind-kind`** |
-| Registry | **`kind-registry`** on **`localhost:5001`** |
-| Prerequisite repo | **`../shared-kind-cluster`** — `just cluster-create` or `just dev-up` |
+| Cluster | context **`shared-k8s`** |
+| Registry | **`10.177.76.220:5000`** |
+| Prerequisite repo | **`../shared-gitops-k8s-cluster`** |
 | DCops namespaces | **`netbox`**, **`dcops-system`** |
 | Tilt UI port | **10354** (`tilt-dcops.service`) |
 | NetBox UI (Tilt forward) | **http://localhost:8011** |
 | Kea Control Agent (Tilt forward) | **http://localhost:8010** |
 | PXE HTTP (Tilt forward) | **http://localhost:8088** |
 
-**Workflow:** `just verify-shared-kind` → `just dev-up` (or `just tilt-up`). **`just dev-down`** stops Tilt only — it does **not** delete the shared cluster.
+**Workflow:** `just verify-shared-k8s` → `just dev-up` (or `just tilt-up`).
+**`just dev-down`** stops Tilt only — it does **not** delete the shared cluster.
 
-Override checkout layout: `SHARED_KIND_CLUSTER_ROOT=/path/to/shared-kind-cluster`.
+Override checkout layout with
+`SHARED_K8S_CLUSTER_ROOT=/path/to/shared-gitops-k8s-cluster`.
 
 ---
 
@@ -890,4 +895,3 @@ If CRDs aren't working as expected:
 3. **Check Tilt logs** for `generate-crds` resource errors
 4. **Verify CRD code compiles**: `cargo check -p crds`
 5. **Never edit YAML directly** - fix the Rust code instead
-

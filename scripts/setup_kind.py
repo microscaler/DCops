@@ -5,6 +5,10 @@ DCops Kind Cluster Setup Script.
 This script provides better error handling and cross-platform support.
 
 Creates a local Kind cluster with Docker registry for development.
+
+**Legacy:** DCops previously used a dedicated `kind-dcops` cluster. It now targets the
+shared Kind cluster (`kind-kind`, registry `localhost:5001`). Use
+`scripts/verify_shared_kind.py` instead of this script for normal development.
 """
 
 import os

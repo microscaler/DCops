@@ -1,0 +1,11 @@
+# Replace macAddress with the lab server's NIC MAC before applying.
+apiVersion: dcops.microscaler.io/v1alpha1
+kind: BootIntent
+metadata:
+  name: ms02-lab-resurrection-01
+  namespace: cylon-regenesis
+spec:
+  macAddress: "00:00:00:00:00:01"
+  profileRef:
+    name: cylon-resurrection-ubuntu-2404
+  lifecycle: discovered

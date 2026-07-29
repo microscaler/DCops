@@ -437,6 +437,7 @@ impl Reconciler {
         desired_tenant_id: u64,
         _desired_vlan_id: Option<u32>,
         desired_status: &str,
+        address_within_range: bool,
     ) -> bool {
         use crate::reconcile_helpers::{
             compare_required_dependency_id,
@@ -500,7 +501,14 @@ impl Reconciler {
         
         // Evaluate all comparisons to log all field differences (no short-circuit)
         let tenant_diff = compare_required_dependency_id(desired_tenant_id, existing_tenant_id);
-        let status_diff = compare_string_field(desired_status, existing_status);
+        // When the IP address falls inside an IP range, NetBox forces status='reserved'
+        // regardless of the CRD's desired status. In that case, skip status drift detection
+        // so we don't flag a false-positive "drift" and loop forever trying to set 'dhcp'.
+        let status_diff = if address_within_range {
+            false // NetBox will always be 'reserved' — ignore status comparison
+        } else {
+            compare_string_field(desired_status, existing_status)
+        };
         let role_diff = compare_optional_string_field(&spec_role, &existing.role);
         let dns_name_diff = compare_optional_string_field(&spec_dns_name, &netbox_dns_name);
         let description_diff = compare_optional_string_field(&spec_description, &netbox_description);
@@ -795,20 +803,25 @@ impl Reconciler {
         // If ip_range is provided, validate address (from spec or status) is within range
         // CRITICAL: NetBox does NOT allow creating individual IP addresses that fall within an IP range.
         // If the address is within a range, we can only track it if it already exists in NetBox.
-        let address_within_range: bool = if let Some(range_id) = ip_range_id {
+        // (address_within_range, range_is_populated). A "populated" range is one NetBox
+        // treats as fully allocated: it PROHIBITS creating individual IP objects inside it,
+        // signalling that the addresses are owned by an external system (a DHCP server such
+        // as Kea). We must detect that here so we can track the address in the CR status
+        // without attempting a NetBox create that would fail. See docs/NETBOX_IP_RANGE_ANALYSIS.md.
+        let (address_within_range, range_is_populated): (bool, bool) = if let Some(range_id) = ip_range_id {
             // Get the IP range to validate address is within it
             match netbox_client.get_ip_range(netbox_client::IPRangeId(range_id)).await {
                 Ok(range) => {
                     let address_ip = ip_net.addr();
                     let range_start = range.start_address.addr();
                     let range_end = range.end_address.addr();
-                    
+
                     // Get address string for error messages and logging
                     let address_str = ip_address_crd.spec.address.as_ref()
                         .or_else(|| ip_address_crd.status.as_ref().and_then(|s| s.address.as_ref()))
                         .map(|s| s.as_str())
                         .unwrap_or("unknown");
-                    
+
                     // Check if address is within range
                     if address_ip < range_start || address_ip > range_end {
                         let error_msg = format!(
@@ -826,16 +839,91 @@ impl Reconciler {
                         return Err(ControllerError::InvalidInput(error_msg));
                     }
                     debug!("Validated IP address {} is within range {} - {}", address_str, range.start_address, range.end_address);
-                    true // Address is within range
+                    (true, range.mark_populated) // Address is within range
                 }
                 Err(e) => {
                     warn!("Failed to validate IP address against range (ID: {}): {}", range_id, e);
                     // Continue anyway - range validation is best-effort
-                    false
+                    (false, false)
                 }
             }
         } else {
-            false // No range specified
+            (false, false) // No range specified
+        };
+
+        // Populated ranges are externally managed (e.g. by a DHCP server such as Kea).
+        // NetBox rejects creating individual IP addresses inside a populated range, so we
+        // MUST NOT attempt a create here. Instead we record the address in the CR status as
+        // terminally reconciled: state=Created with NO NetBox ID. This is the repo's own
+        // recommended "Option 1" (docs/NETBOX_IP_RANGE_ANALYSIS.md). We short-circuit BEFORE
+        // the status/drift check below, because that path would otherwise treat a
+        // Created-without-netbox-id status as "needs (re)create" and loop forever.
+        if range_is_populated {
+            let address_str = ip_net.to_string();
+
+            // Idempotency: if we already recorded this exact address as externally managed
+            // (Created, no NetBox ID), there is nothing to do — avoid needless status churn.
+            if let Some(status) = ip_address_crd.status.as_ref() {
+                if status.state == ResourceState::Created
+                    && status.netbox_id.is_none()
+                    && status.address.as_deref() == Some(address_str.as_str())
+                {
+                    debug!(
+                        "NetBoxIPAddress {}/{}: address {} is within populated (externally managed) range {:?}; \
+                         status already reconciled, nothing to do",
+                        namespace, name, address_str, ip_range_id
+                    );
+                    return Ok(());
+                }
+            }
+
+            info!(
+                "NetBoxIPAddress {}/{}: address {} falls within a populated IP range (NetBox ID {:?}); \
+                 the range is externally managed (DHCP), so tracking the address in CR status only — \
+                 no NetBox IPAddress object will be created",
+                namespace, name, address_str, ip_range_id
+            );
+
+            {
+                use crate::events::reasons;
+                self.record_event_normal(
+                    reasons::EXTERNALLY_MANAGED,
+                    &format!(
+                        "IP {} is within a populated range and managed externally (DHCP); tracked in CR status, no NetBox object created",
+                        address_str
+                    ),
+                    ip_address_crd,
+                ).await;
+            }
+
+            let status_patch = Self::create_populated_range_ip_status_patch(Some(address_str));
+            update_resource_status(
+                &*self.netbox_ip_address_api,
+                name,
+                namespace,
+                &status_patch,
+                "NetBoxIPAddress",
+                0,
+            ).await?;
+
+            return Ok(());
+        }
+        
+        // Compute the effective NetBox status. NetBox does not allow creating IPs with
+        // status='dhcp' inside an IP range — the status must be 'reserved'. When the
+        // address falls within a range, override the CRD's requested status to 'reserved'
+        // regardless of what the CRD says (static DHCP reservations inside a range must
+        // use reserved so NetBox accepts the create/update).
+        let effective_netbox_status = if address_within_range {
+            netbox_client::IPAddressStatus::Reserved
+        } else {
+            match ip_address_crd.spec.status {
+                crds::IPAddressStatus::Active => netbox_client::IPAddressStatus::Active,
+                crds::IPAddressStatus::Reserved => netbox_client::IPAddressStatus::Reserved,
+                crds::IPAddressStatus::Deprecated => netbox_client::IPAddressStatus::Deprecated,
+                crds::IPAddressStatus::Dhcp => netbox_client::IPAddressStatus::Dhcp,
+                crds::IPAddressStatus::Slaac => netbox_client::IPAddressStatus::Slaac,
+            }
         };
         
         // Validate status and check for drift
@@ -926,13 +1014,13 @@ impl Reconciler {
                     None
                 };
                 
-                // Convert status enum to string
-                let status_str = match ip_address_crd.spec.status {
-                    crds::IPAddressStatus::Active => "active",
-                    crds::IPAddressStatus::Reserved => "reserved",
-                    crds::IPAddressStatus::Deprecated => "deprecated",
-                    crds::IPAddressStatus::Dhcp => "dhcp",
-                    crds::IPAddressStatus::Slaac => "slaac",
+                // Convert effective NetBox status to string for comparison
+                let effective_status_str = match effective_netbox_status {
+                    netbox_client::IPAddressStatus::Active => "active",
+                    netbox_client::IPAddressStatus::Reserved => "reserved",
+                    netbox_client::IPAddressStatus::Deprecated => "deprecated",
+                    netbox_client::IPAddressStatus::Dhcp => "dhcp",
+                    netbox_client::IPAddressStatus::Slaac => "slaac",
                 };
                 
                 // Always resolve tags (even if nothing else changed, tags might need updating)
@@ -969,7 +1057,8 @@ impl Reconciler {
                         &remediated_ip,
                         tenant_id,
                         vlan_id, // Note: vlan_id comparison not implemented in needs_update yet
-                        status_str,
+                        effective_status_str,
+                        address_within_range,
                     );
                     debug!("NetBoxIPAddress {}/{}: ip_address_needs_update returned {}", namespace, name, result);
                     result
@@ -996,13 +1085,7 @@ impl Reconciler {
                         address: None, // Address cannot be changed
                         description: ip_address_crd.spec.description.clone(),
                         comments: ip_address_crd.spec.comments.clone(),
-                        status: Some(match ip_address_crd.spec.status {
-                            crds::IPAddressStatus::Active => netbox_client::IPAddressStatus::Active,
-                            crds::IPAddressStatus::Reserved => netbox_client::IPAddressStatus::Reserved,
-                            crds::IPAddressStatus::Deprecated => netbox_client::IPAddressStatus::Deprecated,
-                            crds::IPAddressStatus::Dhcp => netbox_client::IPAddressStatus::Dhcp,
-                            crds::IPAddressStatus::Slaac => netbox_client::IPAddressStatus::Slaac,
-                        }),
+                        status: Some(effective_netbox_status),
                         role: ip_address_crd.spec.role.clone(),
                         dns_name: ip_address_crd.spec.dns_name.clone(),
                         tenant: Some(tenant_id),
@@ -1366,20 +1449,20 @@ impl Reconciler {
         None
     };
     
-    // Convert status enum to NetBox status
-    let netbox_status = match ip_address_crd.spec.status {
-        crds::IPAddressStatus::Active => netbox_client::IPAddressStatus::Active,
-        crds::IPAddressStatus::Reserved => netbox_client::IPAddressStatus::Reserved,
-        crds::IPAddressStatus::Deprecated => netbox_client::IPAddressStatus::Deprecated,
-        crds::IPAddressStatus::Dhcp => netbox_client::IPAddressStatus::Dhcp,
-        crds::IPAddressStatus::Slaac => netbox_client::IPAddressStatus::Slaac,
-    };
-    
     // CRITICAL: Before creating, query ALL IPs by address to ensure it doesn't exist
     // This prevents duplicate creation due to race conditions or query failures
     let address_str = ip_address_crd.spec.address.as_ref()
         .ok_or_else(|| ControllerError::InvalidInput("Address is required for IP address reconciliation".to_string()))?;
-    
+
+    // effective_netbox_status is already computed earlier (after range validation).
+    // Log when we're overriding to 'reserved'.
+    if address_within_range {
+        info!(
+            "IP address {} is within IP range; overriding NetBox status to 'reserved'",
+            address_str
+        );
+    }
+
     // Query ALL IPs (no filters) and filter client-side for exact match
     // This is more reliable than using NetBox API filters which might be inaccurate
     info!("Pre-creation check: Querying ALL IP addresses to find exact match for {}", address_str);
@@ -1468,7 +1551,7 @@ impl Reconciler {
             address: Some(ip_net), // Specify the exact IP address
             description: ip_address_crd.spec.description.clone(),
             comments: ip_address_crd.spec.comments.clone(),
-            status: Some(netbox_status),
+            status: Some(effective_netbox_status),
             role: ip_address_crd.spec.role.clone(),
             dns_name: ip_address_crd.spec.dns_name.clone(),
             tenant: Some(tenant_id),

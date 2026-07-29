@@ -498,6 +498,32 @@ impl NetBoxStatusCheck for crds::NetBoxDeviceTypeStatus {
     fn error(&self) -> Option<&str> { self.error.as_deref() }
 }
 
+impl NetBoxStatusCheck for crds::IPPoolStatus {
+    fn netbox_id(&self) -> Option<u64> { self.netbox_id }
+    fn netbox_url(&self) -> Option<&str> { self.netbox_url.as_deref() }
+    fn state_str(&self) -> &str {
+        match self.state {
+            crds::IPPoolState::Pending => "Pending",
+            crds::IPPoolState::Created => "Created",
+            crds::IPPoolState::Failed => "Failed",
+        }
+    }
+    fn error(&self) -> Option<&str> { self.error.as_deref() }
+}
+
+impl NetBoxStatusCheck for crds::IPClaimStatus {
+    fn netbox_id(&self) -> Option<u64> { self.netbox_id }
+    fn netbox_url(&self) -> Option<&str> { self.netbox_url.as_deref() }
+    fn state_str(&self) -> &str {
+        match self.state {
+            crds::IPClaimState::Pending => "Pending",
+            crds::IPClaimState::Created => "Created",
+            crds::IPClaimState::Failed => "Failed",
+        }
+    }
+    fn error(&self) -> Option<&str> { self.error.as_deref() }
+}
+
 impl NetBoxStatusCheck for crds::NetBoxVLANStatus {
     fn netbox_id(&self) -> Option<u64> { self.netbox_id }
     fn netbox_url(&self) -> Option<&str> { self.netbox_url.as_deref() }

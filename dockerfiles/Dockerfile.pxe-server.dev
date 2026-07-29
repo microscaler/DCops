@@ -1,0 +1,16 @@
+# Development Dockerfile for PXE Server (Tilt / shared Kind)
+ARG TARGETPLATFORM=linux/amd64
+FROM docker.io/microscaler/dcops-controller-base-image:latest
+
+COPY target/x86_64-unknown-linux-musl/release/pxe-server /app/pxe-server
+
+RUN test -f /app/pxe-server && chmod +x /app/pxe-server
+
+ENV RUST_BACKTRACE=1
+ENV RUST_LOG=info
+ENV PXE_ROOT=/var/lib/pxe
+ENV HTTP_LISTEN=0.0.0.0:8080
+
+EXPOSE 8080
+
+ENTRYPOINT ["/app/pxe-server"]

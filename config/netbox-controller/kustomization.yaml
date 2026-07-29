@@ -11,3 +11,8 @@ resources:
 - secret.yaml
 - deployment.yaml
 
+images:
+- name: netbox-controller
+  newName: 10.177.76.220:5000/netbox-controller
+  newTag: tilt
+

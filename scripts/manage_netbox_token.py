@@ -10,7 +10,7 @@ Usage:
     python3 scripts/manage_netbox_token.py [--netbox-url URL] [--netbox-user USER] [--netbox-password PASSWORD] [--namespace NAMESPACE]
 
 Environment variables:
-    NETBOX_URL: NetBox base URL (default: http://localhost:8001)
+    NETBOX_URL: NetBox base URL (default: http://localhost:8011)
     NETBOX_USER: NetBox admin username (default: admin)
     NETBOX_PASSWORD: NetBox admin password (default: admin)
     KUBECTL_NAMESPACE: Kubernetes namespace for secret (default: dcops-system)
@@ -282,7 +282,7 @@ def main():
         epilog="""
 Examples:
   # Get token from NetBox and store in secret
-  python3 scripts/manage_netbox_token.py --netbox-url http://localhost:8001
+  python3 scripts/manage_netbox_token.py --netbox-url http://localhost:8011
 
   # Use existing token
   python3 scripts/manage_netbox_token.py --token abc123def456
@@ -294,8 +294,8 @@ Examples:
     
     parser.add_argument(
         "--netbox-url",
-        default=os.getenv("NETBOX_URL", "http://localhost:8001"),
-        help="NetBox base URL (default: http://localhost:8001 or NETBOX_URL env var)"
+        default=os.getenv("NETBOX_URL", "http://localhost:8011"),
+        help="NetBox base URL (default: http://localhost:8011 or NETBOX_URL env var)"
     )
     parser.add_argument(
         "--netbox-user",

@@ -1,0 +1,15 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: pxe-server
+  labels:
+    app: pxe-server
+    app.kubernetes.io/part-of: dcops
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: pxe-server
+subjects:
+  - kind: ServiceAccount
+    name: pxe-server
+    namespace: dcops-system

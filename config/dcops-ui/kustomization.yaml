@@ -6,4 +6,5 @@ namespace: dcops-system
 resources:
   - deployment.yaml
   - service.yaml
-
+  - role.yaml
+  - httproute.yaml

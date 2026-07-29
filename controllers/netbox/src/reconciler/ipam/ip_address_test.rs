@@ -3,7 +3,7 @@
 #[cfg(test)]
 mod tests {
     use crate::test_utils::*;
-    use crds::{NetBoxIPAddress, NetBoxTenant, ResourceState};
+    use crds::{NetBoxIPAddress, NetBoxIPRange, NetBoxTenant, ResourceState};
     use ipnet::IpNet;
     use std::str::FromStr;
     
@@ -1185,6 +1185,170 @@ mod tests {
             }
             e => panic!("Expected InvalidInput error, got: {:?}", e),
         }
+    }
+
+    /// An IP address that falls inside a *populated* IP range must NOT be created in
+    /// NetBox (NetBox prohibits it), but reconciliation must still succeed and record the
+    /// address in the CR status as terminally Created with NO NetBox ID. This is the
+    /// behaviour documented in docs/NETBOX_IP_RANGE_ANALYSIS.md (Option 1) and prevents
+    /// the previous 400-error → Failed(netbox_id=0) → recreate loop.
+    #[tokio::test]
+    async fn test_reconcile_ip_address_in_populated_range_is_tracked_only() {
+        use crate::test_utils::mock_token_resolver::{MockTokenResolver, create_test_reconciler_with_mock_token_resolver};
+        use crate::kube_api_trait::KubeApiTrait;
+        use std::sync::Arc;
+
+        let netbox_url = "http://test-netbox".to_string();
+        let mock_token_resolver = Arc::new(MockTokenResolver::new(netbox_url.clone()));
+        mock_token_resolver.add_secret("default", "netbox-token-datacenter-tenant", "test-token".to_string());
+        let mock_client = mock_token_resolver.mock_client();
+
+        let (reconciler, apis, _mock_event_recorder) =
+            create_test_reconciler_with_mock_token_resolver(mock_token_resolver);
+
+        // Tenant (required dependency) — both as CRD and in mock NetBox.
+        let tenant = create_test_netbox_tenant(
+            "datacenter-tenant",
+            "default",
+            Some(1),
+            Some("http://test-netbox/api/tenancy/tenants/1/".to_string()),
+        );
+        apis.tenant_api.store("datacenter-tenant".to_string(), tenant);
+        use netbox_client::Tenant;
+        mock_client.add_tenant(Tenant {
+            id: 1,
+            url: "http://test-netbox/api/tenancy/tenants/1/".to_string(),
+            display: "Data Center Operations".to_string(),
+            name: "Data Center Operations".to_string(),
+            slug: "datacenter-ops".to_string(),
+            description: None,
+            comments: None,
+            group: None,
+            tags: vec![],
+            created: "2024-01-01T00:00:00Z".to_string(),
+            last_updated: "2024-01-01T00:00:00Z".to_string(),
+        });
+
+        // IP range CRD (resolves the ipRange reference to NetBox ID 100) ...
+        let ip_range_crd = NetBoxIPRange {
+            metadata: k8s_openapi::apimachinery::pkg::apis::meta::v1::ObjectMeta {
+                name: Some("dhcp-pool-range".to_string()),
+                namespace: Some("default".to_string()),
+                ..Default::default()
+            },
+            spec: crds::NetBoxIPRangeSpec {
+                start_address: "192.168.1.100/24".to_string(),
+                end_address: "192.168.1.200/24".to_string(),
+                tenant: crds::NetBoxResourceReference {
+                    api_group: "dcops.microscaler.io".to_string(),
+                    kind: "NetBoxTenant".to_string(),
+                    name: "datacenter-tenant".to_string(),
+                    namespace: Some("default".to_string()),
+                },
+                vrf: None,
+                status: crds::IPRangeStatus::Active,
+                role: None,
+                description: Some("DHCP pool".to_string()),
+                mark_utilized: false,
+                mark_populated: true,
+                comments: None,
+                tags: None,
+                drift_detection: Some(true),
+            },
+            status: Some(crds::NetBoxIPRangeStatus {
+                netbox_id: Some(100),
+                netbox_url: Some("http://test-netbox/api/ipam/ip-ranges/100/".to_string()),
+                state: ResourceState::Created,
+                error: None,
+                last_reconciled: None,
+            }),
+        };
+        apis.ip_range_api.store("dhcp-pool-range".to_string(), ip_range_crd);
+
+        // ... and the corresponding *populated* range in mock NetBox.
+        let start_net = IpNet::from_str("192.168.1.100/24").unwrap();
+        let end_net = IpNet::from_str("192.168.1.200/24").unwrap();
+        mock_client.add_ip_range(netbox_client::IPRange {
+            id: 100,
+            url: "http://test-netbox/api/ipam/ip-ranges/100/".to_string(),
+            display: "192.168.1.100-200/24".to_string(),
+            family: 4,
+            start_address: start_net,
+            end_address: end_net,
+            vrf: None,
+            tenant: None,
+            status: netbox_client::IPRangeStatus::Active,
+            role: None,
+            description: "DHCP pool".to_string(),
+            comments: None,
+            mark_utilized: false,
+            mark_populated: true, // <-- the crux: populated range
+            tags: vec![],
+            custom_fields: serde_json::json!({}),
+            created: "2024-01-01T00:00:00Z".to_string(),
+            last_updated: "2024-01-01T00:00:00Z".to_string(),
+        });
+
+        // IP address CRD: static address inside the populated range, referencing it.
+        let ip_address = NetBoxIPAddress {
+            metadata: k8s_openapi::apimachinery::pkg::apis::meta::v1::ObjectMeta {
+                name: Some("static-in-pool".to_string()),
+                namespace: Some("default".to_string()),
+                ..Default::default()
+            },
+            spec: crds::NetBoxIPAddressSpec {
+                address: Some("192.168.1.150/24".to_string()),
+                ip_range: Some(crds::NetBoxResourceReference {
+                    api_group: "dcops.microscaler.io".to_string(),
+                    kind: "NetBoxIPRange".to_string(),
+                    name: "dhcp-pool-range".to_string(),
+                    namespace: Some("default".to_string()),
+                }),
+                tenant: crds::NetBoxResourceReference {
+                    api_group: "dcops.microscaler.io".to_string(),
+                    kind: "NetBoxTenant".to_string(),
+                    name: "datacenter-tenant".to_string(),
+                    namespace: Some("default".to_string()),
+                },
+                vrf: None,
+                vlan: None,
+                status: crds::IPAddressStatus::Reserved,
+                role: None,
+                dns_name: None,
+                description: Some("Static reservation in DHCP pool".to_string()),
+                tags: None,
+                comments: None,
+                mac_address: None,
+                interface: None,
+            },
+            status: None,
+        };
+        apis.ip_address_api.store("static-in-pool".to_string(), ip_address.clone());
+
+        // NOTE: deliberately do NOT add any IPAddress to mock NetBox — creation must be skipped.
+
+        // Execute
+        let result = reconciler.reconcile_netbox_ip_address(&ip_address).await;
+        assert!(result.is_ok(), "Reconciliation should succeed for populated range: {:?}", result.err());
+
+        // Status: Created, address recorded, but NO NetBox ID (externally managed).
+        let updated = apis.ip_address_api.get("static-in-pool").await.unwrap();
+        let status = updated.status.expect("status should be set");
+        assert_eq!(status.state, ResourceState::Created, "populated-range IP should be terminally Created");
+        assert_eq!(status.netbox_id, None, "populated-range IP must have NO NetBox ID");
+        assert_eq!(
+            status.address,
+            Some("192.168.1.150/24".to_string()),
+            "address should be recorded in status",
+        );
+
+        // Idempotency: reconciling again with the now-populated status is a no-op (no loop).
+        let updated2 = apis.ip_address_api.get("static-in-pool").await.unwrap();
+        let result2 = reconciler.reconcile_netbox_ip_address(&updated2).await;
+        assert!(result2.is_ok(), "second reconcile should also succeed: {:?}", result2.err());
+        let status2 = apis.ip_address_api.get("static-in-pool").await.unwrap().status.unwrap();
+        assert_eq!(status2.state, ResourceState::Created);
+        assert_eq!(status2.netbox_id, None);
     }
 }
 

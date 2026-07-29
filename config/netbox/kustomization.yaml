@@ -5,11 +5,9 @@ namespace: netbox
 
 resources:
   - namespace.yaml
-  - postgres-pvc.yaml
-  - postgres-deployment.yaml
-  - postgres-service.yaml
-  - redis-deployment.yaml
-  - redis-service.yaml
+  - netbox-db-credentials.yaml
   - netbox-deployment.yaml
   - netbox-service.yaml
+  # Postgres and Redis are NOT deployed here — NetBox uses the shared-k8s
+  # cluster's services in the `data` namespace (postgres.data / redis.data).
 

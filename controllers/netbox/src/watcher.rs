@@ -9,6 +9,7 @@
 use crate::reconciler::Reconciler;
 use crate::error::ControllerError;
 use crds::{
+    IPClaim, IPPool,
     NetBoxPrefix, NetBoxTenant, NetBoxTenantGroup, NetBoxSite, NetBoxRole, NetBoxTag, NetBoxAggregate,
     NetBoxVLAN, NetBoxRIR, NetBoxIPAddress, NetBoxIPRange, NetBoxVRF, NetBoxRouteTarget, NetBoxDeviceRole, NetBoxManufacturer, NetBoxPlatform, NetBoxDeviceType,
     NetBoxDevice, NetBoxInterface, NetBoxMACAddress, NetBoxRegion, NetBoxSiteGroup, NetBoxLocation,
@@ -150,6 +151,8 @@ pub struct Watcher {
     netbox_ip_range_api: Api<NetBoxIPRange>,
     netbox_vrf_api: Api<NetBoxVRF>,
     netbox_route_target_api: Api<NetBoxRouteTarget>,
+    netbox_ip_pool_api: Api<IPPool>,
+    netbox_ip_claim_api: Api<IPClaim>,
     // Tenancy APIs
     netbox_tenant_api: Api<NetBoxTenant>,
     netbox_tenant_group_api: Api<NetBoxTenantGroup>,
@@ -182,6 +185,8 @@ impl Watcher {
         netbox_ip_range_api: Api<NetBoxIPRange>,
         netbox_vrf_api: Api<NetBoxVRF>,
         netbox_route_target_api: Api<NetBoxRouteTarget>,
+        netbox_ip_pool_api: Api<IPPool>,
+        netbox_ip_claim_api: Api<IPClaim>,
         // Tenancy APIs
         netbox_tenant_api: Api<NetBoxTenant>,
         netbox_tenant_group_api: Api<NetBoxTenantGroup>,
@@ -211,6 +216,8 @@ impl Watcher {
             netbox_ip_range_api,
             netbox_vrf_api,
             netbox_route_target_api,
+            netbox_ip_pool_api,
+            netbox_ip_claim_api,
             // Tenancy
             netbox_tenant_api,
             netbox_tenant_group_api,
@@ -529,7 +536,7 @@ impl Watcher {
             "NetBoxRouteTarget",
         ).await
     }
-    
+
     /// Starts watching NetBoxRegion resources.
     pub async fn watch_netbox_regions(&self) -> Result<(), ControllerError> {
         watch_resource(

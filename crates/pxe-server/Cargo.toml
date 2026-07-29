@@ -9,24 +9,29 @@ homepage.workspace = true
 documentation.workspace = true
 keywords.workspace = true
 categories.workspace = true
-description = "PXE boot server implementation with IPv4 and IPv6 support (custom Rust PXE server using dhcproto + async-tftp + axum)"
+description = "PXE boot HTTP server for iPXE (axum); Kea provides DHCP in production layouts"
+
+[[bin]]
+name = "pxe-server"
+path = "src/bin/pxe-server.rs"
 
 [dependencies]
-# Workspace dependencies
 tokio = { workspace = true }
 tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 anyhow = { workspace = true }
 thiserror = { workspace = true }
 axum = { workspace = true }
 tower = { workspace = true }
-tower-http = { workspace = true }
+tower-http = { workspace = true, features = ["trace", "fs"] }
+kube = { workspace = true }
+k8s-openapi = { workspace = true, features = ["v1_30"] }
+crds = { path = "../crds" }
+rustls = { version = "0.23", features = ["ring"], default-features = false }
 
-# PXE server dependencies
-# DHCP protocol handling
-dhcproto = "0.14"
-# TFTP server
-async-tftp = "0.4"
-# HTTP server (already in workspace as axum)
-
+[dev-dependencies]
+http-body-util = "0.1"
+tower = { workspace = true, features = ["util"] }
+tempfile = "3"

@@ -1,0 +1,22 @@
+[Unit]
+Description=DCops Tilt development environment (port 10354, shared-k8s cluster)
+After=network-online.target
+
+[Service]
+Type=simple
+ExecStartPre=/bin/sh -c "docker info >/dev/null 2>&1"
+WorkingDirectory=%h/Workspace/microscaler/DCops
+Environment=TILT_PORT=10354
+Environment=TILT_HOST=0.0.0.0
+Environment=KUBECONFIG=%h/Workspace/microscaler/shared-gitops-k8s-cluster/kubeconfig/shared-k8s.yaml
+Environment=HOME=%h
+Environment=PATH=%h/.cargo/bin:/snap/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games
+ExecStart=/usr/local/bin/tilt up --host 0.0.0.0 --port 10354
+Restart=on-failure
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=tilt-dcops
+
+[Install]
+WantedBy=default.target

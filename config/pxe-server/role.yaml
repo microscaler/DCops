@@ -1,0 +1,17 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: pxe-server
+  labels:
+    app: pxe-server
+    app.kubernetes.io/part-of: dcops
+rules:
+  - apiGroups:
+      - dcops.microscaler.io
+    resources:
+      - bootintents
+      - bootprofiles
+    verbs:
+      - get
+      - list
+      - watch

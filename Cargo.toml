@@ -3,6 +3,7 @@ members = [
     "controllers/pxe-intent",
     "controllers/netbox",
     "controllers/routeros",
+    "controllers/dhcp",
     "crates/netbox-client",
     "crates/routeros-client",
     "crates/pxe-server",

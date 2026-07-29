@@ -1,0 +1,43 @@
+[package]
+name = "dhcp-controller"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+keywords.workspace = true
+categories.workspace = true
+description = "DHCP Controller that syncs NetBox CRDs to ISC Kea DHCP server"
+
+[dependencies]
+# Workspace dependencies
+tokio = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+kube = { workspace = true }
+kube-runtime = { workspace = true }
+k8s-openapi = { workspace = true, features = ["v1_30"] }
+serde = { workspace = true }
+serde_json = { workspace = true }
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+reqwest = { workspace = true, features = ["json"] }
+uuid = { workspace = true }
+chrono = { workspace = true }
+futures = "0.3"
+
+# Local crates
+crds = { path = "../../crates/crds" }
+
+# IP network types
+ipnet = { workspace = true }
+
+# Async trait support
+async-trait = "0.1"
+
+[dev-dependencies]
+# Testing dependencies
+mockito = "1.3"
+

@@ -1,0 +1,35 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dhcp-controller
+  namespace: dcops-system
+  labels:
+    app: dhcp-controller
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: dhcp-controller
+  template:
+    metadata:
+      labels:
+        app: dhcp-controller
+    spec:
+      serviceAccountName: dhcp-controller
+      containers:
+      - name: dhcp-controller
+        image: dhcp-controller
+        imagePullPolicy: Always
+        env:
+        - name: KEA_CONTROL_AGENT_URL
+          value: "http://kea-dhcp.dcops-system:8000"  # Kea Control Agent URL (via Kubernetes service)
+        - name: WATCH_NAMESPACE
+          value: "default"  # Watch specific namespace, or remove to watch all
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: 500m
+            memory: 256Mi
+

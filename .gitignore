@@ -23,8 +23,11 @@ Thumbs.db
 *.so
 *.dylib
 *.dll
+.tilt-staging/
 
 __pycache__/
 *.pyc
 
 reconciliation-differences.txt
+.nfs.*
+._*

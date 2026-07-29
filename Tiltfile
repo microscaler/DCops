@@ -1,27 +1,39 @@
 # DCops Tiltfile
 #
 # This Tiltfile manages local development resources:
-# - NetBox deployment with port forwards
-# - Controllers (to be added as they're implemented)
+# - Image builds + pushes to shared LAN registry (Flux discovers these)
+# - Infrastructure: NetBox, kubectl proxy for local dev
+#
+# Flux owns all workload deployment: namespaces, HelmReleases, runtime reconciliation.
+# Tilt does NOT deploy workloads to the cluster — it only builds and publishes images.
 #
 # Usage: tilt up
 #
 # Resources are organized into parallel streams using labels:
-# - 'infrastructure' label: NetBox, PostgreSQL, Redis
-# - 'controllers' label: DCops controllers (to be added)
-# - 'docs' label: DCops UI documentation site
+# - 'infrastructure' label: NetBox, kubectl proxy
+# - 'controllers' label: controller image builds
+# - 'docs' label: docs/dashboard Vite dev servers
+# - 'docker' label: image builds
 
 # ====================
 # Configuration
 # ====================
 
-# Restrict to kind cluster
-allow_k8s_contexts(['kind-dcops'])
+# Shared k8s (k3s) platform cluster — no kind. Kubeconfig + context come from the
+# sibling repo microscaler/shared-gitops-k8s-cluster, matching hauliage and the other
+# microscaler projects.
+_SHARED_K8S_KCFG = os.path.abspath('../shared-gitops-k8s-cluster/kubeconfig/shared-k8s.yaml')
+_SHARED_K8S_REGISTRY = '10.177.76.220:5000'
+allow_k8s_contexts(['shared-k8s'])
+if os.path.exists(_SHARED_K8S_KCFG):
+    os.putenv('KUBECONFIG', _SHARED_K8S_KCFG)
 
-# Configure default registry for Kind cluster
-# Tilt will automatically push docker_build images to this registry
-# The registry is set up by scripts/setup_kind.py
-default_registry('localhost:5000')
+# Shared LAN registry (same as hauliage / the other microscaler projects).
+default_registry(_SHARED_K8S_REGISTRY)
+
+# Host ports avoid shared-k8s conflicts: PriceWhisperer uses 8000, LLMRouter uses 8001
+NETBOX_UI_HOST_PORT = 8011
+KEA_CONTROL_AGENT_HOST_PORT = 8010
 
 # Get the directory where this Tiltfile is located
 DCops_DIR = '.'
@@ -29,11 +41,39 @@ DCops_DIR = '.'
 # ====================
 # NetBox Deployment
 # ====================
-# NetBox is deployed via kustomize
+# NetBox is deployed via kustomize (Flux or Tilt-applied once for dev)
 # Port forwards are configured here for convenient access
 
 # Deploy NetBox using kustomize
 k8s_yaml(kustomize('%s/config/netbox' % DCops_DIR))
+
+# ---- NetBox database lifecycle (label `data`), modeled on hauliage's set ----
+
+# (Re)apply the per-app DB credentials secret on demand. The kustomize above also
+# applies it at startup; this is the manual "database-env" button (parity with
+# hauliage-database-env).
+local_resource(
+    'netbox-database-env',
+    cmd='kubectl apply -f config/netbox/netbox-db-credentials.yaml',
+    deps=['config/netbox/netbox-db-credentials.yaml'],
+    labels=['data'],
+    trigger_mode=TRIGGER_MODE_MANUAL,
+    auto_init=False,
+    allow_parallel=True,
+)
+
+# Provision the NetBox role + database on the shared Postgres before NetBox
+# migrates. Idempotent; mirrors hauliage-db-init. Runs once on `tilt up`, then
+# re-runnable from the Tilt UI (MANUAL stops file-watch re-triggers).
+local_resource(
+    'netbox-db-init',
+    cmd='chmod +x scripts/setup-db.sh && bash scripts/setup-db.sh',
+    deps=['scripts/setup-db.sh'],
+    labels=['data'],
+    allow_parallel=False,
+    trigger_mode=TRIGGER_MODE_MANUAL,
+    auto_init=True,
+)
 
 # Configure NetBox resource with port forwards
 # Forward directly to pod container port 8080 for stability
@@ -42,27 +82,29 @@ k8s_resource(
     'netbox',
     labels=['infrastructure'],
     port_forwards=[
-        '8001:8080',  # NetBox web UI: localhost:8001 -> pod:8080 (direct to container)
+        '%d:8080' % NETBOX_UI_HOST_PORT,  # NetBox web UI (8011 avoids shared-k8s 8000/8001)
     ],
+    resource_deps=['netbox-db-init'],
+    # Applied once on `tilt up` (after the DB is bootstrapped); MANUAL so you
+    # control re-applies from the Tilt UI rather than on every manifest change.
+    trigger_mode=TRIGGER_MODE_MANUAL,
 )
 
-# PostgreSQL (optional port forward for debugging)
-k8s_resource(
-    'postgres',
-    labels=['infrastructure'],
-    port_forwards=[
-        # '5432:5432',  # Uncomment if you need direct database access
-    ],
+# Run NetBox schema migrations on demand. They also run in the deployment's init
+# container, but this lets you (re)apply migrations later without a redeploy.
+# (NetBox migrations ship with the image, so there is no separate SQL-generation
+# step like hauliage-migrate; this is the apply-migrations equivalent.)
+local_resource(
+    'netbox-migrate',
+    cmd='kubectl exec -n netbox deployment/netbox -- /opt/netbox/venv/bin/python /opt/netbox/netbox/manage.py migrate',
+    resource_deps=['netbox'],
+    labels=['data'],
+    trigger_mode=TRIGGER_MODE_MANUAL,
+    auto_init=False,
 )
 
-# Redis (optional port forward for debugging)
-k8s_resource(
-    'redis',
-    labels=['infrastructure'],
-    port_forwards=[
-        # '6379:6379',  # Uncomment if you need direct Redis access
-    ],
-)
+# Postgres and Redis are NOT deployed by DCops — NetBox uses the shared-k8s
+# cluster's services in the `data` namespace (postgres.data / redis.data).
 
 # ====================
 # NetBox Token Management
@@ -77,11 +119,11 @@ k8s_resource(
 local_resource(
     'manage-netbox-token',
     # Wait for PostgreSQL to be ready, then query database for token
-    cmd='python3 scripts/get_netbox_token_from_db.py 2>&1 || echo "⚠️  Token not found in database. Create token in NetBox UI at http://localhost:8001/user/api-tokens/ with key \"dcops-controller\", then this script will retrieve it automatically."',
+    cmd='python3 scripts/get_netbox_token_from_db.py 2>&1 || echo "Token not found in database. Create token in NetBox UI at http://localhost:%d/user/api-tokens/ with key \\\\"dcops-controller\\", then this script will retrieve it automatically."' % NETBOX_UI_HOST_PORT,
     deps=[
         'scripts/get_netbox_token_from_db.py',
     ],
-    resource_deps=['netbox', 'postgres'],  # Wait for NetBox and PostgreSQL to be ready
+    resource_deps=['netbox'],  # Wait for NetBox to be ready
     labels=['infrastructure'],
     allow_parallel=False,
     # Runs when script changes or NetBox/PostgreSQL becomes ready
@@ -100,11 +142,11 @@ local_resource(
 local_resource(
     'setup-netbox-tenant',
     # Setup tenant, user, and token for datacenter-tenant
-    cmd='python3 scripts/setup_netbox_tenant.py --tenant-name datacenter-tenant --secret-name netbox-token-datacenter-tenant --namespace default 2>&1 || echo "⚠️  Tenant setup failed. Check NetBox logs and ensure admin credentials are correct."',
+    cmd='python3 scripts/setup_netbox_tenant.py --tenant-name datacenter-tenant --secret-name netbox-token-datacenter-tenant --namespace default 2>&1 || echo "Tenant setup failed. Check NetBox logs and ensure admin credentials are correct."',
     deps=[
         'scripts/setup_netbox_tenant.py',
     ],
-    resource_deps=['netbox', 'postgres'],  # Wait for NetBox and PostgreSQL to be ready
+    resource_deps=['netbox'],  # Wait for NetBox to be ready
     labels=['infrastructure'],
     allow_parallel=False,
     # Runs when script changes or NetBox/PostgreSQL becomes ready
@@ -113,19 +155,19 @@ local_resource(
 # ====================
 # CRD Generation
 # ====================
-# Generate and apply CRDs when CRD code changes
-# This ensures CRDs are always up-to-date with the Rust code
+# Generate CRDs from Rust code to config/crd/all-crds.yaml.
+# This is a local build step only — it does NOT apply CRDs to the cluster.
+# CRDs in the cluster are managed by Flux (production) or applied manually.
 local_resource(
     'generate-crds',
-    cmd='python3 scripts/generate_crds.py',
+    cmd='python3 scripts/generate_crds_local.py',
     deps=[
         'crates/crds/src',
         'crates/crds/Cargo.toml',
         'Cargo.toml',
         'Cargo.lock',
-        'scripts/generate_crds.py',
+        'scripts/generate_crds_local.py',
     ],
-    resource_deps=['manage-netbox-token', 'setup-netbox-tenant'],  # Ensure tokens are set before controllers start
     labels=['infrastructure'],
     allow_parallel=True,
 )
@@ -154,8 +196,14 @@ local_resource(
 )
 
 # ====================
-# NetBox Controller
+# Image Builds (Tilt builds only — Flux deploys)
 # ====================
+# Mirrors hauliage's pattern: local_resource runs copy-binary + docker build + push.
+# Flux discovers the dev-<timestamp> tagged images via ImagePolicyWatch.
+#
+# Tilt does NOT apply k8s manifests for workloads — Flux owns all deployment.
+
+# ---- NetBox Controller ----
 # Build the NetBox Controller binary
 # Uses host_aware_build.py for cross-compilation (macOS -> Linux)
 # Note: host_aware_build.py passes all args to cargo, so --release works
@@ -176,105 +224,176 @@ local_resource(
     allow_parallel=True,
 )
 
-# Build Docker image for NetBox Controller
-# Use custom_build to ensure binary exists before Docker build
-# This matches the pattern from secret-manager-controller
-# Note: We build for linux/amd64 platform even on Apple Silicon
-# because the binary is cross-compiled for x86_64-unknown-linux-musl
-# The 'deps' parameter ensures the binary exists before Docker build
-BINARY_PATH = 'target/x86_64-unknown-linux-musl/release/netbox-controller'
-IMAGE_NAME = 'netbox-controller'
-REGISTRY = 'localhost:5000'
-FULL_IMAGE_NAME = '%s/%s' % (REGISTRY, IMAGE_NAME)
+# Publish NetBox Controller image for Flux ImagePolicy discovery
+# local_resource instead of custom_build: no Tilt image hash mangling, predictable :tilt tag
+# Pushed alongside a dev-<timestamp> tag for Flux image-automation-controller
+NETBOX_BINARY_PATH = 'target/x86_64-unknown-linux-musl/release/netbox-controller'
+NETBOX_IMAGE_NAME = 'netbox-controller'
+NETBOX_FULL_IMAGE_NAME = '%s/%s' % (_SHARED_K8S_REGISTRY, NETBOX_IMAGE_NAME)
 
-custom_build(
-    IMAGE_NAME,
-    'docker buildx build --platform linux/amd64 -f dockerfiles/Dockerfile.netbox-controller.dev -t %s:tilt . && docker tag %s:tilt %s:tilt && docker push %s:tilt' % (
-        IMAGE_NAME,
-        IMAGE_NAME,
-        FULL_IMAGE_NAME,
-        FULL_IMAGE_NAME
+local_resource(
+    'image-%s' % NETBOX_IMAGE_NAME,
+    '''set -eu
+# Build the image with the predictable :tilt tag (Tilt live_update target)
+docker buildx build --platform linux/amd64 -f dockerfiles/Dockerfile.netbox-controller.dev -t %s:tilt .
+# Tag and push a dev-<timestamp> image for Flux image-automation-controller to discover
+DEV_REF="%s:dev-$(date +%%s%%N)"
+docker tag %s:tilt "$DEV_REF"
+docker push "$DEV_REF"
+echo "Published $DEV_REF for Flux image discovery"
+''' % (
+        NETBOX_IMAGE_NAME,
+        NETBOX_FULL_IMAGE_NAME,
+        NETBOX_IMAGE_NAME,
     ),
     deps=[
-        BINARY_PATH,  # File dependency ensures binary exists before Docker build
+        NETBOX_BINARY_PATH,  # Build must succeed before docker build
         'dockerfiles/Dockerfile.netbox-controller.dev',
     ],
-    tag='tilt',
-    live_update=[
-        sync(BINARY_PATH, '/app/netbox-controller'),
-        run('kill -HUP 1', trigger=[BINARY_PATH]),
-    ],
-)
-
-# Deploy NetBox Controller
-# This includes: namespace, serviceaccount, role (RBAC), rolebinding, secret, deployment
-# RBAC permissions are automatically applied via kustomize
-k8s_yaml(kustomize('%s/config/netbox-controller' % DCops_DIR))
-
-k8s_resource(
-    'netbox-controller',
-    labels=['controllers'],
-    resource_deps=['build-netbox-controller'],  # Wait for binary to be built before deploying
-)
-
-# ====================
-# NetBox CR Verification
-# ====================
-# Automatically verify NetBox CR reconciliation status
-# This runs periodically to ensure CRs are properly reconciled and exist in NetBox database
-# Verification runs:
-# - When the script changes
-# - When triggered manually from Tilt UI
-# - After controller becomes ready (via resource_deps)
-local_resource(
-    'verify-netbox-crs',
-    # Script exits with code 1 on failures - don't mask it with || echo
-    cmd='python3 scripts/verify_netbox_crs.py --all',
-    deps=[
-        'scripts/verify_netbox_crs.py',
-    ],
-    resource_deps=['netbox-controller'],  # Wait for controller to be running
     labels=['controllers'],
     allow_parallel=True,
-    # Runs when script changes or when manually triggered from Tilt UI
-    # Use Tilt UI to trigger verification manually, or it will run after controller starts
+)
+
+# ---- DHCP Controller ----
+# Build the DHCP Controller binary
+# Uses host_aware_build.py for cross-compilation (macOS -> Linux)
+# Note: host_aware_build.py passes all args to cargo, so --release works
+local_resource(
+    'build-dhcp-controller',
+    cmd='python3 scripts/host_aware_build.py --release -p dhcp-controller',
+    deps=[
+        'controllers/dhcp/src',
+        'controllers/dhcp/Cargo.toml',
+        'crates/crds/src',
+        'Cargo.toml',
+        'Cargo.lock',
+        'scripts/host_aware_build.py',
+    ],
+    resource_deps=['generate-crds'],  # Wait for CRDs to be generated and applied
+    labels=['controllers'],
+    allow_parallel=True,
+)
+
+# Publish DHCP Controller image for Flux ImagePolicy discovery
+DHCP_BINARY_PATH = 'target/x86_64-unknown-linux-musl/release/dhcp-controller'
+DHCP_IMAGE_NAME = 'dhcp-controller'
+DHCP_FULL_IMAGE_NAME = '%s/%s' % (_SHARED_K8S_REGISTRY, DHCP_IMAGE_NAME)
+
+local_resource(
+    'image-%s' % DHCP_IMAGE_NAME,
+    '''set -eu
+docker buildx build --platform linux/amd64 -f dockerfiles/Dockerfile.dhcp-controller.dev -t %s:tilt .
+DEV_REF="%s:dev-$(date +%%s%%N)"
+docker tag %s:tilt "$DEV_REF"
+docker push "$DEV_REF"
+echo "Published $DEV_REF for Flux image discovery"
+''' % (
+        DHCP_IMAGE_NAME,
+        DHCP_FULL_IMAGE_NAME,
+        DHCP_IMAGE_NAME,
+    ),
+    deps=[
+        DHCP_BINARY_PATH,
+        'dockerfiles/Dockerfile.dhcp-controller.dev',
+    ],
+    labels=['controllers'],
+    allow_parallel=True,
+)
+
+# ---- PXE Server ----
+# Build the PXE Server binary
+# Uses host_aware_build.py for cross-compilation (macOS -> Linux)
+local_resource(
+    'build-pxe-server',
+    cmd='python3 scripts/host_aware_build.py --release -p pxe-server',
+    deps=[
+        'crates/pxe-server/src',
+        'crates/pxe-server/Cargo.toml',
+        'crates/crds/src',
+        'Cargo.toml',
+        'Cargo.lock',
+        'scripts/host_aware_build.py',
+    ],
+    resource_deps=['generate-crds'],
+    labels=['infrastructure'],
+    allow_parallel=True,
+)
+
+# Publish PXE Server image for Flux ImagePolicy discovery
+PXE_BINARY_PATH = 'target/x86_64-unknown-linux-musl/release/pxe-server'
+PXE_IMAGE_NAME = 'pxe-server'
+PXE_FULL_IMAGE_NAME = '%s/%s' % (_SHARED_K8S_REGISTRY, PXE_IMAGE_NAME)
+
+# Use a staging directory for the docker build context to avoid Tilt
+# detecting file changes in target/ (which causes infinite rebuild loops).
+# The staging dir is unwatched by Tilt, so docker operations there are silent.
+PXE_STAGING_DIR = '.tilt-staging/pxe-server'
+
+local_resource(
+    'image-%s' % PXE_IMAGE_NAME,
+    '''set -eu
+# Copy binary to unwatched staging dir — Tilt won't see docker ops there
+rm -rf %s
+mkdir -p %s
+cp %s %s/pxe-server
+cp dockerfiles/Dockerfile.pxe-server.dev %s/Dockerfile
+docker buildx build --platform linux/amd64 -f %s/Dockerfile -t %s:tilt %s
+DEV_REF="%s:dev-$(date +%%s%%N)"
+docker tag %s:tilt "$DEV_REF"
+docker push "$DEV_REF"
+echo "Published $DEV_REF for Flux image discovery"
+''' % (
+        PXE_STAGING_DIR,
+        PXE_STAGING_DIR,
+        PXE_BINARY_PATH,
+        PXE_STAGING_DIR,
+        PXE_STAGING_DIR,
+        PXE_STAGING_DIR,
+        PXE_IMAGE_NAME,
+        PXE_STAGING_DIR,
+        PXE_FULL_IMAGE_NAME,
+        PXE_IMAGE_NAME,
+    ),
+    deps=[
+        PXE_BINARY_PATH,
+        'dockerfiles/Dockerfile.pxe-server.dev',
+    ],
+    labels=['infrastructure'],
+    allow_parallel=True,
 )
 
 # ====================
-# Future Controllers
-# ====================
-# Additional controllers will be added here as they're implemented
-
-# ====================
-# DCops UI Documentation Site
+# Dev-only: Vite servers for local development (not deployed by Flux)
 # ====================
 
-# Build documentation site Docker image
-# Tilt will watch ui/ for changes and rebuild
-# Note: The build process runs 'yarn build' in the Dockerfile
-docker_build(
-    'dcops-ui',
-    '.',
-    dockerfile='./dockerfiles/Dockerfile.dcops-ui',
-    platform='linux/amd64',
-    only=[
-        './ui',
-        './dockerfiles/Dockerfile.dcops-ui',
-        './dockerfiles/nginx.dcops-ui.conf',
+# DCops Documentation Site (docs UI) — Vite dev server
+# For local development only; in production Flux deploys the built artifacts
+local_resource(
+    'build-docs',
+    cmd='yarn --cwd ui-docs dev --port 8801 --host 0.0.0.0',
+    deps=[
+        'ui-docs/src',
+        'ui-docs/package.json',
+        'ui-docs/yarn.lock',
     ],
-    ignore=[
-        'ui/node_modules',
-        'ui/dist',
-        'ui/.git',
-    ],
-)
-
-# Documentation site service (ClusterIP with port forward)
-k8s_yaml(kustomize('%s/config/dcops-ui' % DCops_DIR))
-
-k8s_resource(
-    'dcops-ui',
-    port_forwards='8800:80',
     labels=['docs'],
+    allow_parallel=True,
+    trigger_mode=TRIGGER_MODE_MANUAL,
+    auto_init=False,
 )
 
+# DCops Dashboard SPA — Vite dev server
+# For local development only; in production Flux deploys the built artifacts
+local_resource(
+    'build-dashboard',
+    cmd='yarn --cwd ui-dashboard dev --port 8802 --host 0.0.0.0',
+    deps=[
+        'ui-dashboard/src',
+        'ui-dashboard/package.json',
+        'ui-dashboard/yarn.lock',
+    ],
+    labels=['docs'],
+    allow_parallel=True,
+    trigger_mode=TRIGGER_MODE_MANUAL,
+    auto_init=False,
+)

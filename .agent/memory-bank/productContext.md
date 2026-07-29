@@ -1,0 +1,1 @@
+Product context placeholder

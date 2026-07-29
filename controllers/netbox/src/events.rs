@@ -36,6 +36,10 @@ pub mod reasons {
     
     /// Startup reconciliation mapped an existing NetBox resource
     pub const STARTUP_MAPPED: &str = "StartupMapped";
+
+    /// Address falls within a populated IP range and is managed by an external
+    /// system (e.g. a DHCP server); no NetBox IPAddress object is created.
+    pub const EXTERNALLY_MANAGED: &str = "ExternallyManaged";
 }
 
 /// Trait for event recording (allows mocking in tests)

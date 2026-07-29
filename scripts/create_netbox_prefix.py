@@ -57,7 +57,7 @@ def create_prefix(netbox_url: str, token: str, prefix: str, description: str = "
 
 def main():
     parser = argparse.ArgumentParser(description="Create a NetBox prefix")
-    parser.add_argument("--netbox-url", default=os.getenv("NETBOX_URL", "http://localhost:8001"))
+    parser.add_argument("--netbox-url", default=os.getenv("NETBOX_URL", "http://localhost:8011"))
     parser.add_argument("--token", required=True, help="NetBox API token")
     parser.add_argument("--prefix", required=True, help="Prefix CIDR (e.g., 192.168.1.0/24)")
     parser.add_argument("--description", default="DCops test prefix")

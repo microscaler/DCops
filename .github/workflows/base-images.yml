@@ -56,7 +56,7 @@ jobs:
       
       - name: Build and push Rust builder base image
         if: ${{ !env.ACT }}
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: ./dockerfiles/Dockerfile.base.rust-builder
@@ -82,7 +82,7 @@ jobs:
       
       - name: Also push to Docker Hub (docker.io)
         if: ${{ !env.ACT && github.ref == 'refs/heads/main' }}
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: ./dockerfiles/Dockerfile.base.rust-builder
@@ -132,7 +132,7 @@ jobs:
       
       - name: Build and push controller base image
         if: ${{ !env.ACT }}
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: ./dockerfiles/Dockerfile.base.controller
@@ -158,7 +158,7 @@ jobs:
       
       - name: Also push to Docker Hub (docker.io)
         if: ${{ !env.ACT && github.ref == 'refs/heads/main' }}
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: ./dockerfiles/Dockerfile.base.controller

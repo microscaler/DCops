@@ -31,7 +31,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 # Kubernetes
 # kube 2.0 is a major version upgrade - check compatibility
 kube = { version = "2.0.0", features = ["runtime", "derive", "client", "rustls-tls"], default-features = false }
-kube-runtime = "2.0"
+kube-runtime = "3.1"
 # k8s-openapi version must match kube's requirement
 # kube 2.0 requires k8s-openapi 0.26+
 # Features enabled per-binary crate only

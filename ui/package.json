@@ -15,7 +15,7 @@
   "dependencies": {
     "katex": "^0.16.25",
     "marked": "^17.0.1",
-    "mermaid": "^11.12.1",
+    "mermaid": "^11.16.1",
     "minisearch": "^7.2.0",
     "solid-js": "^1.9.10",
     "typescript": "^5.9.3",

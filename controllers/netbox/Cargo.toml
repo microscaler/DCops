@@ -51,7 +51,7 @@ hyper = { version = "0.14", features = ["full"] }
 bytes = "1.0"
 
 # Docker container testing (for DHCP integration tests)
-bollard = { version = "0.19", features = ["ssl", "chrono"] }
+bollard = { version = "0.20", features = ["ssl", "chrono"] }
 futures-util = "0.3"
 reqwest = { version = "0.12", features = ["json"], default-features = false }
 uuid = { version = "1.0", features = ["v4"] }

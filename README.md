@@ -96,10 +96,6 @@ The DHCP controller watches NetBox-backed prefix, range and address resources an
 - DHCP pools derived from populated NetBox ranges
 - MAC-keyed reservations for stable workload addressing
 
-This enables the Aether recovery contract: **Aether owns a workload's deterministic MAC address; DCops, NetBox and Kea own its IP assignment.** When Aether recovers a VM on another host with the same MAC, Kea returns the same reserved address.
-
-See the [Aether ↔ DCops IPAM/DHCP contract](docs/AETHER_DCOPS_IPAM_CONTRACT.md) and [DHCP controller documentation](controllers/dhcp/README.md).
-
 ### Controlled PXE boot
 
 DCops models boot profiles and boot intent declaratively so that provisioning and recovery operations can be controlled through reviewed state rather than unmanaged DHCP/PXE changes.
@@ -306,7 +302,7 @@ DCops runs in a Kubernetes management cluster alongside NetBox and its supportin
 
 ### Development environment
 
-The recommended development path uses the repository's preconfigured Dev Container and the shared local k3s management cluster.
+The recommended development path uses the repository's preconfigured Dev Container and a local k3s management cluster.
 
 **Supported IDEs**
 
@@ -335,7 +331,6 @@ See [`.devcontainer/README.md`](.devcontainer/README.md) and [CONTRIBUTING.md](C
 ## Documentation
 
 - [Contributing and controller architecture](CONTRIBUTING.md)
-- [Aether ↔ DCops IPAM/DHCP contract](docs/AETHER_DCOPS_IPAM_CONTRACT.md)
 - [Populated NetBox IP range handling](docs/NETBOX_IP_RANGE_ANALYSIS.md)
 - [DHCP controller](controllers/dhcp/README.md)
 - [Kea command coverage](controllers/dhcp/KEA_COMMANDS.md)

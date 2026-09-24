@@ -366,33 +366,19 @@ echo "Published $DEV_REF for Flux image discovery"
 # Dev-only: Vite servers for local development (not deployed by Flux)
 # ====================
 
-# DCops Documentation Site (docs UI) — Vite dev server
-# For local development only; in production Flux deploys the built artifacts
+# DCops UI (docs + dashboard + admin sections in one SPA) — Vite dev server
+# For local development only; in production Flux deploys the built artifact
+# (dockerfiles/Dockerfile.dcops-ui, config/dcops-ui). The former ui-docs/ and
+# ui-dashboard/ apps were folded into ui/ — see ui/README.md.
 local_resource(
-    'build-docs',
-    cmd='yarn --cwd ui-docs dev --port 8801 --host 0.0.0.0',
+    'build-ui',
+    cmd='npm --prefix ui run dev -- --port 8800 --host 0.0.0.0',
     deps=[
-        'ui-docs/src',
-        'ui-docs/package.json',
-        'ui-docs/yarn.lock',
+        'ui/src',
+        'ui/package.json',
+        'ui/package-lock.json',
     ],
-    labels=['docs'],
-    allow_parallel=True,
-    trigger_mode=TRIGGER_MODE_MANUAL,
-    auto_init=False,
-)
-
-# DCops Dashboard SPA — Vite dev server
-# For local development only; in production Flux deploys the built artifacts
-local_resource(
-    'build-dashboard',
-    cmd='yarn --cwd ui-dashboard dev --port 8802 --host 0.0.0.0',
-    deps=[
-        'ui-dashboard/src',
-        'ui-dashboard/package.json',
-        'ui-dashboard/yarn.lock',
-    ],
-    labels=['docs'],
+    labels=['ui'],
     allow_parallel=True,
     trigger_mode=TRIGGER_MODE_MANUAL,
     auto_init=False,

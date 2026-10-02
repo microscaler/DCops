@@ -1,391 +1,346 @@
 # DCops Dashboard — Platform View UI
 
 > **Type:** Architecture Design Document  
-> **Status:** Draft  
+> **Status:** Draft v2 — browser talks only to the BFF (supersedes v1's direct-Kubernetes design)  
 > **Priority:** P1  
-> **Effort:** 10–14 days  
+> **Effort:** 10–14 days (UI shell) + the `platform` service and BFF scaffold from `CM-002.2`  
 > **Parent:** DCops platform operational visibility gap  
+> **Contracts:** `openapi/dcops/` (`openapi_bff.yaml` and one spec per service) — see `openapi/dcops/README.md` for the screen → operation traceability table  
+> **Mockups:** `docs/03_ui_design/` (22 signed-off artboards)
 
 ---
 
+## 0. What changed in v2
+
+v1 of this document had the SPA call the Kubernetes API directly: `kubectl proxy` in Tilt, a mounted
+ServiceAccount token in production, browser-side CRD discovery through `GET /apis`, and a
+`dcops-ui-reader` ClusterRole. That design is withdrawn. Once the certificate-management work
+(EPIC-CM-002/003/004) added an authenticated write path, keeping a second, credentialed read path
+in the browser meant two auth models, two RBAC surfaces and Kubernetes JSON shaped by CRD internals
+leaking into screens built for non-technical Operations managers.
+
+The rule now (README delta 16 in `docs/02_certificate_management/README.md`): **the browser talks
+only to the BFF.** No Kubernetes credential of any kind reaches the browser, no CRD discovery
+happens there, and every screen is fed by an operation in a consumer-driven OpenAPI contract
+derived from the mockups. Section headings below are kept so diffs against v1 read cleanly.
+
 ## 1. Problem Statement
 
-Operators and developers have **no visual overview** of the DCops platform. To see what CRs are deployed they must run scattered `kubectl get` commands across 27 CRD types. There is no single pane of glass to answer:
+Operators and developers have **no visual overview** of the DCops platform. To see what CRs are deployed they must run scattered `kubectl get` commands across the 25 NetBox/boot CRD types in `config/crd/` (plus the three certificate CRDs EPIC-CM-001 adds). There is no single pane of glass to answer:
 
 - How many resources are deployed, and by type?
 - Which resources are in Failed state?
 - What is the reconciliation health of each namespace?
+- Which certificates need an owner, are expiring, or have drifted? (EPIC-CM-004)
 
-This makes troubleshooting slow and onboarding difficult.
+This makes troubleshooting slow and onboarding difficult, and it keeps the estate in the hands of people who can run `kubectl`.
 
 ## 2. Goals
 
-- [ ] **Phase 1 (Read-Only):** Auto-discover and display all `dcops.microscaler.io` CRs in the cluster with state, namespace, and error visibility
-- [ ] **Phase 2 (Future):** Edit CRs through the UI → gitops apply flow
-- [ ] **Integration:** Extend the existing `dcops-ui` (SolidJS/Vite/nginx) — do not replace it
-- [ ] **Zero hardcoded CRD list:** Discover CRDs dynamically from the K8s API
+- [ ] **Phase 1 (Read-only platform view):** display every `dcops.microscaler.io` resource with state, namespace and error visibility, served through the BFF
+- [ ] **Certificates (EPIC-CM-004):** inventory, ownership, scan import and maturity screens on the same shell, with writes through the BFF
+- [ ] **Phase 2 (Future):** edit NetBox/boot resources through the UI → GitOps apply flow (still through the BFF; the services would open pull requests, not patch the cluster)
+- [ ] **Integration:** extend the single `ui/` SPA (SolidJS/Vite/nginx) — do not replace it
+- [ ] **Zero hand-written API types:** the client is generated from `openapi_bff.yaml`; CRD schemas flow into the service specs by generator, never by copying
 
 ## 3. Non-Goals (for Phase 1)
 
-- No write/CRUD operations
-- No authentication (runs in-cluster behind the service, or via `kubectl proxy` for Tilt dev)
-- No custom backend service — pure static SPA talking directly to K8s API
-- No real-time streaming — polling-based (30s interval)
+- No write operations on NetBox, boot or IP-pool resources (declared in Git, reconciled by controllers — ADR-001); only the `certificates` service exposes writes
+- **No direct Kubernetes access from the browser** — no `kubectl proxy`, no ServiceAccount token, no `/apis/` or `/api/v1/namespaces` calls, no SPA RBAC
+- No anonymous access: every BFF operation except `/healthz` requires an OIDC bearer token
+- No real-time streaming for the platform views — polling (30 s) is enough; the only SSE stream is certificate-import progress
 
 ## 4. Architecture
 
-### 4.1 High-Level Data Flow
+### 4.1 High-level data flow
 
 ```mermaid
+%%{init: {'theme':'base','themeVariables': {'fontFamily': 'Inter, Segoe UI, Helvetica, Arial, sans-serif', 'fontSize': '14px', 'primaryColor': '#EEF1F4', 'primaryTextColor': '#111318', 'primaryBorderColor': '#5E6672', 'secondaryColor': '#EAF3FF', 'secondaryTextColor': '#111318', 'secondaryBorderColor': '#2F80ED', 'tertiaryColor': '#EAF8F0', 'tertiaryTextColor': '#111318', 'tertiaryBorderColor': '#2FA36B', 'lineColor': '#6B7684', 'textColor': '#6B7684', 'nodeBorder': '#5E6672', 'nodeTextColor': '#111318', 'mainBkg': '#EEF1F4', 'clusterBkg': '#F7F9FB', 'clusterBorder': '#BAC1C9', 'titleColor': '#111318', 'edgeLabelBackground': '#F7F9FB', 'actorBkg': '#EEF1F4', 'actorBorder': '#5E6672', 'actorTextColor': '#111318', 'actorLineColor': '#BAC1C9', 'signalColor': '#6B7684', 'signalTextColor': '#6B7684', 'labelBoxBkgColor': '#EAF3FF', 'labelBoxBorderColor': '#2F80ED', 'labelTextColor': '#111318', 'loopTextColor': '#111318', 'noteBkgColor': '#FFF6E7', 'noteBorderColor': '#E6A23C', 'noteTextColor': '#111318', 'activationBkgColor': '#DCE6F7', 'activationBorderColor': '#2F80ED', 'sequenceNumberColor': '#FFFFFF', 'labelColor': '#111318', 'altBackground': '#F7F9FB', 'attributeBackgroundColorOdd': '#FFFFFF', 'attributeBackgroundColorEven': '#F7F9FB', 'classText': '#111318'}}}%%
 flowchart TB
-    subgraph Browser["Browser (localhost:8800 / in-cluster)"]
-        SPA["SolidJS SPA"]
-        API["K8s API Client"]
+    subgraph Browser["Browser — no Kubernetes credential"]
+        SPA["SolidJS SPA (ui/)"]
+        Client["api/client.ts<br/>generated from openapi_bff.yaml"]
+        OIDC["auth/oidc.ts<br/>Code + PKCE, token in memory"]
     end
-
-    subgraph K8s["Kubernetes Cluster"]
-        K8sAPI["Kubernetes API Server\n/apis/dcops.microscaler.io/v1alpha1"]
-        K8sSecret["ServiceAccount Token (in-cluster)\nor kubectl proxy (Tilt dev)"]
-        subgraph Namespaces["Namespaces"]
-            NS1["dcops-system\nnetbox-controller, pxe-server,\ndcops-ui, kea-dhcp"]
-            NS2["default\nNetBox CRs"]
+    IdP["IdP<br/>Entra ID or sesame-idam (config)"]
+    subgraph Cluster["Kubernetes cluster (any GCP project)"]
+        GW["Envoy Gateway<br/>HTTPRoute /api/v1 → BFF, / → SPA"]
+        BFF["dcops BFF (BRRTRouter)<br/>openapi_bff.yaml · JWKS validation"]
+        subgraph Services["BRRTRouter services (one per domain)"]
+            Plat["platform<br/>summary · attention · kinds<br/>namespaces · events · me"]
+            Dcim["dcim"]
+            Ipam["ipam"]
+            Ten["tenancy · extras"]
+            Boot["boot · ippools"]
+            Cert["certificates<br/>inventory · imports · maturity"]
         end
+        K8s["Kubernetes API<br/>(reflectors, get/list only)"]
+        Ctl["controllers<br/>netbox · dhcp · pxe · certificate<br/>(+ import Jobs, SSA dcops-scan-import)"]
     end
-
-    SPA -->|"GET /apis"| API
-    API -->|"discover CRDs"| K8sAPI
-    API -->|"list CRs"| K8sAPI
-    K8sAPI -->|"auth"| K8sSecret
-    K8sAPI -->|"serve"| NS1
-    K8sAPI -->|"serve"| NS2
-
-    SPA -->|"render table/detail"| Dashboard["Dashboard UI"]
-    Dashboard --> CrdTable["CrdTable"]
-    Dashboard --> CrdDetail["CrdDetail"]
-    Dashboard --> ErrorSummary["ErrorSummary"]
+    Bucket["Upload bucket<br/>(GCS / MinIO in dev)"]
+    OIDC <-->|"authorize / token"| IdP
+    SPA --> Client
+    Client -->|"Bearer JWT"| GW --> BFF
+    BFF --> Plat & Dcim & Ipam & Ten & Boot & Cert
+    Plat & Dcim & Ipam & Ten & Boot --> K8s
+    Cert -->|"SSA fieldManager dcops-ui"| K8s
+    Cert -->|"signed URLs (Workload Identity)"| Bucket
+    Client -.->|"one-time PUT scan.csv"| Bucket
+    K8s -.->|watch| Ctl
+    style Browser fill:transparent,stroke:#8A94A6,stroke-width:1.5px,stroke-dasharray:4 3
+    style Cluster fill:transparent,stroke:#8A94A6,stroke-width:1.5px,stroke-dasharray:4 3
+    style Services fill:transparent,stroke:#8A94A6,stroke-width:1.5px,stroke-dasharray:4 3
 ```
 
-### 4.2 Tilt Dev Flow
+Three layers, each with one job:
 
-During local development, the UI connects to K8s via `kubectl proxy` running on port 8001.
+| Layer | Owns | Never does |
+|---|---|---|
+| **SPA** | rendering, filters in memory, OIDC flow, the generated client | build Kubernetes URLs, hold a cluster credential, decode CRD JSON |
+| **BFF** | one origin for the browser, JWT validation, proxying by `x-service`, CORS | business logic (all operations are `x-brrtrouter-impl: false` today) |
+| **Services** | read CRDs through kube-rs reflectors and shape them into rows/details; `certificates` also writes with SSA and mints signed URLs | expose raw Kubernetes objects; hold bucket key files |
+
+### 4.2 Request flow (dashboard load)
 
 ```mermaid
+%%{init: {'theme':'base','themeVariables': {'fontFamily': 'Inter, Segoe UI, Helvetica, Arial, sans-serif', 'fontSize': '14px', 'primaryColor': '#EEF1F4', 'primaryTextColor': '#111318', 'primaryBorderColor': '#5E6672', 'secondaryColor': '#EAF3FF', 'secondaryTextColor': '#111318', 'secondaryBorderColor': '#2F80ED', 'tertiaryColor': '#EAF8F0', 'tertiaryTextColor': '#111318', 'tertiaryBorderColor': '#2FA36B', 'lineColor': '#6B7684', 'textColor': '#6B7684', 'nodeBorder': '#5E6672', 'nodeTextColor': '#111318', 'mainBkg': '#EEF1F4', 'clusterBkg': '#F7F9FB', 'clusterBorder': '#BAC1C9', 'titleColor': '#111318', 'edgeLabelBackground': '#F7F9FB', 'actorBkg': '#EEF1F4', 'actorBorder': '#5E6672', 'actorTextColor': '#111318', 'actorLineColor': '#BAC1C9', 'signalColor': '#6B7684', 'signalTextColor': '#6B7684', 'labelBoxBkgColor': '#EAF3FF', 'labelBoxBorderColor': '#2F80ED', 'labelTextColor': '#111318', 'loopTextColor': '#111318', 'noteBkgColor': '#FFF6E7', 'noteBorderColor': '#E6A23C', 'noteTextColor': '#111318', 'activationBkgColor': '#DCE6F7', 'activationBorderColor': '#2F80ED', 'sequenceNumberColor': '#FFFFFF', 'labelColor': '#111318', 'altBackground': '#F7F9FB', 'attributeBackgroundColorOdd': '#FFFFFF', 'attributeBackgroundColorEven': '#F7F9FB', 'classText': '#111318'}}}%%
 sequenceDiagram
-    participant U as Browser (Tilt)
-    participant T as Tilt
-    participant K as kubectl proxy (port 8001)
-    participant S as K8s API Server
-    participant C as CRDs in cluster
+    participant U as Browser (SPA)
+    participant I as IdP
+    participant B as dcops BFF
+    participant P as platform service
+    participant D as dcim service
+    participant K as Kubernetes API
 
-    T->>K: Start kubectl proxy
-    U->>K: GET http://localhost:8001/apis
-    K->>S: Forward request
-    S->>C: List CRD types
-    C-->>S: Return dcops CRD list
-    S-->>K: Return API groups
-    K-->>U: Return CRDs
-
-    U->>K: GET /apis/dcops.microscaler.io/v1alpha1/namespaces/<ns>/<plural>
-    K->>S: Forward list request
-    S->>C: Query CRs
-    C-->>S: Return CR instances
-    S-->>K: Return CRs
-    K-->>U: Return JSON → render tables
+    U->>I: Authorization Code + PKCE (first visit or token expired)
+    I-->>U: access token (in memory only)
+    U->>B: GET /api/v1/platform/me (Bearer)
+    B->>P: proxy
+    P-->>U: subject, displayName, roles
+    U->>B: GET /api/v1/platform/kinds
+    P-->>U: kinds with category, service, list path → sidebar sections
+    U->>B: GET /api/v1/platform/namespaces
+    P-->>U: namespaces the caller may read → header selector
+    U->>B: GET /api/v1/platform/summary?namespace=
+    P->>K: reflector caches (no live list)
+    P-->>U: totals, by category, by state
+    U->>B: GET /api/v1/platform/attention
+    P-->>U: Failed / Pending resources across every kind
+    Note over U,D: user opens DCIM → Devices
+    U->>B: GET /api/v1/dcim/devices?namespace=&site=&status=&limit=50
+    B->>D: proxy (x-brrtrouter-downstream-path /devices)
+    D-->>U: DeviceRow[] + page{total, nextCursor}
 ```
 
-### 4.3 Production Flow
+### 4.3 Tilt dev flow
 
-When deployed to-cluster, the UI pod mounts the default ServiceAccount token and talks directly to the K8s API server.
+There is no `kubectl proxy` any more. Tilt runs the BFF and the services as ordinary resources next
+to the controllers, MinIO stands in for the bucket, and the IdP is whichever issuer `OIDC_ISSUER`
+points at (sesame-idam from `shared-k8s` by default; an Entra tenant works unchanged). `build-ui`
+serves the SPA on port 8800 with `VITE_DCOPS_API_BASE` pointing at the gateway. A developer without
+an IdP can run the BRRTRouter TestApp fixtures (`--features testing`) and the SPA against `msw`
+handlers generated from the same spec examples.
 
-```mermaid
-flowchart LR
-    subgraph Pod["dcops-ui Pod"]
-        UI["Nginx + SPA"]
-        SA["ServiceAccount Token\n/var/run/secrets/kubernetes.io/serviceaccount"]
-    end
+### 4.4 Production flow
 
-    subgraph APIServer["K8s API Server"]
-        API["/apis/dcops.microscaler.io/v1alpha1"]
-    end
+Same topology as 4.1 in any GCP project the client's IaC provisions: GKE, Workload Identity for the
+`certificates` service's signing identity, the bucket name and prefix as environment variables, and
+the IdP issuer/audience/JWKS URL as configuration (README delta 15). The SPA is static files behind
+the gateway; its Deployment mounts no ServiceAccount token (`automountServiceAccountToken: false`)
+and has no RBAC bindings. The services run with a namespaced Role limited to `get`/`list`/`watch`
+on the kinds they serve; only `certificates` has `patch` on `certificatescanimports` and `certificateinventories`.
 
-    subgraph CRs["Cluster CRs"]
-        CR1["netboxprefixes"]
-        CR2["bootprofiles"]
-        CR3["ippools"]
-    end
-
-    UI -->|"SA token auth"| API
-    UI -->|"list/listCRDs"| CR1
-    UI -->|"list/listCRDs"| CR2
-    UI -->|"list/listCRDs"| CR3
-```
-
-### 4.4 Component Architecture
+### 4.5 Component architecture
 
 ```mermaid
+%%{init: {'theme':'base','themeVariables': {'fontFamily': 'Inter, Segoe UI, Helvetica, Arial, sans-serif', 'fontSize': '14px', 'primaryColor': '#EEF1F4', 'primaryTextColor': '#111318', 'primaryBorderColor': '#5E6672', 'secondaryColor': '#EAF3FF', 'secondaryTextColor': '#111318', 'secondaryBorderColor': '#2F80ED', 'tertiaryColor': '#EAF8F0', 'tertiaryTextColor': '#111318', 'tertiaryBorderColor': '#2FA36B', 'lineColor': '#6B7684', 'textColor': '#6B7684', 'nodeBorder': '#5E6672', 'nodeTextColor': '#111318', 'mainBkg': '#EEF1F4', 'clusterBkg': '#F7F9FB', 'clusterBorder': '#BAC1C9', 'titleColor': '#111318', 'edgeLabelBackground': '#F7F9FB', 'actorBkg': '#EEF1F4', 'actorBorder': '#5E6672', 'actorTextColor': '#111318', 'actorLineColor': '#BAC1C9', 'signalColor': '#6B7684', 'signalTextColor': '#6B7684', 'labelBoxBkgColor': '#EAF3FF', 'labelBoxBorderColor': '#2F80ED', 'labelTextColor': '#111318', 'loopTextColor': '#111318', 'noteBkgColor': '#FFF6E7', 'noteBorderColor': '#E6A23C', 'noteTextColor': '#111318', 'activationBkgColor': '#DCE6F7', 'activationBorderColor': '#2F80ED', 'sequenceNumberColor': '#FFFFFF', 'labelColor': '#111318', 'altBackground': '#F7F9FB', 'attributeBackgroundColorOdd': '#FFFFFF', 'attributeBackgroundColorEven': '#F7F9FB', 'classText': '#111318'}}}%%
 graph TD
-    App["App.tsx\nRouter + Layout"] --> K8sClient["api/k8s-client.ts"]
-    K8sClient --> CrdDiscovery["api/crd-discovery.ts"]
-    K8sClient --> Types["api/types.ts"]
-
-    App --> DashboardPage["pages/Dashboard.tsx"]
-    DashboardPage --> CrdTable["components/dashboard/CrdTable.tsx"]
-    DashboardPage --> ErrorSummary["components/dashboard/ErrorSummary.tsx"]
-    DashboardPage --> NamespaceFilter["components/dashboard/NamespaceFilter.tsx"]
-    DashboardPage --> CrdCountChart["components/dashboard/CrdCountChart.tsx"]
-    DashboardPage --> CrdDetail["components/dashboard/CrdDetail.tsx"]
-
-    CrdTable --> StateBadge["components/dashboard/StateBadge.tsx"]
-    CrdDetail --> JsonViewer["components/common/JsonViewer.tsx"]
-
-    K8sClient -.->|"fetch K8s API"| Proxy["kubectl proxy / in-cluster API"]
+    App["App.tsx<br/>Router + Layout"] --> Client["api/client.ts (generated)"]
+    App --> OIDC["auth/oidc.ts"]
+    Client --> Types["api/types.ts (re-exports generated schemas)"]
+    App --> Shell["layout/Shell.tsx<br/>sidebar from list_kinds · namespace selector · /me footer"]
+    Shell --> Dashboard["pages/Dashboard.tsx<br/>get_platform_summary · list_attention"]
+    Shell --> Section["pages/Section.tsx<br/>one per category, tabs per kind"]
+    Section --> RowTable["components/table/RowTable.tsx<br/>generic over <Kind>Row"]
+    Section --> Detail["pages/Detail.tsx<br/>spec · status · conditions · manifest · history"]
+    Detail --> Events["list_events (platform)"]
+    Shell --> Certs["pages/certificates/* (EPIC-CM-004)"]
+    RowTable --> StateBadge["components/StateBadge.tsx"]
+    Detail --> ManifestPanel["components/ManifestPanel.tsx<br/>collapsed by default"]
 ```
 
 ## 5. API Design
 
-### 5.1 K8s API Endpoints Used
+The API is the `dcops` OpenAPI suite in `openapi/dcops/`. It is consumer-driven: every operation
+exists because a signed-off mockup needs it, and the traceability table in `openapi/dcops/README.md`
+maps all 22 artboards to their operations.
 
-| Operation | K8s Endpoint | Description |
-|-----------|-------------|-------------|
-| Discover CRDs | `GET /apis` | List all API groups, filter `dcops.microscaler.io` |
-| List CRs by type | `GET /apis/dcops.microscaler.io/v1alpha1/namespaces/{ns}/{plural}` | Get all instances of a CRD |
-| Get single CR | `GET /apis/dcops.microscaler.io/v1alpha1/namespaces/{ns}/{plural}/{name}` | Get one CR's full YAML |
-| List namespaces | `GET /api/v1/namespaces` | Available namespaces |
+### 5.1 Services and operations
 
-### 5.2 TypeScript Types
+| Service | Base path | Operations | Backed by |
+|---|---|---|---|
+| platform | `/api/v1/platform` | `summary`, `attention`, `kinds`, `namespaces`, `events`, `me`, `healthz` | reflectors over every kind; core Events and Namespaces |
+| dcim | `/api/v1/dcim` | 11 kinds × list/get, `summary`, `devices/{ns}/{name}/interfaces` | NetBox DCIM CRDs |
+| ipam | `/api/v1/ipam` | 9 kinds × list/get, `summary` | NetBox IPAM CRDs |
+| tenancy | `/api/v1/tenancy` | 2 kinds × list/get, `summary` | NetBox tenancy CRDs |
+| extras | `/api/v1/extras` | tags list/get, `summary` | NetBoxTag |
+| boot | `/api/v1/boot` | 2 kinds × list/get, `summary` (+ lifecycle counts) | BootProfile, BootIntent |
+| ippools | `/api/v1/ippools` | 2 kinds × list/get, `summary` | IPPool, IPClaim (**CRDs not yet in repo — placeholder schemas**) |
+| certificates | `/api/v1/certificates` | inventory, ownership, maturity, imports (18 ops) | EPIC-CM-002/003 |
+
+Each CRD-backed kind exposes two read operations, generated from the CRD's `openAPIV3Schema`:
+
+| Operation | Path | Returns |
+|---|---|---|
+| list | `GET /<segment>?namespace=&state=&search=&limit=&cursor=&sort=` (+ per-kind filters) | `<Kind>List { items: <Kind>Row[], page }` — scalar spec columns, state, error, lastReconciled, netboxId/Url |
+| get | `GET /<segment>/{namespace}/{name}` | `<Kind>Detail` — full spec, status, conditions, `manifestYaml`, `gitUrl` |
+
+### 5.2 TypeScript types
+
+Generated, not written. `just ui-gen-client` runs `openapi-typescript` over `openapi_bff.yaml`
+into `ui/src/api/client.ts`; `ui/src/api/types.ts` re-exports the schemas screens use under short
+names. Representative shapes (from the spec, shown for orientation only):
 
 ```typescript
-// K8s Resource — generic shape for any CR
-interface K8sResource {
-  apiVersion: string;
-  kind: string;
-  metadata: {
-    name: string;
-    namespace: string;
-    creationTimestamp: string;
-    labels?: Record<string, string>;
-    annotations?: Record<string, string>;
-  };
-  spec: Record<string, unknown>;
-  status?: Record<string, unknown>;
+// components['schemas']['DcimDeviceRow']
+interface DeviceRow {
+  metadata: ResourceMeta;            // name, namespace, uid, creationTimestamp, labels?
+  state: 'Pending' | 'Created' | 'Updated' | 'Failed';
+  error: string | null;
+  lastReconciled: string | null;
+  netboxId: number | null;
+  netboxUrl: string | null;
+  spec: { name: string; site: string | null; deviceType: string | null; deviceRole: string | null; status?: string; serial?: string; /* scalar spec fields */ };
 }
 
-// Discovered CRD metadata
-interface CrdMeta {
-  plural: string;
-  kind: string;
-  category: CrdCategory;
-}
+// components['schemas']['PlatformKindDescriptor'] — replaces browser-side CRD discovery
+interface KindDescriptor { kind: string; plural: string; category: string; service: string; segment: string; listPath: string; description: string; }
 
-type CrdCategory = 'ipam' | 'dcim' | 'tenancy' | 'extras' | 'boot' | 'ippool';
-
-// CRD list response — grouped by category
-interface DashboardData {
-  crds: CrdMeta[];
-  instances: Map<string, K8sResource[]>; // key = plural
-  namespaces: string[];
-  summary: {
-    total: number;
-    byCategory: Record<string, number>;
-    byState: Record<string, number>; // Created, Failed, Pending
-    withErrors: number;
-  };
-}
+// components['schemas']['ErrorEnvelope'] — every non-2xx
+interface ErrorEnvelope { code: string; message: string; fields?: { name: string; reason: string }[]; requestId: string; }
 ```
 
-### 5.3 API Client Interface
+### 5.3 API client interface
 
 ```typescript
-export class K8sClient {
-  private proxyUrl: string;
-
-  constructor(proxyUrl = 'http://localhost:8001') {
-    this.proxyUrl = proxyUrl;
-  }
-
-  // Discover all dcops CRD plurals
-  async listCrdPlurals(): Promise<CrdMeta[]>;
-
-  // List CRs of one type across namespaces
-  async listCrds(plural: string, namespace: string): Promise<K8sResource[]>;
-
-  // Get single CR by name
-  async getCrds(plural: string, namespace: string, name: string): Promise<K8sResource>;
-
-  // List all namespaces
-  async listNamespaces(): Promise<string[]>;
-
-  // Fetch all CRs for dashboard (optimizes to single call per namespace)
-  async fetchAllDashboardData(namespaces: string[]): Promise<DashboardData>;
-}
+// ui/src/api/http.ts — the only hand-written network code besides the upload helper
+export function bff<T>(op: OperationId, params: Params, init?: RequestInit): Promise<T>;
+//   - prefixes VITE_DCOPS_API_BASE (default /api/v1)
+//   - attaches Authorization: Bearer <token from auth/oidc.ts>
+//   - maps ErrorEnvelope → ApiError { kind: 'unauthorised'|'forbidden'|'notFound'|'conflict'|'validation'|'gone'|'unavailable', message, requestId }
+//   - retries idempotent GET once on network/5xx; never retries writes
+export function uploadToSignedUrl(upload: UploadInstruction, file: File, onProgress: (pct: number) => void): Promise<void>;
+//   - PUT to the bucket with the headers the API returned; no Authorization header
 ```
 
 ## 6. UI Layout
 
-### 6.1 Dashboard Page
+Unchanged from the signed-off mockups (`docs/03_ui_design/`): header with namespace selector and
+`/me` footer, sidebar sections built from `list_kinds`, main content with summary tiles, a filter
+row, a virtualised row table and a detail page with tabs. See `Main.dc.html`, `DcimOverview.dc.html`,
+`DcimDeviceDetail.dc.html` for the platform views.
+
+### 6.1 Page states
 
 ```mermaid
-graph TB
-    subgraph Header["Header (shared layout)"]
-        Logo["DCops Logo"]
-        Nav["User Docs / Contributor Docs / Admin"]
-    end
-
-    subgraph Sidebar["Sidebar (left)"]
-        Overview["Overview"]
-        Crds["CR Types"]
-        ipam["IPAM (9 types)"]
-        dcim["DCIM (11 types)"]
-        tenancy["Tenancy (2)"]
-        extras["Extras (1)"]
-        boot["Boot (2)"]
-        ippool["IP Pool (2)"]
-    end
-
-    subgraph Main["Main Content"]
-        Stats["Summary Cards\nTotal CRs | Failed | Namespaces | Last Poll"]
-        Filter["Namespace Filter + Refresh Button"]
-        Table["CR Type Table\nType | Name | Namespace | State | Age | Error"]
-        Detail["CrdDetail Panel (click row)"]
-    end
-
-    Header --> Nav
-    Nav --> Sidebar
-    Nav --> Main
-    Sidebar --> Overview
-    Sidebar --> Crds
-    Crds --> ipam
-    Crds --> dcim
-    Crds --> tenancy
-    Crds --> extras
-    Crds --> boot
-    Crds --> ippool
-    Main --> Stats
-    Main --> Filter
-    Main --> Table
-    Table --> Detail
-```
-
-### 6.2 Page States
-
-```mermaid
+%%{init: {'theme':'base','themeVariables': {'fontFamily': 'Inter, Segoe UI, Helvetica, Arial, sans-serif', 'fontSize': '14px', 'primaryColor': '#EEF1F4', 'primaryTextColor': '#111318', 'primaryBorderColor': '#5E6672', 'secondaryColor': '#EAF3FF', 'secondaryTextColor': '#111318', 'secondaryBorderColor': '#2F80ED', 'tertiaryColor': '#EAF8F0', 'tertiaryTextColor': '#111318', 'tertiaryBorderColor': '#2FA36B', 'lineColor': '#6B7684', 'textColor': '#6B7684', 'nodeBorder': '#5E6672', 'nodeTextColor': '#111318', 'mainBkg': '#EEF1F4', 'clusterBkg': '#F7F9FB', 'clusterBorder': '#BAC1C9', 'titleColor': '#111318', 'edgeLabelBackground': '#F7F9FB', 'actorBkg': '#EEF1F4', 'actorBorder': '#5E6672', 'actorTextColor': '#111318', 'actorLineColor': '#BAC1C9', 'signalColor': '#6B7684', 'signalTextColor': '#6B7684', 'labelBoxBkgColor': '#EAF3FF', 'labelBoxBorderColor': '#2F80ED', 'labelTextColor': '#111318', 'loopTextColor': '#111318', 'noteBkgColor': '#FFF6E7', 'noteBorderColor': '#E6A23C', 'noteTextColor': '#111318', 'activationBkgColor': '#DCE6F7', 'activationBorderColor': '#2F80ED', 'sequenceNumberColor': '#FFFFFF', 'labelColor': '#111318', 'altBackground': '#F7F9FB', 'attributeBackgroundColorOdd': '#FFFFFF', 'attributeBackgroundColorEven': '#F7F9FB', 'classText': '#111318'}}}%%
 stateDiagram-v2
-    [*] --> Loading: Page mount
-    Loading --> Discovering: kubectl proxy ready
-    Loading --> Error: Proxy unavailable
-    Discovering --> Dashboard: CRDs discovered
-    Discovering --> Error: Discovery timeout
-    Dashboard --> Loading: Namespace change
-    Dashboard --> Loading: Manual refresh
-    Dashboard --> Detail: Click row
-    Detail --> Dashboard: Back button
-    Error --> Loading: Retry
+    [*] --> SigningIn: no token in memory
+    SigningIn --> Loading: token received
+    Loading --> Ready: me + kinds + namespaces loaded
+    Loading --> Error: BFF unreachable / 5xx
+    Ready --> Loading: namespace change
+    Ready --> Loading: manual refresh / 30 s poll
+    Ready --> Detail: click row
+    Detail --> Ready: back
+    Ready --> Forbidden: 403 on an operation
+    Forbidden --> Ready: dismiss
+    Ready --> SigningIn: 401 (token expired, refresh failed)
+    Error --> Loading: retry
 ```
 
 ## 7. CRD Categories
 
-The 27 CRDs are grouped into 6 logical categories for navigation and display:
+Categories come from `GET /api/v1/platform/kinds` at runtime; the SPA has no hard-coded list. The
+table below is what the generator currently emits from `config/crd/all-crds.yaml`:
 
-| Category | Plurals | Count |
-|----------|---------|-------|
-| **IPAM** | netboxprefixes, netboxipaddresses, netboxipranges, netboxaggregates, netboxvlans, netboxrirs, netboxvrfs, netboxroutetargets, netboxroles | 9 |
-| **DCIM** | netboxdevices, netboxdeviceroles, netboxdevicetypes, netboxinterfaces, netboxmacaddresses, netboxlocations, netboxsites, netboxsitegroups, netboxregions, netboxmanufacturers, netboxplatforms | 11 |
-| **Tenancy** | netboxtenants, netboxtenantgroups | 2 |
-| **Extras** | netboxtags | 1 |
-| **Boot** | bootprofiles, bootintents | 2 |
-| **IP Pool** | ippools, ipclaims | 2 |
+| Category | Service | Kinds | Count |
+|---|---|---|---|
+| **IPAM** | ipam | prefixes, ip-addresses, ip-ranges, aggregates, vlans, rirs, vrfs, route-targets, roles | 9 |
+| **DCIM** | dcim | sites, locations, regions, site-groups, devices, device-types, device-roles, manufacturers, platforms, interfaces, mac-addresses | 11 |
+| **Tenancy** | tenancy | tenants, tenant-groups | 2 |
+| **Extras** | extras | tags | 1 |
+| **Boot** | boot | boot-profiles, boot-intents | 2 |
+| **IP Pool** | ippools | pools, claims — *placeholder until the CRDs exist* | 2 |
+| **Certificates** | certificates | inventory, imports (surfaces CertificateInventory and CertificateScanImport; CertificateBinding has no screen yet) | 2 |
 
 ## 8. File Structure
 
 ```
+openapi/dcops/                       # contracts (generated by scripts/build_specs.py)
+├── bff-suite-config.yaml
+├── openapi_bff.yaml
+├── platform/ dcim/ ipam/ tenancy/ extras/ boot/ ippools/ certificates/  (openapi.yaml each)
+└── README.md                        # screen → operation traceability
+
+services/                            # BRRTRouter services (CM-002.2 scaffold)
+├── dcops-bff/{gen,impl}
+├── platform/{gen,impl}
+├── dcim/ ipam/ tenancy/ extras/ boot/ ippools/   ({gen,impl} each; thin — reflectors + row mapping)
+└── certificates-api/{gen,impl}      # EPIC-CM-002
+
 ui/src/
 ├── api/
-│   ├── k8s-client.ts       # K8s API client (proxy-based)
-│   ├── crd-discovery.ts    # Auto-discover CRDs from K8s /apis
-│   └── types.ts            # Shared TS types
-├── components/
-│   ├── dashboard/
-│   │   ├── Dashboard.tsx           # Main dashboard (overview + table)
-│   │   ├── CrdTable.tsx            # Generic sortable/filterable CR table
-│   │   ├── CrdDetail.tsx           # Single CR detail panel
-│   │   ├── CrdCountChart.tsx       # CR distribution by type/category
-│   │   ├── StateBadge.tsx          # State indicator (Created/Failed/Pending)
-│   │   ├── NamespaceFilter.tsx     # Namespace dropdown selector
-│   │   └── ErrorSummary.tsx        # Failed CRs accordion list
-│   └── common/
-│       ├── LoadingSpinner.tsx      # Loading indicator
-│       ├── ErrorBanner.tsx         # Error display with retry
-│       └── JsonViewer.tsx          # Syntax-highlighted JSON display
-├── pages/
-│   ├── Dashboard.tsx           # Dashboard entry point
-│   └── CrdDetail.tsx           # Single CR view (standalone too)
-└── ... (existing documentation pages unchanged)
+│   ├── client.ts            # GENERATED from openapi_bff.yaml (just ui-gen-client)
+│   ├── http.ts              # bearer, ErrorEnvelope → ApiError, retry policy
+│   ├── upload.ts            # uploadToSignedUrl
+│   └── types.ts             # re-exports of generated schemas
+├── auth/oidc.ts             # Authorization Code + PKCE, token in memory
+├── layout/Shell.tsx         # sidebar from list_kinds, namespace selector, /me footer
+├── pages/                   # Dashboard, Section, Detail, certificates/*
+├── components/              # RowTable, StateBadge, ManifestPanel, filters, …
+├── stores/                  # namespace, kinds, me, certificates
+└── i18n/en.ts
 ```
+
+Removed relative to v1: `api/k8s-client.ts`, `api/crd-discovery.ts`, `config/dcops-ui/role.yaml`.
 
 ## 9. Tilt Integration
 
-Add to Tiltfile:
-
 ```python
-# Start kubectl proxy for local dev
-local_resource(
-    'kubectl-proxy',
-    cmd='kubectl proxy --port=8001 --address=127.0.0.1 --accept-hosts="^localhost$|^127\\.0\\.0\\.1$"',
-    labels=['infrastructure'],
-)
+# BFF and services are ordinary k8s resources built from the workspace
+k8s_resource('dcops-bff',            port_forwards='8080:8080', labels=['api'], resource_deps=['platform-svc', 'certificates-api'])
+k8s_resource('platform-svc',         labels=['api'])
+k8s_resource('certificates-api',     labels=['api'], resource_deps=['minio', 'certificate-controller'])
+# … one resource per domain service
 
-# Update dcops-ui resource to depend on proxy
-k8s_resource(
-    'dcops-ui',
-    port_forwards='8800:80',
-    labels=['docs'],
-    resource_deps=['kubectl-proxy'],  # ensure proxy is ready
-)
+# SPA: unchanged local_resource, now pointed at the gateway
+local_resource('build-ui', cmd='cd ui && npm run build', deps=['ui/src'], labels=['ui'])
+k8s_resource('dcops-ui', port_forwards='8800:80', labels=['ui'], resource_deps=['dcops-bff'])
+
+# Contract drift guard
+local_resource('openapi-check',
+    cmd='python3 openapi/dcops/scripts/build_specs.py --crds config/crd/all-crds.yaml --out /tmp/openapi-check && diff -r /tmp/openapi-check openapi/dcops --exclude README.md --exclude scripts',
+    deps=['config/crd', 'openapi/dcops/scripts'], labels=['api'])
 ```
+
+The `kubectl-proxy` resource from v1 is deleted.
 
 ## 10. Production Deployment
 
-When deployed in-cluster:
-- The UI Deployment mounts the default ServiceAccount token (standard K8s pattern)
-- `K8sClient` detects in-cluster mode (no proxy URL) and uses the SA token
-- API calls go directly to `https://kubernetes.default.svc:443`
-- RBAC: ServiceAccount needs `get`, `list` on all `dcops.microscaler.io` resources
-
-### Required RBAC
-
-```yaml
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRole
-metadata:
-  name: dcops-ui-reader
-rules:
-  - apiGroups: ["dcops.microscaler.io"]
-    resources: ["*"]
-    verbs: ["get", "list"]
-  - apiGroups: [""]
-    resources: ["namespaces"]
-    verbs: ["list"]
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRoleBinding
-metadata:
-  name: dcops-ui-reader
-subjects:
-  - kind: ServiceAccount
-    name: default
-    namespace: dcops-system
-roleRef:
-  kind: ClusterRole
-  name: dcops-ui-reader
-  apiGroup: rbac.authorization.k8s.io
-```
+- SPA: static files served by nginx behind the gateway; `automountServiceAccountToken: false`; no RBAC.
+- BFF: validates every JWT against the configured JWKS (`OIDC_ISSUER`, `OIDC_AUDIENCE`, `OIDC_JWKS_URL`), forwards to services by `x-service`; CORS is `inherit` from the gateway (same origin in production).
+- Services: namespaced `Role` per service with `get`/`list`/`watch` on the kinds it serves; `certificates-api` additionally `patch` on `certificatescanimports` and — through SSA with field manager `dcops-ui`, limited to ownership/acknowledgement/bucket — on `certificateinventories`, plus a Workload Identity binding for `signBlob`; the reconciler, not the API, creates the preview/apply Jobs (`CM-002.4`). No ServiceAccount key files anywhere (`scripts/check_no_sa_keys.py`).
+- Project-agnostic: bucket, prefix, signer email, issuer and audience are environment variables supplied by the client's IaC; nothing in the repo names a GCP project.
 
 ## 11. Open Questions
 
-| # | Question | Default Resolution |
-|---|----------|-------------------|
-| **Q1** | Should the Dashboard be a separate section or integrated into the existing navigation? | Separate section ("Admin") added to the header nav, parallel to "User Docs" and "Contributor Docs" |
-| **Q2** | How to handle the 27 CRD types if there are thousands of CR instances? | Lazy load per category — load CRDs first, then fetch CRs only when a category is expanded. Paginate table at 50 rows. |
-| **Q3** | Should the API client support both proxy and in-cluster modes? | Yes — `K8sClient` constructor takes `proxyUrl` (dev) or `null` (prod, uses SA token). Auto-detect via `window.location.hostname`. |
-| **Q4** | What polling interval for refresh? | 30 seconds default, adjustable. Manual refresh button always available. |
-| **Q5** | Do we need to handle multiple API versions (v1alpha1 only for now)? | Yes — discover API groups dynamically; assume `v1alpha1` as default version. |
+| # | Question | Default resolution |
+|---|---|---|
+| **Q1** | Separate "Admin" section or integrated navigation? | Resolved by the mockups — one shell, categories in the sidebar from `list_kinds`. |
+| **Q2** | Thousands of CR instances? | Server-side cursor paging (`limit` ≤ 200) from reflector caches; the SPA filters the current page in memory. Certificates (5,368 rows) is the sizing case and is virtualised. |
+| **Q3** | ~~Proxy vs in-cluster client modes?~~ | Withdrawn — one client, one origin, `VITE_DCOPS_API_BASE` for local Vite only. |
+| **Q4** | Polling interval? | 30 s default for platform views, manual refresh always available; certificate imports use SSE. |
+| **Q5** | Multiple API versions? | Handled in the services: a new CRD version changes the generator input, the BFF contract stays `/api/v1` until a breaking row/detail change. |
+| **Q6** | IPPool / IPClaim CRDs are not in `config/crd/` | Generator carries placeholders so the IpPools screen has a contract; replace when the CRDs land (tracked in `openapi/dcops/README.md`). |
+| **Q7** | Do we deploy sesame-idam alongside, or use the client's Entra tenant only? | Both work unchanged (issuer/audience/claim→role mapping are config); decision with the client. |

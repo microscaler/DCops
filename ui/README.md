@@ -1,6 +1,15 @@
-# DCops UI - Documentation Site
+# DCops UI
 
-Documentation site for the DCops project, built with SolidJS, Vite, and Tailwind CSS.
+The single DCops web application: user and contributor documentation, the platform
+dashboard (auto-discovered `dcops.microscaler.io` CRDs), and the operational sections
+(NetBox inventory, IPAM, Boot, Certificates). Built with SolidJS, Vite and Tailwind CSS.
+
+> **Consolidation (2026-09):** the former `ui-docs/` and `ui-dashboard/` apps were
+> byte-for-byte subsets of this folder (same components, same content, drifted copies of
+> `k8s-client.ts`). They were removed, along with `dockerfiles/Dockerfile.dcops-{docs,dashboard}`
+> and `config/dcops-{docs,dashboard}`. This folder, `dockerfiles/Dockerfile.dcops-ui` and
+> `config/dcops-ui` are the only UI build and deployment. Tilt runs it as `build-ui` on port 8800.
+> Screen designs for every section live in `docs/03_ui_design/`.
 
 ## Development
 

@@ -1,0 +1,266 @@
+{
+ "pages": [
+  {
+   "id": "page-1",
+   "name": "Shell & dashboard"
+  },
+  {
+   "id": "page-2",
+   "name": "NetBox inventory"
+  },
+  {
+   "id": "page-3",
+   "name": "Boot & IP pools"
+  },
+  {
+   "id": "page-4",
+   "name": "Certificates"
+  },
+  {
+   "id": "page-5",
+   "name": "Scan import"
+  },
+  {
+   "id": "page-6",
+   "name": "Docs"
+  }
+ ],
+ "artboards": [
+  {
+   "file": "SignIn.dc.html",
+   "x": 0,
+   "y": 0,
+   "w": 1440,
+   "h": 900,
+   "title": "Sign in",
+   "page": "page-1"
+  },
+  {
+   "file": "Main.dc.html",
+   "x": 1560,
+   "y": 0,
+   "w": 1440,
+   "h": 900,
+   "title": "Dashboard",
+   "page": "page-1"
+  },
+  {
+   "file": "ErrorState.dc.html",
+   "x": 3120,
+   "y": 0,
+   "w": 1440,
+   "h": 900,
+   "title": "Dashboard \u2014 API unreachable",
+   "page": "page-1"
+  },
+  {
+   "file": "IpamPrefixes.dc.html",
+   "x": 0,
+   "y": 0,
+   "w": 1440,
+   "h": 900,
+   "title": "IPAM \u2014 Prefixes list",
+   "page": "page-2"
+  },
+  {
+   "file": "IpamPrefixDetail.dc.html",
+   "x": 1560,
+   "y": 0,
+   "w": 1440,
+   "h": 900,
+   "title": "IPAM \u2014 Prefix detail",
+   "page": "page-2"
+  },
+  {
+   "file": "DcimOverview.dc.html",
+   "x": 3120,
+   "y": 0,
+   "w": 1440,
+   "h": 900,
+   "title": "DCIM \u2014 Inventory",
+   "page": "page-2"
+  },
+  {
+   "file": "DcimDeviceDetail.dc.html",
+   "x": 0,
+   "y": 1060,
+   "w": 1440,
+   "h": 900,
+   "title": "DCIM \u2014 Device detail",
+   "page": "page-2"
+  },
+  {
+   "file": "Tenancy.dc.html",
+   "x": 1560,
+   "y": 1060,
+   "w": 1440,
+   "h": 900,
+   "title": "Tenancy",
+   "page": "page-2"
+  },
+  {
+   "file": "Extras.dc.html",
+   "x": 3120,
+   "y": 1060,
+   "w": 1440,
+   "h": 900,
+   "title": "Extras \u2014 Tags",
+   "page": "page-2"
+  },
+  {
+   "file": "Boot.dc.html",
+   "x": 0,
+   "y": 0,
+   "w": 1440,
+   "h": 900,
+   "title": "Boot",
+   "page": "page-3"
+  },
+  {
+   "file": "IpPools.dc.html",
+   "x": 1560,
+   "y": 0,
+   "w": 1440,
+   "h": 900,
+   "title": "IP Pools",
+   "page": "page-3"
+  },
+  {
+   "file": "CertificatesInventory.dc.html",
+   "x": 0,
+   "y": 0,
+   "w": 1440,
+   "h": 900,
+   "title": "Certificates \u2014 Inventory",
+   "page": "page-4"
+  },
+  {
+   "file": "CertificateDetail.dc.html",
+   "x": 1560,
+   "y": 0,
+   "w": 1440,
+   "h": 900,
+   "title": "Certificates \u2014 Record detail",
+   "page": "page-4"
+  },
+  {
+   "file": "CertificatesMaturity.dc.html",
+   "x": 3120,
+   "y": 0,
+   "w": 1440,
+   "h": 900,
+   "title": "Certificates \u2014 Maturity",
+   "page": "page-4"
+  },
+  {
+   "file": "BulkAssign.dc.html",
+   "x": 0,
+   "y": 1060,
+   "w": 1440,
+   "h": 900,
+   "title": "Certificates \u2014 Bulk assign owners",
+   "page": "page-4"
+  },
+  {
+   "file": "EmptyState.dc.html",
+   "x": 1560,
+   "y": 1060,
+   "w": 1440,
+   "h": 900,
+   "title": "Certificates \u2014 Empty state",
+   "page": "page-4"
+  },
+  {
+   "file": "ImportUpload.dc.html",
+   "x": 0,
+   "y": 0,
+   "w": 1440,
+   "h": 900,
+   "title": "Import \u2014 1 Upload",
+   "page": "page-5"
+  },
+  {
+   "file": "ImportReview.dc.html",
+   "x": 1560,
+   "y": 0,
+   "w": 1440,
+   "h": 900,
+   "title": "Import \u2014 2 Review changes",
+   "page": "page-5"
+  },
+  {
+   "file": "ImportConfirm.dc.html",
+   "x": 3120,
+   "y": 0,
+   "w": 1440,
+   "h": 900,
+   "title": "Import \u2014 3 Confirm",
+   "page": "page-5"
+  },
+  {
+   "file": "ImportSummary.dc.html",
+   "x": 0,
+   "y": 1060,
+   "w": 1440,
+   "h": 900,
+   "title": "Import \u2014 4 Summary",
+   "page": "page-5"
+  },
+  {
+   "file": "ImportHistory.dc.html",
+   "x": 1560,
+   "y": 1060,
+   "w": 1440,
+   "h": 900,
+   "title": "Import history",
+   "page": "page-5"
+  },
+  {
+   "file": "Docs.dc.html",
+   "x": 0,
+   "y": 0,
+   "w": 1440,
+   "h": 900,
+   "title": "Docs",
+   "page": "page-6"
+  }
+ ],
+ "annotations": [
+  {
+   "id": "shell-note",
+   "x": 0,
+   "y": -170,
+   "w": 760,
+   "page": "page-1",
+   "text": "Shell: left sidebar replaces the old Docs / Contributor / Admin top tabs; one app for docs, dashboard and operations. Tokens lifted from ui/src (bg #faf9f7, sage #4a5a4c / #2d4a2f, border #e5e3df). Sign-in is OIDC (bearer to dcops-api); reads stay on the read-only Kubernetes client."
+  },
+  {
+   "id": "netbox-note",
+   "x": 0,
+   "y": -150,
+   "w": 760,
+   "page": "page-2",
+   "text": "NetBox sections share one generic list + detail pattern (auto-discovered CRDs, CrdTable/CrdDetail evolved). Prefixes and Devices shown as the representative kinds; every other kind uses the same two screens with its own columns."
+  },
+  {
+   "id": "cert-note",
+   "x": 0,
+   "y": -150,
+   "w": 760,
+   "page": "page-4",
+   "text": "Certificates: state column derives from CRD conditions (Healthy \u00b7 Renewal due \u00b7 Drift found \u00b7 Failed \u00b7 Unowned \u00b7 Stale); no YAML anywhere. Numbers come from the September scan (5,368 rows, 2,829 unowned). Maturity per CMMI scale."
+  },
+  {
+   "id": "import-note",
+   "x": 0,
+   "y": -150,
+   "w": 760,
+   "page": "page-5",
+   "text": "Import wizard follows EPIC-CM-002: file goes straight to the bucket via a one-time signed URL; the API only handles metadata; preview \u2192 confirm \u2192 background apply. Copy is written for non-technical Operations managers."
+  }
+ ],
+ "launch": {
+  "view": "canvas",
+  "page": "page-1"
+ }
+}

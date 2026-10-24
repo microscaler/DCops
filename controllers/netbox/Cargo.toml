@@ -36,7 +36,7 @@ netbox-client = { path = "../../crates/netbox-client", features = ["test-util"] 
 ipnet = { workspace = true }
 
 # MAC address parsing and validation
-clia-macaddr = "0.1"
+clia-macaddr = "0.2"
 
 # Async trait support
 async-trait = "0.1"
